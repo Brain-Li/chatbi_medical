@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { ArrowLeft, CheckCircle2, EyeOff } from 'lucide-react';
+import { ArrowLeft, EyeOff } from 'lucide-react';
 
 import { AUTH_STORAGE_KEY, createDemoAuthSession, getDemoPassword, resetDemoPassword } from '../utils/demoAuth';
 
@@ -14,6 +14,7 @@ import bannerMask from '../../assets/figma-login/figma-banner-mask.svg';
 import checkboxWrapper from '../../assets/figma-login/checkbox-wrapper.svg';
 import eyeLine from '../../assets/figma-login/eye-line.svg';
 import pieChartBoxLine from '../../assets/figma-login/pie-chart-box-line.svg';
+import passwordResetSuccess from '../../assets/figma-login/password-reset-success.png';
 import welcomeIcon from '../../assets/figma-login/welcome-sparkle.svg';
 
 const DEMO_ADMIN_EMAIL = 'admin@chatbi.com';
@@ -414,15 +415,21 @@ export default function LoginPage() {
           <LoginBanner />
         </div>
 
-        <section className="absolute inset-y-0 right-0 flex min-w-[560px] w-[38.888889%] items-center overflow-y-auto bg-white p-10 shadow-[-2px_0_22.1px_rgba(0,0,0,0.01)]">
+        <section
+          className={`absolute inset-y-0 right-0 flex min-w-[560px] w-[38.888889%] overflow-y-auto bg-white p-10 shadow-[-2px_0_22.1px_rgba(0,0,0,0.01)] ${
+            isRecovering ? 'items-start' : 'items-center'
+          }`}
+        >
           <form
-            className={`flex w-full flex-col px-6 ${isRecovering ? 'gap-8' : 'gap-10'}`}
+            className={`flex w-full flex-col px-6 ${
+              recoveryStep === 'success' ? 'gap-10 pt-[193px]' : isRecovering ? 'gap-12 pt-[50px]' : 'gap-10'
+            }`}
             onSubmit={isRecovering ? handleRecoverySubmit : handleSubmit}
             noValidate
             aria-busy={isSubmitting || isSendingVerificationCode || isResettingPassword}
           >
             {isRecovering ? (
-              <div className="flex w-full flex-col gap-5">
+              <div className="flex w-full flex-col">
                 {recoveryStep !== 'success' && (
                   <button
                     className="flex w-fit items-center gap-1 text-sm leading-[22px] text-[#4e5969] transition-colors hover:text-[#165dff] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#165dff]"
@@ -434,12 +441,18 @@ export default function LoginPage() {
                   </button>
                 )}
                 {recoveryStep === 'success' ? (
-                  <div className="flex w-full items-center justify-center gap-3" aria-live="polite">
-                    <CheckCircle2 className="h-8 w-8 shrink-0 text-[#00b42a]" aria-hidden="true" strokeWidth={1.5} />
-                    <h1 className="m-0 text-[24px] font-medium leading-8">密码修改成功</h1>
+                  <div className="flex w-full flex-col items-center gap-6" aria-live="polite">
+                    <img className="h-[120px] w-[120px] select-none" src={passwordResetSuccess} alt="" draggable={false} />
+                    <div className="flex w-full flex-col items-center gap-2 text-center">
+                      <h1 className="m-0 text-[24px] font-medium leading-8 text-[#1d2129]">密码修改成功</h1>
+                      <p className="m-0 text-base font-normal leading-6 text-[#4e5969]">您的密码已成功更新，请使用新密码登录</p>
+                    </div>
                   </div>
                 ) : (
-                  <h1 className="m-0 text-[24px] font-medium leading-8">找回密码</h1>
+                  <div className="mt-10 flex flex-col gap-2">
+                    <h1 className="m-0 text-[24px] font-medium leading-8">找回密码</h1>
+                    <p className="m-0 text-base font-normal leading-6 text-[#4e5969]">请输入邮箱获取验证码，并设置新密码</p>
+                  </div>
                 )}
               </div>
             ) : (
@@ -461,30 +474,28 @@ export default function LoginPage() {
                 使用新密码登录
               </button>
             ) : isRecovering ? (
-              <div className="flex w-full flex-col gap-5">
-                <div className="flex flex-col gap-3">
-                  <LoginField
-                    label="管理员邮箱"
-                    placeholder="请输入邮箱"
-                    type="email"
-                    value={recoveryEmail}
-                    onChange={handleRecoveryEmailChange}
-                    error={recoveryErrors.email}
-                    invalid={Boolean(recoveryErrors.email)}
-                    autoComplete="email"
-                    inputMode="email"
-                    hideLabel
-                    onBlur={handleRecoveryEmailBlur}
-                    inputRef={recoveryEmailInputRef}
-                  />
-                </div>
+              <div className="flex w-full flex-col gap-4">
+                <LoginField
+                  label="邮箱"
+                  placeholder="请输入邮箱地址"
+                  type="email"
+                  value={recoveryEmail}
+                  onChange={handleRecoveryEmailChange}
+                  error={recoveryErrors.email}
+                  invalid={Boolean(recoveryErrors.email)}
+                  autoComplete="email"
+                  inputMode="email"
+                  onBlur={handleRecoveryEmailBlur}
+                  inputRef={recoveryEmailInputRef}
+                />
 
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-2 text-sm font-normal leading-[22px] tracking-[0.15px] text-[#4e5969]">
+                  <span>验证码</span>
                   <div className="flex flex-row items-start gap-3">
                     <div className="min-w-0 flex-1">
                       <LoginField
                         label="邮箱验证码"
-                        placeholder="请输入 6 位验证码"
+                        placeholder="请输入6位验证码"
                         value={verificationCode}
                         onChange={handleVerificationCodeChange}
                         error={recoveryErrors.code}
@@ -496,7 +507,7 @@ export default function LoginPage() {
                       />
                     </div>
                     <button
-                      className="h-10 w-full shrink-0 rounded-xl bg-[#1d2129] px-3 text-sm font-normal leading-[22px] tracking-[0.15px] text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#165dff] min-[360px]:w-[132px]"
+                      className="h-[42px] w-[160px] shrink-0 rounded-xl bg-[#e8f3ff] px-3 text-sm font-normal leading-[22px] tracking-[0.15px] text-[#165dff] transition-colors hover:bg-[#dbeaff] disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#165dff]"
                       type="button"
                       onClick={isVerificationCodeSent ? resendVerificationCode : handleSendVerificationCode}
                       disabled={isSendingVerificationCode || (isVerificationCodeSent && resendSeconds > 0)}
@@ -510,75 +521,75 @@ export default function LoginPage() {
                             : '获取验证码'}
                     </button>
                   </div>
-                  {isVerificationCodeSent && resendSeconds > 0 && (
-                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg bg-[#f2f7ff] px-3 py-2 text-xs leading-[18px] text-[#4e5969]" aria-live="polite">
-                      <span className="font-medium text-[#165dff]">验证码已发送</span>
-                    </div>
+                  {isVerificationCodeSent && resendSeconds > 0 && !recoveryErrors.code && (
+                    <span className="-mt-1 text-xs leading-[18px] text-[#4e5969]" role="status" aria-live="polite">
+                      验证码已发送
+                    </span>
                   )}
                 </div>
 
-                <div className="flex flex-col gap-4">
-                  <LoginField
-                    label="新密码"
-                    placeholder={`至少 ${MIN_PASSWORD_LENGTH} 位，需包含字母和数字`}
-                    type={newPasswordVisible ? 'text' : 'password'}
-                    value={newPassword}
-                    onChange={(value) => {
-                      setNewPassword(value);
-                      if (isNewPasswordTouched || isConfirmPasswordTouched || recoveryErrors.password || recoveryErrors.confirmPassword) {
-                        setRecoveryErrors((current) => ({
-                          ...current,
-                          password: isNewPasswordTouched || recoveryErrors.password ? getNewPasswordError(value) : current.password,
-                          confirmPassword:
-                            isConfirmPasswordTouched || recoveryErrors.confirmPassword
-                              ? getConfirmPasswordError(value, confirmPassword)
-                              : current.confirmPassword,
-                        }));
-                      }
-                    }}
-                    onBlur={() => {
-                      setIsNewPasswordTouched(true);
-                      setRecoveryErrors((current) => ({ ...current, password: getNewPasswordError(newPassword) }));
-                    }}
-                    onTogglePassword={() => setNewPasswordVisible((visible) => !visible)}
-                    error={recoveryErrors.password}
-                    invalid={Boolean(recoveryErrors.password)}
-                    autoComplete="new-password"
-                  />
-                  <LoginField
-                    label="确认新密码"
-                    placeholder="请再次输入新密码"
-                    type={confirmPasswordVisible ? 'text' : 'password'}
-                    value={confirmPassword}
-                    onChange={(value) => {
-                      setConfirmPassword(value);
-                      if (isConfirmPasswordTouched || recoveryErrors.confirmPassword) {
-                        setRecoveryErrors((current) => ({
-                          ...current,
-                          confirmPassword: getConfirmPasswordError(newPassword, value),
-                        }));
-                      }
-                    }}
-                    onBlur={() => {
-                      setIsConfirmPasswordTouched(true);
+                <LoginField
+                  label="新密码"
+                  placeholder={`至少 ${MIN_PASSWORD_LENGTH} 位，需包含字母和数字`}
+                  type={newPasswordVisible ? 'text' : 'password'}
+                  value={newPassword}
+                  onChange={(value) => {
+                    setNewPassword(value);
+                    if (isNewPasswordTouched || isConfirmPasswordTouched || recoveryErrors.password || recoveryErrors.confirmPassword) {
                       setRecoveryErrors((current) => ({
                         ...current,
-                        confirmPassword: getConfirmPasswordError(newPassword, confirmPassword),
+                        password: isNewPasswordTouched || recoveryErrors.password ? getNewPasswordError(value) : current.password,
+                        confirmPassword:
+                          isConfirmPasswordTouched || recoveryErrors.confirmPassword
+                            ? getConfirmPasswordError(value, confirmPassword)
+                            : current.confirmPassword,
                       }));
-                    }}
-                    onTogglePassword={() => setConfirmPasswordVisible((visible) => !visible)}
-                    error={recoveryErrors.confirmPassword}
-                    invalid={Boolean(recoveryErrors.confirmPassword)}
-                    autoComplete="new-password"
-                  />
-                </div>
+                    }
+                  }}
+                  onBlur={() => {
+                    setIsNewPasswordTouched(true);
+                    setRecoveryErrors((current) => ({ ...current, password: getNewPasswordError(newPassword) }));
+                  }}
+                  onTogglePassword={() => setNewPasswordVisible((visible) => !visible)}
+                  error={recoveryErrors.password}
+                  invalid={Boolean(recoveryErrors.password)}
+                  autoComplete="new-password"
+                />
+                <LoginField
+                  label="确认新密码"
+                  placeholder="请再次输入新密码"
+                  type={confirmPasswordVisible ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(value) => {
+                    setConfirmPassword(value);
+                    if (isConfirmPasswordTouched || recoveryErrors.confirmPassword) {
+                      setRecoveryErrors((current) => ({
+                        ...current,
+                        confirmPassword: getConfirmPasswordError(newPassword, value),
+                      }));
+                    }
+                  }}
+                  onBlur={() => {
+                    setIsConfirmPasswordTouched(true);
+                    setRecoveryErrors((current) => ({
+                      ...current,
+                      confirmPassword: getConfirmPasswordError(newPassword, confirmPassword),
+                    }));
+                  }}
+                  onTogglePassword={() => setConfirmPasswordVisible((visible) => !visible)}
+                  error={recoveryErrors.confirmPassword}
+                  invalid={Boolean(recoveryErrors.confirmPassword)}
+                  autoComplete="new-password"
+                />
 
                 <button
-                  className="h-10 w-full rounded-xl bg-[#1d2129] text-base font-normal leading-[22px] tracking-[0.15px] text-white transition-opacity hover:opacity-90 disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#165dff]"
+                  className={`h-10 w-full rounded-xl text-base font-normal leading-[22px] tracking-[0.15px] transition-opacity focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#165dff] ${
+                    !canResetPassword ? 'cursor-not-allowed bg-[#f2f3f5] text-[#86909c]' : 'bg-[#1d2129] text-white'
+                  } ${canResetPassword && !isResettingPassword ? 'hover:opacity-90' : ''}`}
                   type="submit"
                   disabled={!canResetPassword || isResettingPassword}
                 >
-                  {isResettingPassword ? '修改中...' : '确定修改'}
+                  确定修改
                 </button>
               </div>
             ) : (
