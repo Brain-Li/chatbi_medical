@@ -2,6 +2,7 @@ import {
   createContext,
   ReactNode,
   useContext,
+  useEffect,
   useMemo,
   useState,
 } from 'react';
@@ -17,6 +18,7 @@ import {
   mcpServers as initialMcpServers,
   metricSemantics as initialMetricSemantics,
   reportTemplates as initialReportTemplates,
+  reportSubscriptions as initialReportSubscriptions,
   semanticDatasets as initialSemanticDatasets,
   skills as initialSkills,
 } from '../mockData';
@@ -34,6 +36,7 @@ import {
   McpServer,
   Message,
   MetricSemantic,
+  ReportSubscription,
   ReportTemplate,
   SemanticDataset,
   Skill,
@@ -48,6 +51,7 @@ interface WorkspaceContextValue {
   knowledgeDocuments: KnowledgeDocument[];
   metricSemantics: MetricSemantic[];
   reportTemplates: ReportTemplate[];
+  reportSubscriptions: ReportSubscription[];
   dimensionSemantics: DimensionSemantic[];
   dimensionMembers: DimensionMember[];
   conversations: Conversation[];
@@ -77,6 +81,9 @@ interface WorkspaceContextValue {
   addReportTemplate: (template: ReportTemplate) => void;
   updateReportTemplate: (templateId: string, updates: Partial<ReportTemplate>) => void;
   deleteReportTemplate: (templateId: string) => void;
+  addReportSubscription: (subscription: ReportSubscription) => void;
+  updateReportSubscription: (subscriptionId: string, updates: Partial<ReportSubscription>) => void;
+  deleteReportSubscription: (subscriptionId: string) => void;
   addSemanticDataset: (dataset: SemanticDataset) => void;
   updateSemanticDataset: (datasetId: string, updates: Partial<SemanticDataset>) => void;
   deleteSemanticDataset: (datasetId: string) => void;
@@ -108,19 +115,155 @@ interface WorkspaceContextValue {
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
-const defaultActiveConversationIds = initialConversations.reduce<Record<AgentType, string | null>>(
-  (current, conversation) => {
-    const workspaceType = conversation.workspaceType ?? conversation.agentType ?? 'ask';
-    const previousConversationId = current[workspaceType];
-    const previousConversation = initialConversations.find((item) => item.id === previousConversationId);
+const CONVERSATIONS_STORAGE_KEY = 'chatbi_medical.conversations.v1';
+const ACTIVE_CONVERSATIONS_STORAGE_KEY = 'chatbi_medical.activeConversationIds.v1';
+const STORAGE_SCHEMA_VERSION_KEY = 'chatbi_medical.workspaceSchemaVersion';
+const CURRENT_STORAGE_SCHEMA_VERSION = 'figma-ask-history-20260713-v1';
+const FIGMA_ASK_HISTORY_TITLES = [
+  '眼科近三个月诊量是否异常',
+  '上月门诊总收入和药占比情况',
+  '本季度平均住院日变化',
+  '住院收入增长最快的科室',
+  '门诊治疗收入贡献最大的三个科室',
+  '来诊检查收入变化趋势如何',
+  '近三个月诊量是否异常',
+  '眼科诊量是否异常',
+  '生成本周门诊经营周报',
+  '查询儿童保健疫苗接种率',
+  '分析海外院区床位周转率',
+  '分析上月收入增长情况',
+  '查询眼科 2020 年诊量',
+  '查询门诊收入趋势',
+  '查询住院费用明细',
+];
 
-    if (!previousConversation || conversation.updatedAt.getTime() > previousConversation.updatedAt.getTime()) {
-      current[workspaceType] = conversation.id;
+type StoredConversation = Omit<Conversation, 'createdAt' | 'updatedAt' | 'messages'> & {
+  createdAt: string;
+  updatedAt: string;
+  messages: Array<Omit<Message, 'timestamp'> & { timestamp: string }>;
+};
+
+const isAgentType = (value: unknown): value is AgentType =>
+  value === 'ask' || value === 'report' || value === 'rca';
+
+const parseStoredDate = (value: unknown) => {
+  const parsedDate = value ? new Date(String(value)) : new Date();
+  return Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
+};
+
+const toStoredConversation = (conversation: Conversation): StoredConversation => ({
+  ...conversation,
+  createdAt: conversation.createdAt.toISOString(),
+  updatedAt: conversation.updatedAt.toISOString(),
+  messages: conversation.messages.map((message) => ({
+    ...message,
+    timestamp: message.timestamp.toISOString(),
+  })),
+});
+
+const fromStoredConversation = (conversation: StoredConversation): Conversation => ({
+  ...conversation,
+  createdAt: parseStoredDate(conversation.createdAt),
+  updatedAt: parseStoredDate(conversation.updatedAt),
+  messages: conversation.messages.map((message) => ({
+    ...message,
+    timestamp: parseStoredDate(message.timestamp),
+  })),
+});
+
+const hasFigmaAskHistory = (conversations: Conversation[]) => {
+  const askTitles = conversations
+    .filter((conversation) => (conversation.workspaceType ?? conversation.agentType) === 'ask')
+    .map((conversation) => conversation.title);
+
+  return FIGMA_ASK_HISTORY_TITLES.every((title) => askTitles.includes(title));
+};
+
+const readStoredConversations = () => {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    if (window.localStorage.getItem(STORAGE_SCHEMA_VERSION_KEY) !== CURRENT_STORAGE_SCHEMA_VERSION) {
+      return null;
     }
 
-    return current;
-  },
-  { ask: null, report: null, rca: null },
+    const rawValue = window.localStorage.getItem(CONVERSATIONS_STORAGE_KEY);
+    if (!rawValue) return null;
+
+    const parsedValue = JSON.parse(rawValue);
+    if (!Array.isArray(parsedValue)) return null;
+
+    const storedConversations = parsedValue.map((conversation) =>
+      fromStoredConversation(conversation as StoredConversation),
+    );
+
+    return hasFigmaAskHistory(storedConversations) ? storedConversations : null;
+  } catch {
+    return null;
+  }
+};
+
+const readStoredActiveConversationIds = (
+  conversations: Conversation[],
+  fallback: Record<AgentType, string | null>,
+) => {
+  if (typeof window === 'undefined') return fallback;
+
+  try {
+    const rawValue = window.localStorage.getItem(ACTIVE_CONVERSATIONS_STORAGE_KEY);
+    if (!rawValue) return fallback;
+
+    const parsedValue = JSON.parse(rawValue) as Partial<Record<AgentType, string | null>>;
+    const conversationIds = new Set(conversations.map((conversation) => conversation.id));
+
+    return (['ask', 'report', 'rca'] as AgentType[]).reduce<Record<AgentType, string | null>>(
+      (current, type) => {
+        const nextId = parsedValue[type];
+        current[type] = typeof nextId === 'string' && conversationIds.has(nextId) ? nextId : fallback[type];
+        return current;
+      },
+      { ask: null, report: null, rca: null },
+    );
+  } catch {
+    return fallback;
+  }
+};
+
+const getDefaultActiveConversationIds = (conversations: Conversation[]) => {
+  const defaults = conversations.reduce<Record<AgentType, string | null>>(
+    (current, conversation) => {
+      const workspaceType = isAgentType(conversation.workspaceType)
+        ? conversation.workspaceType
+        : conversation.agentType ?? 'ask';
+      const previousConversationId = current[workspaceType];
+      const previousConversation = conversations.find((item) => item.id === previousConversationId);
+
+      if (!previousConversation || conversation.updatedAt.getTime() > previousConversation.updatedAt.getTime()) {
+        current[workspaceType] = conversation.id;
+      }
+
+      return current;
+    },
+    { ask: null, report: null, rca: null },
+  );
+  const featuredAskConversation = conversations.find(
+    (conversation) =>
+      (conversation.workspaceType ?? conversation.agentType) === 'ask' &&
+      conversation.title === '上月门诊总收入和药占比情况',
+  );
+
+  return {
+    ...defaults,
+    ask: featuredAskConversation?.id ?? defaults.ask,
+  };
+};
+
+const storedInitialConversations = readStoredConversations();
+const workspaceInitialConversations = storedInitialConversations ?? initialConversations;
+const defaultActiveConversationIds = getDefaultActiveConversationIds(workspaceInitialConversations);
+const workspaceInitialActiveConversationIds = readStoredActiveConversationIds(
+  workspaceInitialConversations,
+  defaultActiveConversationIds,
 );
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
@@ -135,14 +278,39 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     useState<KnowledgeDocument[]>(initialKnowledgeDocuments);
   const [metricSemantics] = useState<MetricSemantic[]>(initialMetricSemantics);
   const [reportTemplates, setReportTemplates] = useState<ReportTemplate[]>(initialReportTemplates);
+  const [reportSubscriptions, setReportSubscriptions] =
+    useState<ReportSubscription[]>(initialReportSubscriptions);
   const [dimensionSemantics, setDimensionSemantics] = useState<DimensionSemantic[]>(initialDimensionSemantics);
   const [dimensionMembers, setDimensionMembers] = useState<DimensionMember[]>(initialDimensionMembers);
-  const [conversations, setConversations] = useState<Conversation[]>(initialConversations);
+  const [conversations, setConversations] = useState<Conversation[]>(workspaceInitialConversations);
   const [databaseConnections, setDatabaseConnections] =
     useState<DatabaseConnection[]>(initialDatabaseConnections);
   const [mcpServers, setMcpServers] = useState<McpServer[]>(initialMcpServers);
   const [activeConversationIds, setActiveConversationIds] =
-    useState<Record<AgentType, string | null>>(defaultActiveConversationIds);
+    useState<Record<AgentType, string | null>>(workspaceInitialActiveConversationIds);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STORAGE_SCHEMA_VERSION_KEY, CURRENT_STORAGE_SCHEMA_VERSION);
+      window.localStorage.setItem(
+        CONVERSATIONS_STORAGE_KEY,
+        JSON.stringify(conversations.map(toStoredConversation)),
+      );
+    } catch {
+      // Ignore storage quota and privacy-mode failures; in-memory state still works.
+    }
+  }, [conversations]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        ACTIVE_CONVERSATIONS_STORAGE_KEY,
+        JSON.stringify(activeConversationIds),
+      );
+    } catch {
+      // Ignore storage quota and privacy-mode failures; in-memory state still works.
+    }
+  }, [activeConversationIds]);
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({
@@ -154,6 +322,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       knowledgeDocuments,
       metricSemantics,
       reportTemplates,
+      reportSubscriptions,
       dimensionSemantics,
       dimensionMembers,
       conversations,
@@ -429,6 +598,38 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       },
       deleteReportTemplate: (templateId) => {
         setReportTemplates((current) => current.filter((template) => template.id !== templateId));
+        setReportSubscriptions((current) =>
+          current.map((subscription) =>
+            subscription.reportTemplateId === templateId
+              ? {
+                  ...subscription,
+                  status: 'needs_attention',
+                  updatedAt: new Date().toLocaleString('zh-CN', { hour12: false }),
+                }
+              : subscription,
+          ),
+        );
+      },
+      addReportSubscription: (subscription) => {
+        setReportSubscriptions((current) => [subscription, ...current]);
+      },
+      updateReportSubscription: (subscriptionId, updates) => {
+        setReportSubscriptions((current) =>
+          current.map((subscription) =>
+            subscription.id === subscriptionId
+              ? {
+                  ...subscription,
+                  ...updates,
+                  updatedAt: new Date().toLocaleString('zh-CN', { hour12: false }),
+                }
+              : subscription,
+          ),
+        );
+      },
+      deleteReportSubscription: (subscriptionId) => {
+        setReportSubscriptions((current) =>
+          current.filter((subscription) => subscription.id !== subscriptionId),
+        );
       },
       addSemanticDataset: (dataset) => {
         setSemanticDatasets((current) => [dataset, ...current]);
@@ -658,6 +859,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       metricSemantics,
       mcpServers,
       reportTemplates,
+      reportSubscriptions,
       semanticDatasets,
       skills,
     ],

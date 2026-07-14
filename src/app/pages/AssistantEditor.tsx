@@ -364,6 +364,7 @@ export default function AssistantEditor() {
   const [selectedReportTemplateIds, setSelectedReportTemplateIds] = useState<string[]>([]);
   const [defaultReportTemplateId, setDefaultReportTemplateId] = useState('');
   const [autoMatchTemplate, setAutoMatchTemplate] = useState(true);
+  const [scheduleEnabled, setScheduleEnabled] = useState(true);
   const [drilldownStrategy, setDrilldownStrategy] = useState('总体到科室到费用组');
   const [ruleSet, setRuleSet] = useState('异常波动规则, 结构占比规则');
   const [statisticalMethod, setStatisticalMethod] = useState('环比 + 同比 + 贡献度');
@@ -450,6 +451,7 @@ export default function AssistantEditor() {
     setSelectedReportTemplateIds(existingAgent.reportConfig?.boundTemplateIds ?? []);
     setDefaultReportTemplateId(existingAgent.reportConfig?.defaultTemplateId ?? '');
     setAutoMatchTemplate(existingAgent.reportConfig?.autoMatchTemplate ?? true);
+    setScheduleEnabled(existingAgent.reportConfig?.scheduleEnabled ?? true);
     setDrilldownStrategy(existingAgent.rcaConfig?.drilldownStrategy ?? '总体到科室到费用组');
     setRuleSet(existingAgent.rcaConfig?.ruleSet.join(', ') ?? '异常波动规则, 结构占比规则');
     setStatisticalMethod(existingAgent.rcaConfig?.statisticalMethod ?? '环比 + 同比 + 贡献度');
@@ -471,6 +473,7 @@ export default function AssistantEditor() {
     setResultVisibility(defaultResultVisibilityByType[type]);
     setAllowExport(true);
     setAllowCrossDataset(type === 'report');
+    setScheduleEnabled(type === 'report');
     setAnomalyPolicy(defaultAnomalyPolicyByType[type]);
     setPermissionGroup(defaultPermissionByType[type].permissionGroup);
     setFieldAccessLevel(defaultPermissionByType[type].fieldAccessLevel);
@@ -708,7 +711,7 @@ export default function AssistantEditor() {
                 .split(',')
                 .map((item) => item.trim())
                 .filter(Boolean),
-              scheduleEnabled: true,
+              scheduleEnabled,
               boundTemplateIds: selectedReportTemplateIds,
               defaultTemplateId: defaultReportTemplateId || selectedReportTemplateIds[0],
               autoMatchTemplate,
@@ -1169,6 +1172,13 @@ export default function AssistantEditor() {
                   />
                 </div>
               </div>
+
+              <ConfigSwitch
+                checked={scheduleEnabled}
+                onChange={setScheduleEnabled}
+                title="允许创建订阅"
+                description="开启后，该报告 Agent 可被订阅任务调用；关闭后不会影响手动生成报告。"
+              />
 
               <div className="space-y-4 rounded-xl border border-blue-100 bg-blue-50/40 p-4">
                 <div className="flex items-start justify-between gap-4">

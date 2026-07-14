@@ -348,6 +348,7 @@ export default function SystemSettings() {
   const [databasePage, setDatabasePage] = useState(1);
   const [llmPage, setLlmPage] = useState(1);
   const [systemSettingsTab, setSystemSettingsTab] = useState<SystemSettingsTab>('general');
+  const [mailTestStatus, setMailTestStatus] = useState('');
   const [databaseForm, setDatabaseForm] =
     useState<DatabaseConnectionForm>(emptyDatabaseConnectionForm);
   const [skillForm, setSkillForm] = useState<SkillForm>(emptySkillForm);
@@ -1656,20 +1657,42 @@ export default function SystemSettings() {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
-                  <button type="button" className={systemSettingsSecondaryButtonClass}>
+                  <button
+                    type="button"
+                    onClick={() => setMailTestStatus('SMTP 模拟连接成功：主机 smtp.263.net、465 端口、SSL 配置可用。')}
+                    className={systemSettingsSecondaryButtonClass}
+                  >
                     测试连接
                   </button>
-                  <button type="button" className={systemSettingsSecondaryButtonClass}>
+                  <button
+                    type="button"
+                    onClick={() => setMailTestStatus('测试发送成功：样例报告邮件已发送至经营分析组，未创建正式推送记录。')}
+                    className={systemSettingsSecondaryButtonClass}
+                  >
                     测试发送
                   </button>
-                  <button type="button" className={systemSettingsSecondaryButtonClass}>
+                  <button
+                    type="button"
+                    onClick={() => setMailTestStatus('配置已重新加载：报告访问域名和 SMTP 参数已同步到推送服务。')}
+                    className={systemSettingsSecondaryButtonClass}
+                  >
                     重新加载
                   </button>
-                  <button type="button" className={systemSettingsPrimaryButtonClass}>
+                  <button
+                    type="button"
+                    onClick={() => setMailTestStatus('邮件配置已保存：后续定时报告将使用当前 SMTP 和报告访问域名。')}
+                    className={systemSettingsPrimaryButtonClass}
+                  >
                     保存
                   </button>
                 </div>
               </div>
+
+              {mailTestStatus && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-800">
+                  {mailTestStatus}
+                </div>
+              )}
 
               <div className={systemSettingsCardClass}>
                 <div className={systemSettingsSectionTitleClass}>SMTP 服务器</div>
@@ -1915,7 +1938,7 @@ export default function SystemSettings() {
   };
 
   return (
-    <div className="h-full min-h-0 overflow-hidden bg-gray-50">
+    <div className="h-full min-h-0 overflow-hidden bg-transparent">
       <div className="mx-auto flex h-full min-h-0 max-w-[1920px] gap-4 px-4 py-6">
         <aside className="min-h-0 w-64 shrink-0">
           <div className="h-full overflow-y-auto rounded-xl border border-gray-200 bg-white p-3 shadow-sm">

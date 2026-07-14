@@ -23,6 +23,7 @@
   MetricDatasetBinding,
   MetricSemantic,
   ReportResultData,
+  ReportSubscription,
   ReportTemplate,
   ReportTemplateUsage,
   RootCauseResultData,
@@ -497,6 +498,7 @@ export const reportTemplates: ReportTemplate[] = [
     description: '面向院级管理层的门急诊与住院经营日报，突出关键指标、异常项和推送摘要。',
     category: '日报',
     version: 'v1.0',
+    createdAt: '2026-06-18 09:00',
     status: 'published',
     triggerPhrases: ['经营日报', '日报', '昨天', '今日经营', '门诊经营日报', '住院经营日报'],
     templatePrompt: `你是医院经营分析负责人，请按“日报”方式生成报告。
@@ -538,6 +540,7 @@ export const reportTemplates: ReportTemplate[] = [
     description: '面向科室负责人的月度运营报告，强调趋势、同比环比、结构拆解和管理建议。',
     category: '月报',
     version: 'v1.0',
+    createdAt: '2026-06-17 10:30',
     status: 'published',
     triggerPhrases: ['科室运营月报', '运营月报', '月报', '本月', '上月', '科室经营'],
     templatePrompt: `你是科室运营分析专家，请按“月报”方式生成结构化报告。
@@ -579,6 +582,7 @@ export const reportTemplates: ReportTemplate[] = [
     description: '围绕药占比、耗占比和费用结构变化生成专题报告。',
     category: '专题',
     version: 'v1.1',
+    createdAt: '2026-06-16 14:20',
     status: 'published',
     triggerPhrases: ['药耗结构', '药占比', '耗占比', '费用结构', '药耗专题'],
     templatePrompt: `你是药耗结构专题分析专家，请围绕药占比、耗占比和费用结构变化生成专题报告。
@@ -620,6 +624,7 @@ export const reportTemplates: ReportTemplate[] = [
     description: '聚焦异常费用组、异常记录和候选原因的专题复核报告。',
     category: '专题',
     version: 'v1.0',
+    createdAt: '2026-06-15 16:45',
     status: 'published',
     triggerPhrases: ['异常费用', '费用异常', '异常费用专题', '费用波动', '异常组'],
     templatePrompt: `你是异常费用复核分析专家，请按“异常概览 -> 异常聚类 -> 证据链 -> 复核建议”的结构生成报告。
@@ -653,6 +658,154 @@ export const reportTemplates: ReportTemplate[] = [
     outputFormats: ['PDF', 'PNG'],
     pushChannels: ['站内消息'],
     complianceNotes: ['异常费用结果需要人工复核后再进入治理流程。', '病例级明细受权限控制，默认只展示汇总证据。'],
+  },
+];
+
+export const reportSubscriptions: ReportSubscription[] = [
+  {
+    id: 'sub-operation-daily',
+    name: '院级经营日报推送',
+    reportTemplateId: 'template-operation-daily',
+    agentId: 'agent-report-daily',
+    reportTheme: '门急诊与住院经营日报',
+    period: '昨日',
+    frequency: 'daily',
+    runTime: '08:00',
+    timezone: 'Asia/Shanghai',
+    holidayPolicy: 'run',
+    recipients: ['医院经营班子', '经营分析组'],
+    channels: ['站内消息', '邮件'],
+    outputFormats: ['在线报告链接', 'PDF 附件'],
+    permissionPolicy: '按收件人权限自动脱敏，默认仅展示汇总指标。',
+    nextRunAt: '2026-07-02 08:00',
+    lastRunAt: '2026-07-01 08:00',
+    lastStatus: '成功',
+    status: 'running',
+    retryLimit: 3,
+    createdBy: 'admin',
+    createdAt: '2026-06-20 10:12',
+    updatedAt: '2026-07-01 08:03',
+    runs: [
+      {
+        id: 'run-operation-daily-20260701',
+        subscriptionId: 'sub-operation-daily',
+        generatedAt: '2026-07-01 08:00',
+        reportTitle: '2026-06-30 院级经营日报',
+        status: '成功',
+        retryCount: 0,
+        link: '/report/preview/report-1',
+      },
+    ],
+    pushRecords: [
+      {
+        id: 'push-operation-daily-1',
+        channel: '站内消息',
+        target: '医院经营班子',
+        sentAt: '2026-07-01 08:01',
+        status: '成功',
+        note: '已推送至 12 位接收人',
+      },
+      {
+        id: 'push-operation-daily-2',
+        channel: '邮件',
+        target: '经营分析组',
+        sentAt: '2026-07-01 08:02',
+        status: '成功',
+        note: '邮件正文包含摘要、关键指标和完整报告链接',
+      },
+    ],
+  },
+  {
+    id: 'sub-pharmacy-weekly',
+    name: '药耗结构周报',
+    reportTemplateId: 'template-pharmacy-structure',
+    agentId: 'agent-report-special',
+    reportTheme: '药耗结构与异常费用专题',
+    period: '上周',
+    frequency: 'weekly',
+    runTime: '08:30',
+    timezone: 'Asia/Shanghai',
+    holidayPolicy: 'next_workday',
+    recipients: ['医务管理组', '药事管理组'],
+    channels: ['邮件'],
+    outputFormats: ['在线报告链接', 'PDF 附件'],
+    permissionPolicy: '按用户组过滤科室明细，患者级数据默认不进入报告。',
+    nextRunAt: '2026-07-06 08:30',
+    lastRunAt: '2026-06-29 08:30',
+    lastStatus: '重试中',
+    status: 'running',
+    retryLimit: 3,
+    createdBy: 'lxy',
+    createdAt: '2026-06-22 15:30',
+    updatedAt: '2026-06-29 08:36',
+    runs: [
+      {
+        id: 'run-pharmacy-weekly-20260629',
+        subscriptionId: 'sub-pharmacy-weekly',
+        generatedAt: '2026-06-29 08:30',
+        reportTitle: '药耗结构周报',
+        status: '重试中',
+        retryCount: 1,
+        failureReason: '1 个邮箱退信，等待第二次重试。',
+        link: '/report/preview/report-2',
+      },
+    ],
+    pushRecords: [
+      {
+        id: 'push-pharmacy-weekly-1',
+        channel: '邮件',
+        target: '药事管理组',
+        sentAt: '2026-06-29 08:33',
+        status: '失败',
+        note: '1 个邮箱退信，待重试',
+      },
+    ],
+  },
+  {
+    id: 'sub-dept-monthly-attention',
+    name: '科室运营月报',
+    reportTemplateId: 'template-dept-monthly',
+    agentId: 'agent-report-daily',
+    reportTheme: '重点科室运营月报',
+    period: '上月',
+    frequency: 'monthly',
+    runTime: '09:00',
+    timezone: 'Asia/Shanghai',
+    holidayPolicy: 'skip',
+    recipients: ['科室负责人'],
+    channels: ['站内消息'],
+    outputFormats: ['在线报告链接'],
+    permissionPolicy: '收件人仅查看本人负责科室及汇总对比。',
+    nextRunAt: '2026-08-01 09:00',
+    lastRunAt: '2026-07-01 09:00',
+    lastStatus: '失败',
+    status: 'needs_attention',
+    retryLimit: 3,
+    createdBy: 'admin',
+    createdAt: '2026-06-25 11:06',
+    updatedAt: '2026-07-01 09:04',
+    runs: [
+      {
+        id: 'run-dept-monthly-20260701',
+        subscriptionId: 'sub-dept-monthly-attention',
+        generatedAt: '2026-07-01 09:00',
+        reportTitle: '2026-06 科室运营月报',
+        status: '失败',
+        retryCount: 3,
+        failureReason: '模板参数“科室”未配置默认值，需要补充订阅参数。',
+        link: '/report/preview/report-3',
+      },
+    ],
+    pushRecords: [
+      {
+        id: 'push-dept-monthly-1',
+        channel: '站内消息',
+        target: '科室负责人',
+        sentAt: '2026-07-01 09:04',
+        status: '失败',
+        note: '报告生成失败，未触达接收人',
+      },
+    ],
   },
 ];
 
@@ -2208,17 +2361,30 @@ export function resolveAgentForQuestion({
     : undefined;
   const datasetResolution = resolveDatasetsForQuestion(question, datasetPool, indicatorPool);
   const closeDatasetIds = new Set(datasetResolution.closeMatches.map((item) => item.dataset.id));
-  const fallbackDataset = datasetResolution.best?.dataset ?? datasetPool[0];
 
   if (forcedAgent) {
     const forcedDataset =
       datasetPool.find((dataset) => forcedAgent.datasetIds?.includes(dataset.id) && closeDatasetIds.has(dataset.id)) ??
-      datasetPool.find((dataset) => forcedAgent.datasetIds?.includes(dataset.id)) ??
-      fallbackDataset;
+      datasetPool.find((dataset) => forcedAgent.datasetIds?.includes(dataset.id));
     const skillNames = skillPool
       .filter((skill) => forcedAgent.skills.includes(skill.id))
       .slice(0, 3)
       .map((skill) => skill.name);
+
+    if (!forcedDataset) {
+      return {
+        status: 'unavailable',
+        agent: forcedAgent,
+        routingTrace: buildRoutingTrace(
+          forcedAgent,
+          'high',
+          [],
+          skillNames,
+          ['未匹配到可用数据集'],
+        ),
+        unavailableReason: '未匹配到可用数据集。',
+      };
+    }
 
     return {
       status: 'resolved',
@@ -2240,13 +2406,6 @@ export function resolveAgentForQuestion({
       : true,
   );
   const candidates = datasetScopedAgents.length ? datasetScopedAgents : enabledAgents;
-
-  if (!fallbackDataset && !candidates.length) {
-    return {
-      status: 'unavailable',
-      unavailableReason: '当前数据范围暂无可用分析配置，请在配置中心补充 Agent 绑定。',
-    };
-  }
 
   const scoredAgents = candidates
     .map((agent) => scoreAgentForQuestion(agent, question, skillPool))
@@ -2291,8 +2450,7 @@ export function resolveAgentForQuestion({
   const selectedAgent = selectedScore.agent;
   const selectedDataset =
     datasetResolution.closeMatches.find((item) => selectedAgent.datasetIds?.includes(item.dataset.id))?.dataset ??
-    datasetPool.find((dataset) => selectedAgent.datasetIds?.includes(dataset.id)) ??
-    fallbackDataset;
+    datasetPool.find((dataset) => selectedAgent.datasetIds?.includes(dataset.id));
   const selectedSkills = skillPool.filter((skill) => selectedAgent.skills.includes(skill.id)).slice(0, 3);
   const confidence: AgentRoutingTrace['confidence'] =
     agentStrongMatch || onlyCandidate ? 'high' : selectedAgent.isDefault ? 'medium' : 'low';
@@ -2300,21 +2458,32 @@ export function resolveAgentForQuestion({
     .map((documentId) => knowledgeDocuments.find((document) => document.id === documentId)?.title)
     .filter((title): title is string => Boolean(title));
 
+  const routingTrace = buildRoutingTrace(
+    selectedAgent,
+    confidence,
+    selectedDataset ? [selectedDataset.name] : [],
+    selectedSkills.map((skill) => skill.name),
+    [
+      ...(datasetResolution.closeMatches.find((item) => item.dataset.id === selectedDataset?.id)?.signals ?? []),
+      ...selectedScore.signals,
+      ...matchedKnowledgeDocumentTitles.slice(0, 2).map((title) => `引用知识文档：${title}`),
+    ],
+  );
+
+  if (!selectedDataset) {
+    return {
+      status: 'unavailable',
+      agent: selectedAgent,
+      routingTrace,
+      unavailableReason: '未匹配到可用数据集。',
+    };
+  }
+
   return {
     status: 'resolved',
     agent: selectedAgent,
     dataset: selectedDataset,
-    routingTrace: buildRoutingTrace(
-      selectedAgent,
-      confidence,
-      selectedDataset ? [selectedDataset.name] : [],
-      selectedSkills.map((skill) => skill.name),
-      [
-        ...(datasetResolution.closeMatches.find((item) => item.dataset.id === selectedDataset?.id)?.signals ?? []),
-        ...selectedScore.signals,
-        ...matchedKnowledgeDocumentTitles.slice(0, 2).map((title) => `引用知识文档：${title}`),
-      ],
-    ),
+    routingTrace,
   };
 }
 
@@ -3091,7 +3260,7 @@ export function buildAskResult(
           ]
         : [
             { label: '门诊收入', value: '¥482.6万', trend: 'up' },
-            { label: '药占比', value: '31.4%', trend: 'down' },
+            { label: '药占比', value: '31.5%', trend: 'down' },
             { label: '检查收入', value: '¥109.8万', trend: 'up' },
             { label: '重点科室', value: '眼科', trend: 'flat' },
           ],
@@ -3756,11 +3925,20 @@ function getProcessPreviewFromResult(
   };
 }
 
-function buildHistoryAnalysisProcess(
+type BuildAgentAnalysisProcessOptions = {
+  status?: AnalysisProcessData['status'];
+  skillMatchSource?: '自动匹配' | '手动选择';
+  visibleStepCount?: number;
+  elapsedSeconds?: number;
+};
+
+export function buildAgentAnalysisProcess(
   agent: Agent,
   question: string,
   skillTrace: SkillTrace[],
+  options: BuildAgentAnalysisProcessOptions = {},
 ): AnalysisProcessData {
+  const status = options.status ?? 'completed';
   const selectedSkillIds = skillTrace.map((skill) => skill.id);
   const evidence = buildResultEvidence(
     agent,
@@ -3793,7 +3971,7 @@ function buildHistoryAnalysisProcess(
     skillMatches: skillTrace.map((skill) => ({
       id: skill.id,
       name: skill.name,
-      source: '自动匹配',
+      source: options.skillMatchSource ?? '自动匹配',
     })),
     mcpMatches,
     thoughtItems: [
@@ -3805,8 +3983,9 @@ function buildHistoryAnalysisProcess(
     ],
     sql: evidence.sql,
     resultPreview: getProcessPreviewFromResult(agent, question, skillTrace),
-    status: 'completed',
-    elapsedSeconds: 4,
+    status,
+    visibleStepCount: options.visibleStepCount ?? (status === 'running' ? 1 : undefined),
+    elapsedSeconds: options.elapsedSeconds ?? (status === 'completed' ? 4 : undefined),
   };
 }
 
@@ -3894,7 +4073,7 @@ function buildHistoryMessages(agent: Agent, question: string, sentAt: Date): Mes
     timestamp: analysisTimestamp,
     skillTrace,
     routingTrace,
-    analysisProcess: buildHistoryAnalysisProcess(agent, question, skillTrace),
+    analysisProcess: buildAgentAnalysisProcess(agent, question, skillTrace),
   };
 
   if (agent.type === 'report') {
@@ -3978,13 +4157,220 @@ function buildHistoryConversation(
   };
 }
 
+type BoundaryCase =
+  | 'mode-restriction'
+  | 'missing-dataset'
+  | 'missing-agent'
+  | 'ambiguous-scope'
+  | 'empty-result'
+  | 'sql-failed'
+  | 'interrupted';
+
+function buildBoundaryCaseConversation(
+  caseType: BoundaryCase,
+  question: string,
+  updatedAt: string,
+): Conversation {
+  const agent = agents.find((item) => item.id === 'agent-ask-outpatient');
+  const timestamp = new Date(updatedAt);
+
+  if (!agent) {
+    throw new Error('Missing outpatient agent for mock boundary conversation');
+  }
+
+  const userMessage: Message = {
+    id: `msg-boundary-${caseType}-${timestamp.getTime()}-user`,
+    role: 'user',
+    kind: 'text',
+    content: question,
+    timestamp: new Date(timestamp.getTime() - 5 * 60 * 1000),
+  };
+  const analysisTimestamp = new Date(timestamp.getTime() - 4 * 60 * 1000);
+  const process = buildAgentAnalysisProcess(agent, question, buildSkillTrace(agent));
+  let messages: Message[];
+
+  switch (caseType) {
+    case 'mode-restriction':
+      messages = [
+        userMessage,
+        {
+          id: `msg-boundary-${caseType}-${timestamp.getTime()}-notice`,
+          role: 'assistant',
+          kind: 'clarification',
+          content: '当前为问数模式，暂不支持生成报告。请退出问数模式后再试。',
+          timestamp: analysisTimestamp,
+          originalQuestion: question,
+        },
+      ];
+      break;
+    case 'ambiguous-scope':
+      messages = [
+        userMessage,
+        {
+          id: `msg-boundary-${caseType}-${timestamp.getTime()}-clarification`,
+          role: 'assistant',
+          kind: 'clarification',
+          content: '识别到多个可执行且置信度相近的分析范围，请确认本次分析范围。',
+          timestamp: analysisTimestamp,
+          originalQuestion: question,
+          clarificationOptions: [
+            { agentId: 'agent-ask-outpatient', label: '门诊收入', reason: '按门诊科室与收费项目分析' },
+            { agentId: 'agent-ask-inpatient', label: '住院收入', reason: '按住院科室与结算收入分析' },
+          ],
+        },
+      ];
+      break;
+    case 'missing-dataset':
+      messages = [
+        userMessage,
+        {
+          id: `msg-boundary-${caseType}-${timestamp.getTime()}-analysis`,
+          role: 'assistant',
+          kind: 'analysis',
+          content: '',
+          timestamp: analysisTimestamp,
+          parentUserMessageId: userMessage.id,
+          analysisProcess: {
+            ...process,
+            datasetName: '',
+            metrics: [],
+            dimensions: [],
+            knowledgeHits: [],
+            skillMatches: [],
+            mcpMatches: [],
+            thoughtItems: [],
+            sql: '',
+            resultPreview: { title: '', metrics: [], chartData: [] },
+            status: 'unavailable',
+            visibleStepCount: 3,
+            matchStatus: 'missing-dataset',
+            matchMessage: '暂未找到可用于分析的数据。请补充分析范围后重试。',
+            sqlExecutionStatus: 'not-run',
+            sqlExecutionMessage: 'SQL 未执行。',
+          },
+        },
+      ];
+      break;
+    case 'missing-agent':
+      messages = [
+        userMessage,
+        {
+          id: `msg-boundary-${caseType}-${timestamp.getTime()}-analysis`,
+          role: 'assistant',
+          kind: 'analysis',
+          content: '',
+          timestamp: analysisTimestamp,
+          parentUserMessageId: userMessage.id,
+          analysisProcess: {
+            ...process,
+            datasetName: '',
+            metrics: [],
+            dimensions: [],
+            knowledgeHits: [],
+            skillMatches: [],
+            mcpMatches: [],
+            thoughtItems: [],
+            sql: '',
+            resultPreview: { title: '', metrics: [], chartData: [] },
+            status: 'unavailable',
+            visibleStepCount: 3,
+            matchStatus: 'missing-agent',
+            matchMessage: '暂未找到可处理该问题的分析能力。请调整问题描述后重试。',
+            sqlExecutionStatus: 'not-run',
+            sqlExecutionMessage: 'SQL 未执行。',
+          },
+        },
+      ];
+      break;
+    case 'empty-result':
+      messages = [
+        userMessage,
+        {
+          id: `msg-boundary-${caseType}-${timestamp.getTime()}-analysis`,
+          role: 'assistant',
+          kind: 'analysis',
+          content: '',
+          timestamp: analysisTimestamp,
+          parentUserMessageId: userMessage.id,
+          analysisProcess: {
+            ...process,
+            resultPreview: { title: '未查询到符合条件的数据', metrics: [], chartData: [] },
+            sqlExecutionStatus: 'empty',
+            sqlExecutionMessage: '未查询到符合当前条件的数据。请检查筛选条件或调整查询范围后重试。',
+          },
+        },
+      ];
+      break;
+    case 'sql-failed':
+      messages = [
+        userMessage,
+        {
+          id: `msg-boundary-${caseType}-${timestamp.getTime()}-analysis`,
+          role: 'assistant',
+          kind: 'analysis',
+          content: '',
+          timestamp: analysisTimestamp,
+          parentUserMessageId: userMessage.id,
+          analysisProcess: {
+            ...process,
+            sqlExecutionStatus: 'failed',
+            sqlExecutionMessage: '查询暂未完成，请稍后重试。',
+          },
+        },
+      ];
+      break;
+    case 'interrupted':
+      messages = [
+        userMessage,
+        {
+          id: `msg-boundary-${caseType}-${timestamp.getTime()}-analysis`,
+          role: 'assistant',
+          kind: 'analysis',
+          content: '',
+          timestamp: analysisTimestamp,
+          parentUserMessageId: userMessage.id,
+          isInterrupted: true,
+          analysisProcess: {
+            ...process,
+            status: 'interrupted',
+            visibleStepCount: 3,
+            sql: '',
+            sqlExecutionStatus: 'not-run',
+            sqlExecutionMessage: '查询已中断，未生成结果或模拟 SQL。',
+          },
+        },
+      ];
+      break;
+  }
+
+  return {
+    id: `conv-boundary-${caseType}-${timestamp.getTime()}`,
+    title: question,
+    agentId: agent.id,
+    agentType: 'ask',
+    workspaceType: 'ask',
+    messages,
+    createdAt: new Date(timestamp.getTime() - 10 * 60 * 1000),
+    updatedAt: timestamp,
+  };
+}
+
 export const initialConversations: Conversation[] = [
-  buildHistoryConversation('agent-rca-expense', '哪个维度导致住院收入偏离目标？', '2026-06-18T15:17:00'),
-  buildHistoryConversation('agent-rca-expense', '检查收入下降的主要原因是什么？', '2026-06-18T15:13:00'),
-  buildHistoryConversation('agent-ask-inpatient', '住院收入偏离目标主要涉及哪些科室？', '2026-06-18T14:48:00'),
-  buildHistoryConversation('agent-ask-outpatient', '本月门诊检查收入按科室如何拆分？', '2026-06-17T16:20:00'),
-  buildHistoryConversation('agent-ask-outpatient', '门诊药耗结构本周有哪些异常？', '2026-06-17T11:35:00'),
-  buildHistoryConversation('agent-rca-diagnosis', '本周患者流量下滑主要受哪些因素影响？', '2026-06-16T18:00:00'),
+  buildBoundaryCaseConversation('mode-restriction', '生成本周门诊经营周报', '2026-07-12T11:30:00'),
+  buildBoundaryCaseConversation('missing-dataset', '查询儿童保健疫苗接种率', '2026-07-12T11:20:00'),
+  buildBoundaryCaseConversation('missing-agent', '分析海外院区床位周转率', '2026-07-12T11:10:00'),
+  buildBoundaryCaseConversation('ambiguous-scope', '分析上月收入增长情况', '2026-07-12T11:00:00'),
+  buildBoundaryCaseConversation('empty-result', '查询眼科 2020 年诊量', '2026-07-12T10:50:00'),
+  buildBoundaryCaseConversation('sql-failed', '查询门诊收入趋势', '2026-07-12T10:40:00'),
+  buildBoundaryCaseConversation('interrupted', '查询住院费用明细', '2026-07-12T10:35:00'),
+  buildHistoryConversation('agent-ask-outpatient', '眼科近三个月诊量是否异常', '2026-07-12T10:30:00'),
+  buildHistoryConversation('agent-ask-outpatient', '上月门诊总收入和药占比情况', '2026-07-12T10:20:00'),
+  buildHistoryConversation('agent-ask-inpatient', '本季度平均住院日变化', '2026-07-12T09:24:00'),
+  buildHistoryConversation('agent-ask-inpatient', '住院收入增长最快的科室', '2026-07-12T09:20:00'),
+  buildHistoryConversation('agent-ask-outpatient', '门诊治疗收入贡献最大的三个科室', '2026-06-18T15:17:00'),
+  buildHistoryConversation('agent-ask-outpatient', '来诊检查收入变化趋势如何', '2026-06-18T15:13:00'),
+  buildHistoryConversation('agent-ask-outpatient', '近三个月诊量是否异常', '2026-06-15T14:48:00'),
+  buildHistoryConversation('agent-ask-outpatient', '眼科诊量是否异常', '2026-06-12T16:20:00'),
   buildHistoryConversation('agent-report-daily', '生成本周门急诊经营周报。', '2026-06-18T09:40:00'),
   buildHistoryConversation('agent-report-special', '生成一份检查收入下降专题报告。', '2026-06-17T14:30:00'),
 ];

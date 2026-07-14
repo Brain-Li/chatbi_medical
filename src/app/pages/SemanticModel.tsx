@@ -1609,15 +1609,6 @@ export default function SemanticModel({
               </div>
 
               <div className="flex flex-wrap items-center justify-start gap-3">
-                <div className="relative w-full min-w-[280px] sm:w-[420px]">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                  <input
-                    value={searchKeyword}
-                    onChange={(event) => setSearchKeyword(event.target.value)}
-                    placeholder={searchPlaceholder}
-                    className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
                 <label className="inline-flex w-full items-center gap-2 sm:w-auto">
                   <span className="whitespace-nowrap text-sm text-gray-500">数据集</span>
                   <select
@@ -1648,6 +1639,15 @@ export default function SemanticModel({
                     ))}
                   </select>
                 </label>
+                <div className="relative w-full min-w-[280px] sm:w-[420px]">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <input
+                    value={searchKeyword}
+                    onChange={(event) => setSearchKeyword(event.target.value)}
+                    placeholder={searchPlaceholder}
+                    className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
               </div>
 
               <section className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -1902,15 +1902,6 @@ export default function SemanticModel({
 
               <div className="sticky top-0 z-20 -mx-1 bg-gray-50/95 px-1 py-3 backdrop-blur">
                 <div className="flex flex-wrap items-center justify-start gap-3">
-                  <div className="relative w-full min-w-[280px] sm:w-[420px]">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                    <input
-                      value={searchKeyword}
-                      onChange={(event) => setSearchKeyword(event.target.value)}
-                      placeholder={searchPlaceholder}
-                      className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none"
-                    />
-                  </div>
                   <label className="inline-flex w-full items-center gap-2 sm:w-auto">
                     <span className="whitespace-nowrap text-sm text-gray-500">对象类型</span>
                     <select
@@ -1940,6 +1931,15 @@ export default function SemanticModel({
                       <option value="none">无风险</option>
                     </select>
                   </label>
+                  <div className="relative w-full min-w-[280px] sm:w-[420px]">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                    <input
+                      value={searchKeyword}
+                      onChange={(event) => setSearchKeyword(event.target.value)}
+                      placeholder={searchPlaceholder}
+                      className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
                   {hasSynonymFilters && (
                     <button
                       type="button"

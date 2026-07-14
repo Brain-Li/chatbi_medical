@@ -1,15 +1,43 @@
-import { Outlet } from 'react-router';
-import TopNavigation from '../components/TopNavigation';
+import { useEffect, useState } from 'react';
+import { Outlet, useLocation } from 'react-router';
+import { AppHeader } from '../components/AppHeader';
+import { AppShellBackground } from '../components/AppShellBackground';
+import { PrimaryIconNav } from '../components/PrimaryIconNav';
 
 export default function Root() {
+  const location = useLocation();
+  const isHome = location.pathname === '/home';
+  const isLogin = location.pathname === '/';
+  const isWorkspacePage = location.pathname === '/ask' || location.pathname === '/report';
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  useEffect(() => {
+    if (!isHome) {
+      window.scrollTo(0, 0);
+    }
+  }, [isHome, location.pathname]);
+
+  if (isHome || isLogin) {
+    return <Outlet />;
+  }
+
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-gray-50">
-      <div className="shrink-0">
-        <TopNavigation />
+    <>
+      <div className="fixed inset-0 z-0 overflow-hidden bg-white">
+        <AppShellBackground />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <Outlet />
+      <div className="fixed inset-x-0 top-0 z-50">
+        <AppHeader
+          menuOpen={sidebarOpen}
+          onMenuClick={() => setSidebarOpen((current) => !current)}
+        />
       </div>
-    </div>
+      <div className="fixed inset-0 z-10 flex min-h-0 pt-16">
+        <PrimaryIconNav />
+        <main className={`min-h-0 min-w-0 flex-1 overflow-hidden rounded-tl-[20px] rounded-tr-[20px] ${isWorkspacePage ? 'bg-transparent pb-0' : 'bg-white pb-[34px]'}`}>
+          <Outlet context={{ sidebarOpen }} />
+        </main>
+      </div>
+    </>
   );
 }

@@ -2,6 +2,23 @@ export type AgentType = 'ask' | 'report' | 'rca';
 
 export type AgentGroup = 'ask' | 'report' | 'rca';
 
+export interface WorkspaceAutoSubmitPayload {
+  mode: Extract<AgentType, 'ask' | 'report'>;
+  question: string;
+  nonce?: string;
+  deepAnalysisEnabled?: boolean;
+  reportTemplateId?: string;
+  manualSkillIds?: string[];
+  userMessageContent?: string;
+  forceNewConversation?: boolean;
+}
+
+export interface HomePrefillPayload {
+  mode: Extract<AgentType, 'ask' | 'report'>;
+  draft: string;
+  templateId?: string;
+}
+
 export type MessageKind =
   | 'text'
   | 'analysis'
@@ -182,6 +199,51 @@ export interface ReportPushConfig {
   records: ReportPushRecord[];
 }
 
+export type ReportSubscriptionFrequency = 'daily' | 'weekly' | 'monthly' | 'cron';
+export type ReportSubscriptionChannel = '站内消息' | '邮件';
+export type ReportSubscriptionStatus = 'running' | 'paused' | 'needs_attention';
+export type ReportRunStatus = '成功' | '失败' | '重试中';
+export type ReportHolidayPolicy = 'skip' | 'run' | 'next_workday';
+
+export interface ReportSubscriptionRun {
+  id: string;
+  subscriptionId: string;
+  generatedAt: string;
+  reportTitle: string;
+  status: ReportRunStatus;
+  retryCount: number;
+  failureReason?: string;
+  link: string;
+}
+
+export interface ReportSubscription {
+  id: string;
+  name: string;
+  reportTemplateId: string;
+  agentId: string;
+  reportTheme: string;
+  period: string;
+  frequency: ReportSubscriptionFrequency;
+  cronExpression?: string;
+  runTime: string;
+  timezone: string;
+  holidayPolicy: ReportHolidayPolicy;
+  recipients: string[];
+  channels: ReportSubscriptionChannel[];
+  outputFormats: string[];
+  permissionPolicy: string;
+  nextRunAt: string;
+  lastRunAt?: string;
+  lastStatus: ReportRunStatus;
+  status: ReportSubscriptionStatus;
+  retryLimit: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  runs: ReportSubscriptionRun[];
+  pushRecords: ReportPushRecord[];
+}
+
 export type ReportTemplateStatus = 'draft' | 'published' | 'disabled';
 
 export type ReportTemplateChartType = 'line' | 'bar' | 'table' | 'pie' | 'metric-card';
@@ -224,6 +286,7 @@ export interface ReportTemplate {
   description: string;
   category: string;
   version: string;
+  createdAt?: string;
   status: ReportTemplateStatus;
   triggerPhrases: string[];
   templatePrompt: string;
@@ -337,9 +400,13 @@ export interface AnalysisProcessData {
   thoughtItems: string[];
   sql: string;
   resultPreview: AnalysisProcessResultPreview;
-  status: 'running' | 'completed' | 'interrupted';
+  status: 'running' | 'completed' | 'interrupted' | 'unavailable';
   visibleStepCount?: number;
   elapsedSeconds?: number;
+  matchStatus?: 'matched' | 'missing-agent' | 'missing-dataset';
+  matchMessage?: string;
+  sqlExecutionStatus?: 'pending' | 'success' | 'empty' | 'failed' | 'not-run';
+  sqlExecutionMessage?: string;
 }
 
 export interface Message {
@@ -357,6 +424,7 @@ export interface Message {
   visibleStepCount?: number;
   visibleMarkdownLineCount?: number;
   analysisSteps?: string[];
+  matchedReportTemplateName?: string;
   analysisSummary?: string;
   skillTrace?: SkillTrace[];
   routingTrace?: AgentRoutingTrace;

@@ -7,6 +7,16 @@
   scrollbar-width: thin;
 }
 
+button:not(:disabled),
+[role='button']:not([aria-disabled='true']) {
+  cursor: pointer;
+}
+
+button:disabled,
+[role='button'][aria-disabled='true'] {
+  cursor: not-allowed;
+}
+
 *::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -25,4 +35,26 @@
 
 *::-webkit-scrollbar-thumb:hover {
   background-color: #b8c0cc;
+}
+
+.history-scrollbar {
+  scrollbar-color: transparent transparent;
+  scrollbar-width: none;
+}
+
+.history-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.history-scrollbar::-webkit-scrollbar-thumb {
+  background-color: transparent;
+}
+
+.login-input:-webkit-autofill,
+.login-input:-webkit-autofill:hover,
+.login-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #1d2129;
+  box-shadow: 0 0 0 1000px #ffffff inset;
+  transition: background-color 9999s ease-out;
 }
