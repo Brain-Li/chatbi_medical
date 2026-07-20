@@ -21,11 +21,15 @@ import {
   ChartArea,
   ChartColumnStacked,
   ChartNoAxesCombined,
+  Check,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
+  CircleX,
   Database,
   Download,
+  FileText,
   FileSearch,
   LineChart as LineChartIcon,
   Loader2,
@@ -36,8 +40,9 @@ import {
   ThumbsDown,
   ThumbsUp,
   Wrench,
+  X,
 } from 'lucide-react';
-import { AgentRoutingTrace, AgentRuntimeConfig, AnalysisProcessData, Message, SkillTrace } from '../types';
+import { AgentRoutingTrace, AgentRuntimeConfig, AnalysisCandidateOption, AnalysisProcessData, AnalysisProcessStep, DeepAnalysisActivityId, Message, SkillTrace } from '../types';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { ReportSubscriptionDialog } from './ReportSubscriptionDialog';
 import {
@@ -49,11 +54,18 @@ import arrowRightUpLineIcon from '../../assets/figma-ask/arrow-right-up-line.svg
 import arrowUpSLineIcon from '../../assets/figma-ask/arrow-up-s-line.svg';
 import checkFillIcon from '../../assets/figma-ask/check-fill.svg';
 import copyLineIcon from '../../assets/figma-ask/file-copy-line.svg';
+import loadingLightIcon from '../../assets/figma-ask/loading-light.svg';
 import refreshLineIcon from '../../assets/figma-ask/refresh-line.svg';
 
 const chartColors = ['#2563eb', '#60a5fa', '#93c5fd', '#bfdbfe'];
 type AnalysisProcessVariant = 'timeline' | 'workspace';
 type BaseChartType = 'bar' | 'line' | 'pie';
+type FigmaStepState = 'done' | 'active' | 'pending' | 'stopped' | 'waiting' | 'needs-input';
+
+function isInterruptedQueryOutcome(scenarioCode: AnalysisProcessData['scenarioCode']) {
+  return scenarioCode === 'sql-execution-failed'
+    || scenarioCode === 'query-timeout';
+}
 
 const baseChartTypes: Array<{
   value: BaseChartType | 'stacked-bar' | 'stacked-area' | 'combo';
@@ -137,6 +149,77 @@ function ClarificationCard({
   );
 }
 
+function AssistantTextReply({
+  message,
+  onCandidateSelect,
+}: {
+  message: Message;
+  onCandidateSelect?: (option: AnalysisCandidateOption) => void;
+}) {
+  const options = message.analysisClarification?.options ?? [];
+  const selectedId = message.selectedAnalysisCandidateId;
+
+  return (
+    <div className="space-y-3 px-4 py-1" data-testid={`assistant-text-reply-${message.id}`}>
+      <p className="whitespace-pre-wrap break-words text-base leading-6 text-[#1d2129]">
+        {message.content}
+      </p>
+      {options.length > 0 ? (
+        <div className="grid grid-cols-2 gap-2">
+          {options.map((option) => {
+            const isSelected = selectedId === option.id;
+            const isDisabled = Boolean(selectedId);
+
+            return (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => onCandidateSelect?.(option)}
+                disabled={isDisabled}
+                aria-pressed={isSelected}
+                className={`h-[76px] rounded-[8px] border bg-white px-3.5 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25 ${
+                  isSelected
+                    ? 'border-[#165dff] bg-[#f7fbff]'
+                    : isDisabled
+                      ? 'cursor-default border-[#e5e6eb] opacity-60'
+                      : 'border-[#c9cdd4] hover:border-[#165dff] hover:bg-[#f7fbff]'
+                }`}
+              >
+                <span className="flex items-center justify-between gap-3">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate text-sm font-medium leading-[22px] text-[#1d2129]">
+                      {option.label}
+                    </span>
+                    {option.businessTopic ? (
+                      <>
+                        <span className="shrink-0 text-xs text-[#c9cdd4]">·</span>
+                        <span className="shrink-0 text-xs text-[#4e5969]">
+                          {option.businessTopic}
+                        </span>
+                      </>
+                    ) : null}
+                  </span>
+                  {isSelected ? (
+                    <span
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#165dff] text-white"
+                      aria-label="已选择"
+                    >
+                      <Check aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2.5} />
+                    </span>
+                  ) : null}
+                </span>
+                <span className="mt-1 block truncate text-xs leading-5 text-[#86909c]">
+                  {option.description}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function SkillTraceRow({
   skillTrace,
   onRerunSkill,
@@ -182,11 +265,6 @@ function getTimelineStepState(
   visibleStepCount: number,
 ): 'done' | 'active' | 'pending' | 'stopped' {
   if (status === 'completed') return 'done';
-  if (status === 'unavailable') {
-    if (index === 0) return 'done';
-    if (index === 1) return 'stopped';
-    return 'pending';
-  }
   if (status === 'interrupted') return index < visibleStepCount - 1 ? 'done' : 'stopped';
   if (index < visibleStepCount - 1) return 'done';
   if (index === visibleStepCount - 1) return 'active';
@@ -209,24 +287,14 @@ function FeedbackTooltip({ label, children }: { label: string; children: ReactNo
 }
 
 function getAnalysisProcessTitle(status: AnalysisProcessData['status']) {
-  if (status === 'interrupted') {
-    return '分析中断';
-  }
-
-  if (status === 'unavailable') {
-    return '无法继续分析';
-  }
-
-  if (status === 'completed') {
-    return '分析完成';
-  }
-
-  return '分析中';
+  if (status === 'running') return '正在分析';
+  if (status === 'interrupted') return '分析中断';
+  return '分析完成';
 }
 
 function getMessageAnalysisTitle(message: Message) {
   if (message.isGenerating) {
-    return '分析中';
+    return '正在分析';
   }
 
   if (message.isInterrupted) {
@@ -437,11 +505,13 @@ function FigmaStepIcon({
   state,
 }: {
   index: number;
-  state: 'done' | 'active' | 'pending' | 'stopped';
+  state: FigmaStepState;
 }) {
   const isDone = state === 'done';
   const isActive = state === 'active';
-  const isStopped = state === 'stopped';
+  const isWaiting = state === 'waiting';
+  const needsInput = state === 'needs-input';
+  const isUnfinished = state === 'stopped' || isWaiting || needsInput;
 
   return (
     <span
@@ -449,15 +519,17 @@ function FigmaStepIcon({
         isDone
           ? 'border-[#165dff] bg-[#e8f3ff]'
           : isActive
-            ? 'border-transparent bg-transparent text-[#165dff] shadow-none'
-            : isStopped
-              ? 'border-amber-300 bg-amber-50 text-amber-700'
+            ? 'border-transparent bg-transparent shadow-none'
+            : isUnfinished
+              ? 'border-red-300 bg-red-50 text-red-600'
               : 'border-[#c9cdd4] bg-white text-[#86909c]'
       }`}
     >
       {isDone ? <img alt="" src={checkFillIcon} className="h-[10.667px] w-[10.667px]" /> : null}
-      {isActive ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-      {isStopped ? <AlertTriangle className="h-3 w-3" /> : null}
+      {isActive ? (
+        <span className="h-4 w-4 shrink-0 rounded-full border border-[#165dff] border-r-[#e8f3ff] animate-spin motion-reduce:animate-none" />
+      ) : null}
+      {isUnfinished ? <X className="h-[10.667px] w-[10.667px]" strokeWidth={2.5} /> : null}
       {state === 'pending' ? index + 1 : null}
     </span>
   );
@@ -473,19 +545,19 @@ function FigmaTimelineStep({
   index: number;
   title: string;
   children: ReactNode;
-  state: 'done' | 'active' | 'pending' | 'stopped';
+  state: FigmaStepState;
   isLast?: boolean;
 }) {
   return (
-    <div className="relative grid grid-cols-[16px_1fr] gap-2 pb-4 last:pb-0">
+    <div className="relative grid grid-cols-[24px_1fr] gap-2 pb-4 last:pb-0">
       {!isLast ? (
-        <div className="absolute left-2 top-[19px] h-[calc(100%-19px)] w-px bg-[#e5e6eb]" />
+        <div className="absolute left-3 top-[19px] h-[calc(100%-19px)] w-px bg-[#e5e6eb]" />
       ) : null}
-      <div className="mt-[3px]">
+      <div className="flex h-6 items-center justify-center">
         <FigmaStepIcon index={index} state={state} />
       </div>
       <div className="min-w-0">
-        <div className="text-sm font-semibold leading-[22px] text-[#1d2129]">{title}</div>
+        <div className="text-sm font-medium leading-[22px] text-[#1d2129]">{title}</div>
         <div className="mt-2">{children}</div>
       </div>
     </div>
@@ -515,13 +587,21 @@ function FigmaInfoCard({
   );
 }
 
-function FigmaChip({ tone = 'neutral', children }: { tone?: 'neutral' | 'blue'; children: ReactNode }) {
+function FigmaChip({
+  tone = 'neutral',
+  children,
+}: {
+  tone?: 'neutral' | 'skill' | 'mcp';
+  children: ReactNode;
+}) {
   return (
     <span
       className={`inline-flex min-h-[26px] max-w-full items-center rounded px-2 text-sm leading-[22px] whitespace-normal break-words ${
-        tone === 'blue'
-          ? 'border border-blue-100 bg-[#e8f3ff] text-[#165dff]'
-          : 'bg-[#f7f8fa] text-[#1d2129]'
+        tone === 'skill'
+          ? 'bg-[#f2f3f5] text-[#4e5969]'
+          : tone === 'mcp'
+            ? 'bg-[#e8f3ff] text-[#165dff]'
+            : 'bg-[#f7f8fa] text-[#1d2129]'
       }`}
     >
       {children}
@@ -532,24 +612,22 @@ function FigmaChip({ tone = 'neutral', children }: { tone?: 'neutral' | 'blue'; 
 function FigmaAnalysisProcessContent({
   processData,
   routingTrace,
-  onRetry,
 }: {
   processData: AnalysisProcessData;
   routingTrace?: AgentRoutingTrace;
-  onRetry?: () => void;
 }) {
   const metrics = processData.metrics.slice(0, 3);
-  const dimensions = processData.dimensions.slice(0, 2);
+  const dimensions = processData.dimensions.slice(0, 3);
+  const matchedMcpNames = Array.from(
+    new Set((processData.mcpMatches ?? []).map((capability) => capability.serverName).filter(Boolean)),
+  );
   const questionUnderstanding = [
-    `用户想分析“${processData.question}”`,
+    `用户想分析“${processData.question}”背后的业务原因`,
     metrics.length ? `需要围绕${metrics.join('、')}` : '',
     dimensions.length ? `按${dimensions.join('、')}拆解变化` : '',
     processData.timeRange ? `时间范围锁定为${processData.timeRange}` : '',
+    '并结合知识依据与取数结果判断主要驱动因素',
   ].filter(Boolean).join('，') + '。';
-  const matchStatus = processData.matchStatus ?? 'matched';
-  const sqlExecutionStatus = processData.sqlExecutionStatus ?? (
-    processData.status === 'completed' ? 'success' : processData.status === 'running' ? 'pending' : 'not-run'
-  );
   const [isSqlCopied, setIsSqlCopied] = useState(false);
   const sqlCopyFeedbackTimerRef = useRef<number | null>(null);
 
@@ -569,142 +647,156 @@ function FigmaAnalysisProcessContent({
     }
     sqlCopyFeedbackTimerRef.current = window.setTimeout(() => setIsSqlCopied(false), 1600);
   };
-  const visibleStepCount = processData.status === 'completed' || processData.status === 'unavailable'
-    ? 3
-    : Math.min(Math.max(processData.visibleStepCount ?? 1, 1), 3);
-  const activeStepIndex = processData.status === 'running' ? visibleStepCount - 1 : null;
-  const stepText = [
-    questionUnderstanding,
-    '本次分析已匹配：',
-    processData.sql,
+  const legacyStepDefinitions: Array<Pick<AnalysisProcessStep, 'id' | 'title'>> = [
+    { id: 'understand-question', title: '理解用户问题' },
+    { id: 'resolve-data-scope', title: '确定数据口径' },
+    { id: 'match-capability', title: '匹配分析能力' },
+    { id: 'retrieve-knowledge', title: '检索知识依据' },
+    { id: 'generate-query', title: '执行查询语句' },
+    { id: 'execute-query', title: '执行数据查询' },
   ];
-  const activeStepText = activeStepIndex === null ? '' : stepText[activeStepIndex] ?? '';
-  const [visibleCharacterCount, setVisibleCharacterCount] = useState(0);
+  const visibleStepCount = Math.min(
+    Math.max(processData.visibleStepCount ?? (processData.status === 'completed' ? 6 : 1), 1),
+    6,
+  );
+  const processSteps = (processData.steps ?? legacyStepDefinitions
+    .slice(0, visibleStepCount)
+    .map((step, index, visibleSteps): AnalysisProcessStep => ({
+      ...step,
+      status:
+        processData.status === 'completed'
+          ? 'completed'
+          : processData.status === 'interrupted' && index === visibleSteps.length - 1
+            ? 'interrupted'
+            : index === visibleSteps.length - 1
+              ? 'running'
+              : 'completed',
+    })))
+    .map((step) => step.id === 'generate-query'
+      ? {
+          ...step,
+          title: '执行查询语句',
+          status: processData.scenarioCode === 'empty-result'
+            ? 'completed'
+            : isInterruptedQueryOutcome(processData.scenarioCode)
+              ? 'failed'
+              : step.status,
+        }
+      : step)
+    .filter((step) => step.id !== 'execute-query');
 
-  useEffect(() => {
-    if (activeStepIndex === null || !activeStepText) {
-      setVisibleCharacterCount(activeStepText.length);
-      return;
+  const renderStepContent = (step: AnalysisProcessStep) => {
+    if (step.status === 'needs-input' && step.detail) {
+      return <p className="text-sm leading-[22px] text-[#4e5969]">{step.detail}</p>;
     }
 
-    setVisibleCharacterCount(0);
-    const characterChunkSize = Math.max(1, Math.ceil(activeStepText.length / 26));
-    let characterCount = 0;
-    const timer = window.setInterval(() => {
-      characterCount = Math.min(activeStepText.length, characterCount + characterChunkSize);
-      setVisibleCharacterCount(characterCount);
-      if (characterCount >= activeStepText.length) {
-        window.clearInterval(timer);
+    const isBlocked = step.status === 'failed' || step.status === 'interrupted';
+    if (isBlocked && step.detail) {
+      return <p className="text-sm leading-[22px] text-[#4e5969]">{step.detail}</p>;
+    }
+
+    if (step.id === 'understand-question') {
+      if (step.detail) {
+        return <p className="text-sm leading-[22px] text-[#4e5969]">{step.detail}</p>;
       }
-    }, 36);
 
-    return () => window.clearInterval(timer);
-  }, [activeStepIndex, activeStepText]);
+      return <p className="text-sm leading-[22px] text-[#4e5969]">{questionUnderstanding}</p>;
+    }
 
-  const getStreamedStepText = (text: string, stepIndex: number) =>
-    activeStepIndex === stepIndex ? text.slice(0, visibleCharacterCount) : text;
-  const isActiveStepTextComplete = (stepIndex: number) =>
-    activeStepIndex !== stepIndex || visibleCharacterCount >= (stepText[stepIndex]?.length ?? 0);
-  const visibleQuestionUnderstanding = getStreamedStepText(questionUnderstanding, 0);
-  const visibleMatchingSummary = getStreamedStepText(stepText[1], 1);
-  const visibleSql = getStreamedStepText(processData.sql, 2);
-  const isMatchingDetailVisible = isActiveStepTextComplete(1);
-  const isSqlContentComplete = isActiveStepTextComplete(2);
-  const steps = [
-    {
-      title: '问题理解',
-      content: <p className="text-sm leading-[22px] text-[#4e5969]" aria-live="polite">{visibleQuestionUnderstanding}</p>,
-    },
-    {
-      title: '匹配数据与能力',
-      content: matchStatus === 'matched' ? (
-        <div className="flex flex-wrap items-center gap-2 text-sm leading-[22px] text-[#4e5969]">
-          <span aria-live="polite">{visibleMatchingSummary}</span>
-          {isMatchingDetailVisible ? <FigmaChip>数据集 · {processData.datasetName || '暂未匹配'}</FigmaChip> : null}
-          {isMatchingDetailVisible && routingTrace?.agentName ? <FigmaChip tone="blue">Agent · {routingTrace.agentName}</FigmaChip> : null}
+    if (step.id === 'resolve-data-scope') {
+      return (
+        <div>
+          {step.detail ? <p className="text-sm leading-[22px] text-[#4e5969]">{step.detail}</p> : null}
+          <div className={`${step.detail ? 'mt-2 ' : ''}flex flex-wrap items-center gap-x-4 gap-y-2 text-sm leading-[22px]`}>
+            <span className="inline-flex items-center gap-2"><span className="text-[#4e5969]">数据集</span><FigmaChip>{processData.datasetName || '暂未匹配'}</FigmaChip></span>
+            <span className="inline-flex items-center gap-2"><span className="text-[#4e5969]">指标</span><FigmaChip>{metrics.join('、') || '待确认'}</FigmaChip></span>
+            <span className="inline-flex items-center gap-2"><span className="text-[#4e5969]">维度</span><FigmaChip>{dimensions.join('、') || '默认维度'}</FigmaChip></span>
+            {processData.timeRange ? <span className="inline-flex items-center gap-2"><span className="text-[#4e5969]">时间范围</span><FigmaChip>{processData.timeRange}</FigmaChip></span> : null}
+          </div>
         </div>
-      ) : (
-        <div className="rounded-[8px] border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm leading-[22px] text-amber-800">
-          {processData.matchMessage}
+      );
+    }
+
+    if (step.id === 'match-capability') {
+      return (
+        <div className="flex flex-wrap items-center gap-2">
+          {processData.skillMatches.map((skill) => <FigmaChip key={skill.id} tone="skill">Skill：{skill.name}</FigmaChip>)}
+          {matchedMcpNames.map((name) => <FigmaChip key={name} tone="mcp">MCP：{name}</FigmaChip>)}
+          {!routingTrace?.agentName && !processData.skillMatches.length && !matchedMcpNames.length ? <FigmaChip>本次未匹配可用能力</FigmaChip> : null}
         </div>
-      ),
-    },
-    {
-      title: '执行取数 SQL',
-      content: (
-        <div className="space-y-2">
-          {processData.sql ? (
-            <div className="relative max-h-[366px] rounded-[8px] border border-[#e5e6eb] bg-[#f7f8fa] py-2">
-              {isSqlContentComplete ? (
-                <button
-                  type="button"
-                  className={`absolute right-4 top-4 flex h-6 w-6 items-center justify-center rounded hover:bg-white ${
-                    isSqlCopied ? 'text-emerald-600' : ''
-                  }`}
-                  onClick={handleCopySql}
-                  aria-label={isSqlCopied ? 'SQL 已复制' : '复制 SQL'}
-                  title={isSqlCopied ? '已复制' : '复制 SQL'}
-                >
-                  {isSqlCopied ? <CheckCircle2 className="h-4 w-4" /> : <img alt="" src={copyLineIcon} className="h-4 w-4" />}
-                </button>
-              ) : null}
-              {isSqlCopied ? (
-                <span
-                  role="status"
-                  className="absolute right-12 top-3.5 rounded bg-emerald-50 px-2 py-1 text-xs text-emerald-700"
-                >
-                  已复制
-                </span>
-              ) : null}
-              <div className="max-h-[350px] overflow-auto px-3 py-2 pr-10 font-mono text-[13px] leading-5 text-[#1d2129]">
-                {visibleSql.split('\n').map((line, index) => (
-                  <p key={`${line}-${index}`} className="whitespace-pre">
-                    {line}
-                  </p>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="rounded-[8px] border border-[#e5e6eb] bg-[#f7f8fa] px-3 py-2.5 text-sm leading-[22px] text-[#4e5969]">
-              {processData.sqlExecutionMessage ?? '本次暂未生成 SQL 预览。'}
-            </div>
-          )}
-          {sqlExecutionStatus === 'failed' && onRetry ? (
+      );
+    }
+
+    if (step.id === 'retrieve-knowledge') {
+      return (
+        <div className="flex flex-wrap items-center gap-2">
+          {processData.knowledgeHits.length
+            ? processData.knowledgeHits.slice(0, 3).map((hit) => <FigmaChip key={hit.id}>{hit.documentTitle}</FigmaChip>)
+            : <FigmaChip>{step.detail || '本次未引用知识依据'}</FigmaChip>}
+        </div>
+      );
+    }
+
+    const canShowSql = Boolean(processData.sql);
+    if (!canShowSql) {
+      return (
+        <div className="rounded-[8px] border border-[#e5e6eb] bg-[#f7f8fa] px-3 py-2.5 text-sm leading-[22px] text-[#4e5969]">
+          {step.detail || (step.status === 'completed' ? '查询语句已生成。' : '暂未生成查询语句。')}
+        </div>
+      );
+    }
+
+    return (
+      <div className="relative max-h-[366px] rounded-[8px] border border-[#e5e6eb] bg-[#f7f8fa] py-2">
+        <AppTooltip delayDuration={240}>
+          <TooltipTrigger asChild>
             <button
               type="button"
-              onClick={onRetry}
-              className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700"
+              className={`absolute right-4 top-3.5 inline-flex h-7 items-center justify-center gap-1 rounded-md text-xs transition-colors ${isSqlCopied ? 'bg-emerald-50 px-2 text-emerald-700' : 'w-7 text-[#86909c] hover:bg-white hover:text-[#4e5969]'}`}
+              onClick={handleCopySql}
+              aria-label={isSqlCopied ? 'SQL 已复制' : '复制 SQL'}
             >
-              <RefreshCw className="h-3.5 w-3.5" />
-              重试
+              {isSqlCopied ? <><CheckCircle2 className="h-4 w-4" /><span>已复制</span></> : <img alt="" src={copyLineIcon} className="h-4 w-4" />}
             </button>
-          ) : null}
-          {sqlExecutionStatus === 'empty' ? (
-            <div className="rounded-[8px] border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm leading-[22px] text-amber-800">
-              {processData.sqlExecutionMessage}
-            </div>
-          ) : null}
-          {sqlExecutionStatus === 'failed' ? (
-            <div className="rounded-[8px] border border-red-200 bg-red-50 px-3 py-2.5 text-sm leading-[22px] text-red-700">
-              {processData.sqlExecutionMessage}
-            </div>
-          ) : null}
-        </div>
-      ),
-    },
-  ].slice(0, visibleStepCount);
+          </TooltipTrigger>
+          <TooltipContent
+            side="top"
+            align="center"
+            sideOffset={8}
+            showArrow={false}
+            className="relative rounded-[4px] bg-[#1d2129] px-3 py-1 text-center font-['PingFang_SC'] text-[14px] font-normal leading-[22px] tracking-normal text-white whitespace-nowrap shadow-none"
+          >
+            {isSqlCopied ? '已复制' : '复制 SQL'}
+            <span
+              aria-hidden="true"
+              className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[5px] border-t-[4px] border-x-transparent border-t-[#1d2129]"
+            />
+          </TooltipContent>
+        </AppTooltip>
+        <pre className="max-h-[350px] overflow-auto whitespace-pre px-3 py-2 pr-24 font-mono text-[13px] leading-5 text-[#1d2129]">{processData.sql}</pre>
+      </div>
+    );
+  };
+
+  const getStepState = (step: AnalysisProcessStep) => {
+    if (step.status === 'completed') return 'done' as const;
+    if (step.status === 'running') return 'active' as const;
+    if (step.status === 'awaiting-confirmation') return 'waiting' as const;
+    if (step.status === 'needs-input') return 'needs-input' as const;
+    return 'stopped' as const;
+  };
 
   return (
-    <div className="border-t border-[#e5e6eb] bg-white p-4">
-      {steps.map((step, index) => (
+    <div className="border-t border-[#e5e6eb] bg-white p-4 font-['Login_Figma_Sans','PingFang_SC','Microsoft_YaHei',sans-serif]">
+      {processSteps.map((step, index) => (
         <FigmaTimelineStep
-          key={step.title}
+          key={step.id}
           index={index}
           title={step.title}
-          state={getTimelineStepState(processData.status, index, visibleStepCount)}
-          isLast={index === steps.length - 1}
+          state={getStepState(step)}
+          isLast={index === processSteps.length - 1}
         >
-          {step.content}
+          {renderStepContent(step)}
         </FigmaTimelineStep>
       ))}
     </div>
@@ -719,7 +811,7 @@ function AnalysisProcessContent({ processData }: { processData: AnalysisProcessD
 
   const steps = [
     {
-      title: '理解问题',
+      title: '理解用户问题',
       content: (
         <div className="space-y-2.5">
           <div className="rounded-md border border-gray-200 bg-white px-3.5 py-3">
@@ -744,7 +836,7 @@ function AnalysisProcessContent({ processData }: { processData: AnalysisProcessD
       ),
     },
     {
-      title: '选择能力与工具',
+      title: '匹配分析能力',
       content: (
         <div className="space-y-2.5">
           <div className="flex flex-wrap gap-2">
@@ -788,7 +880,7 @@ function AnalysisProcessContent({ processData }: { processData: AnalysisProcessD
       ),
     },
     {
-      title: '生成取数 SQL',
+      title: '执行查询语句',
       content: <SqlPreviewCard sql={processData.sql} />,
     },
     {
@@ -822,163 +914,355 @@ function AnalysisProcessContent({ processData }: { processData: AnalysisProcessD
   );
 }
 
-function getWorkspaceProcessState(
+type WorkspaceActivityState = 'completed' | 'running' | 'pending' | 'interrupted';
+
+function getWorkspaceActivityState(
   status: AnalysisProcessData['status'],
   index: number,
   visibleStepCount: number,
-): 'done' | 'active' | 'pending' | 'stopped' {
-  if (status === 'completed') return 'done';
-  if (status === 'unavailable') return index === 1 ? 'stopped' : index < 1 ? 'done' : 'pending';
-  if (status === 'interrupted') return index < visibleStepCount - 1 ? 'done' : 'stopped';
-  if (index < visibleStepCount - 1) return 'done';
-  if (index === visibleStepCount - 1) return 'active';
+): WorkspaceActivityState {
+  if (status === 'completed') return 'completed';
+  if (status === 'interrupted') {
+    if (index < visibleStepCount - 1) return 'completed';
+    if (index === visibleStepCount - 1) return 'interrupted';
+    return 'pending';
+  }
+  if (index < visibleStepCount - 1) return 'completed';
+  if (index === visibleStepCount - 1) return 'running';
   return 'pending';
 }
 
-function WorkspaceProcessItem({
-  icon,
-  label,
-  detail,
+function WorkspaceActivityItem({
+  id,
+  title,
+  summary,
   state,
+  icon,
+  isSelected,
+  isLast,
+  onSelect,
 }: {
+  id: DeepAnalysisActivityId;
+  title: string;
+  summary: string;
+  state: WorkspaceActivityState;
   icon: ReactNode;
-  label: string;
-  detail: string;
-  state: 'done' | 'active' | 'pending' | 'stopped';
+  isSelected: boolean;
+  isLast: boolean;
+  onSelect: (id: DeepAnalysisActivityId) => void;
 }) {
-  const isActive = state === 'active';
-  const isDone = state === 'done';
-  const isStopped = state === 'stopped';
+  const itemRef = useRef<HTMLDivElement>(null);
+  const stateLabel = state === 'completed' ? '已完成' : state === 'running' ? '进行中' : state === 'interrupted' ? '已中断' : '等待中';
+
+  useEffect(() => {
+    if (state !== 'running' || !isSelected) return;
+    const frame = window.requestAnimationFrame(() => {
+      itemRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isSelected, state]);
 
   return (
-    <div
-      className={`inline-flex max-w-full items-center gap-2 rounded-full px-3 py-2 text-[13px] leading-5 transition-colors ${
-        isActive
-          ? 'bg-blue-50 text-blue-700'
-          : isDone
-            ? 'bg-gray-100 text-gray-700'
-            : isStopped
-              ? 'bg-amber-50 text-amber-700'
-              : 'bg-gray-50 text-gray-400'
-      }`}
-    >
-      <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-        {isActive ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : isDone ? (
-          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-        ) : isStopped ? (
-          <AlertTriangle className="h-4 w-4" />
-        ) : (
-          icon
-        )}
-      </span>
-      <span className="shrink-0 font-medium">{label}</span>
-      <span className="min-w-0 truncate text-gray-500">{detail}</span>
+    <div ref={itemRef} className="relative pb-1.5 last:pb-0">
+      {!isLast ? (
+        <span
+          aria-hidden="true"
+          className={`pointer-events-none absolute bottom-[-11px] left-[15.5px] top-[27px] z-10 w-px ${
+            state === 'completed' ? 'bg-[#bedaff]' : 'bg-[#e5e6eb]'
+          }`}
+        />
+      ) : null}
+      <button
+        type="button"
+        onClick={() => onSelect(id)}
+        aria-current={isSelected ? 'step' : undefined}
+        aria-label={`${title}，${stateLabel}，查看步骤详情`}
+        className={`flex w-full min-w-0 items-start gap-2 rounded-[8px] p-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
+          isSelected ? 'bg-[#e8f3ff]' : 'hover:bg-[#f7f8fa]'
+        }`}
+      >
+        <span className={`flex h-[22px] w-4 shrink-0 items-center justify-center ${
+          state === 'completed' || state === 'running' ? 'text-[#165dff]' : state === 'interrupted' ? 'text-[#f53f3f]' : 'text-[#86909c]'
+        }`}>
+          {state === 'completed' ? <CheckCircle2 className="h-4 w-4" /> : state === 'running' ? <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : state === 'interrupted' ? <CircleX className="h-4 w-4" /> : icon}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 items-center gap-1">
+            <span className={`min-w-0 text-sm font-medium leading-[22px] ${isSelected ? 'text-[#165dff]' : 'text-[#1d2129]'}`}>{title}</span>
+            {state === 'completed' || state === 'running' || state === 'interrupted' ? (
+              <span className="sr-only">，{stateLabel}</span>
+            ) : (
+              <span className="shrink-0 text-xs leading-[18px] text-[#86909c]">{stateLabel}</span>
+            )}
+          </span>
+          <span className={`mt-0.5 block truncate text-sm font-normal leading-[22px] ${isSelected ? 'text-[#4e5969]' : 'text-[#86909c]'}`}>
+            {summary}
+          </span>
+        </span>
+      </button>
     </div>
   );
 }
 
-export function WorkspaceAnalysisProcessContent({ processData }: { processData: AnalysisProcessData }) {
-  const primaryMetrics = processData.metrics.slice(0, 3).join('、') || '核心指标';
-  const primaryDimensions = processData.dimensions.slice(0, 3).join('、') || '默认维度';
-  const timeScopeText = processData.timeRange ? `，时间范围锁定为${processData.timeRange}` : '';
-  const thoughtText =
-    processData.thoughtItems[0] ??
-    `需要围绕“${processData.question}”先确定指标口径，再按${primaryDimensions}拆解变化并寻找主要贡献因素。`;
-  const actionText = `行动：先确认${primaryMetrics}的诊断口径${timeScopeText}，再检索知识依据、查询数据并生成实时结果。`;
-  const knowledgeTarget =
-    processData.knowledgeHits[0]?.documentTitle ?? '知识文档、规则口径和合规说明';
-  const skillTarget =
-    processData.skillMatches.slice(0, 2).map((skill) => skill.name).join('、') ||
-    processData.mcpMatches.slice(0, 2).map((capability) => capability.name).join('、') ||
-    '分析能力与工具链';
-  const visibleStepCount = Math.min(
-    Math.max(processData.visibleStepCount ?? 6, 1),
-    6,
+function WorkspaceReportFileCard({
+  fileName,
+  state,
+  feedback,
+  isSelected,
+  onSelect,
+  onFeedbackChange,
+  onRegenerate,
+}: {
+  fileName: string;
+  state: Extract<WorkspaceActivityState, 'running' | 'completed' | 'interrupted'>;
+  feedback?: 'like' | 'dislike';
+  isSelected: boolean;
+  onSelect: (id: DeepAnalysisActivityId) => void;
+  onFeedbackChange?: (feedback: 'like' | 'dislike') => void;
+  onRegenerate?: () => void;
+}) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  const stateLabel = state === 'completed' ? '已生成' : state === 'running' ? '生成中' : '生成已中断';
+  const actionButtonClassName =
+    'inline-flex h-8 w-8 items-center justify-center rounded bg-white p-2 text-gray-500 hover:bg-[#f7f8fa]';
+
+  useEffect(() => {
+    if (state !== 'running' || !isSelected) return;
+    const frame = window.requestAnimationFrame(() => {
+      cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isSelected, state]);
+
+  return (
+    <div
+      ref={cardRef}
+      className="mr-auto mt-3 w-full max-w-[640px] xl:w-[90%]"
+      data-testid="workspace-report-file-card"
+    >
+      <div className={`overflow-hidden rounded-[10px] border bg-white transition-colors ${
+          isSelected
+            ? 'border-[#94bfff] bg-[#f7fbff]'
+            : 'border-[#e5e6eb] hover:border-[#bedaff] hover:bg-[#f7f8fa]'
+        }`}>
+        <button
+          type="button"
+          onClick={() => onSelect('draft-report')}
+          aria-current={isSelected ? 'page' : undefined}
+          aria-label={`${fileName}，${stateLabel}，查看报告文件`}
+          className="flex min-h-[68px] w-full min-w-0 items-center gap-3 px-4 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#165dff]/20"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] bg-[#e8f3ff] text-[#165dff]">
+            <FileText className="h-[18px] w-[18px]" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-normal leading-[22px] text-[#1d2129]">
+              {fileName}
+            </span>
+            {state !== 'completed' ? (
+              <span className="mt-1.5 flex min-w-0 items-center gap-3">
+                <span
+                  className="h-1 w-full max-w-[220px] overflow-hidden rounded-full bg-[#e5e6eb]"
+                  role="progressbar"
+                  aria-label="报告文件生成状态"
+                  aria-valuetext={state === 'running' ? '生成中' : '已中断'}
+                >
+                  <span
+                    className={`block h-full rounded-full ${
+                      state === 'interrupted'
+                        ? 'w-2/5 bg-[#f53f3f]'
+                        : 'report-progress-indeterminate w-[32%] bg-[#165dff]'
+                    }`}
+                  />
+                </span>
+                <span className={`shrink-0 text-xs leading-[18px] ${state === 'interrupted' ? 'text-[#f53f3f]' : 'text-[#86909c]'}`}>
+                  {state === 'running' ? '生成中' : '已中断'}
+                </span>
+              </span>
+            ) : null}
+          </span>
+          <span className="flex h-9 w-7 shrink-0 items-center justify-end text-[#86909c]">
+            <ChevronRight className="h-4 w-4" />
+          </span>
+          <span className="sr-only">{stateLabel}</span>
+        </button>
+      </div>
+      {state === 'completed' && (onFeedbackChange || onRegenerate) ? (
+        <div className="mt-2 flex flex-wrap items-center justify-start py-[5px]" aria-label="报告操作">
+          {onFeedbackChange ? (
+            <>
+              <FeedbackTooltip label="点赞">
+                <button
+                  type="button"
+                  onClick={() => onFeedbackChange('like')}
+                  className={`${actionButtonClassName} ${
+                    feedback === 'like' ? 'bg-blue-50 text-blue-600 hover:bg-blue-50 hover:text-blue-600' : ''
+                  }`}
+                  aria-label="点赞"
+                  aria-pressed={feedback === 'like'}
+                >
+                  <ThumbsUp className={`h-4 w-4 ${feedback === 'like' ? 'fill-blue-600' : ''}`} />
+                </button>
+              </FeedbackTooltip>
+              <FeedbackTooltip label="点踩">
+                <button
+                  type="button"
+                  onClick={() => onFeedbackChange('dislike')}
+                  className={`${actionButtonClassName} ${
+                    feedback === 'dislike' ? 'bg-red-50 text-red-600 hover:bg-red-50 hover:text-red-600' : ''
+                  }`}
+                  aria-label="点踩"
+                  aria-pressed={feedback === 'dislike'}
+                >
+                  <ThumbsDown className={`h-4 w-4 ${feedback === 'dislike' ? 'fill-red-600' : ''}`} />
+                </button>
+              </FeedbackTooltip>
+            </>
+          ) : null}
+          {onFeedbackChange && onRegenerate ? <span className="h-4 w-px bg-[#e5e6eb]" aria-hidden="true" /> : null}
+          {onRegenerate ? (
+            <FeedbackTooltip label="重新分析">
+              <button
+                type="button"
+                onClick={onRegenerate}
+                className={actionButtonClassName}
+                aria-label="重新分析"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </button>
+            </FeedbackTooltip>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
   );
-  const toolVisibleCount =
-    processData.status === 'completed'
-      ? 5
-      : Math.max(0, Math.min(visibleStepCount - 1, 5));
-  const tools = [
+}
+
+export function WorkspaceAnalysisProcessContent({
+  processData,
+  reportState,
+  reportFileName,
+  reportFeedback,
+  selectedActivityId,
+  onActivitySelect,
+  onReportFeedbackChange,
+  onReportRegenerate,
+}: {
+  processData: AnalysisProcessData;
+  reportState?: Extract<WorkspaceActivityState, 'running' | 'completed' | 'interrupted'>;
+  reportFileName?: string;
+  reportFeedback?: 'like' | 'dislike';
+  selectedActivityId?: DeepAnalysisActivityId;
+  onActivitySelect?: (id: DeepAnalysisActivityId) => void;
+  onReportFeedbackChange?: (feedback: 'like' | 'dislike') => void;
+  onReportRegenerate?: () => void;
+}) {
+  const visibleStepCount = Math.min(Math.max(processData.visibleStepCount ?? 7, 1), 7);
+  const metrics = processData.metrics.slice(0, 3);
+  const capabilityCalls = [
+    ...processData.skillMatches.map((skill) => `Skill：${skill.name}`),
+    ...processData.mcpMatches.map((mcp) => `MCP 工具：${mcp.name}`),
+  ];
+  const capabilityExecutionTitle = processData.skillMatches.length && processData.mcpMatches.length
+    ? '调用 Skill 和 MCP'
+    : processData.mcpMatches.length
+      ? '调用 MCP 工具'
+      : processData.skillMatches.length
+        ? '调用 Skill'
+        : '执行分析任务';
+  const capabilityExecutionSummary = capabilityCalls.length > 2
+    ? `${capabilityCalls.slice(0, 2).join(' · ')} 等 ${capabilityCalls.length} 项`
+    : capabilityCalls.join(' · ') || '本次无需调用额外能力';
+  const isWebTask = processData.knowledgeHits.some((hit) => /网页|官网|外部|http|政策法规/i.test(`${hit.documentSource} ${hit.documentType}`))
+    || processData.mcpMatches.some((mcp) => /网页|搜索|浏览|web|browser/i.test(`${mcp.name} ${mcp.serverName}`));
+  const plannedTaskCount = processData.plannedTaskCount ?? processData.steps?.filter(
+    (step) => step.id !== 'understand-intent' && step.id !== 'plan-analysis',
+  ).length ?? 0;
+  const activities: Array<{
+    id: DeepAnalysisActivityId;
+    title: string;
+    summary: string;
+    icon: ReactNode;
+    state?: WorkspaceActivityState;
+  }> = [
     {
-      label: '正在搜索',
-      doneLabel: '已搜索',
-      detail: knowledgeTarget,
-      icon: <Search className="h-4 w-4" />,
+      id: 'understand-intent' as const,
+      title: '理解用户问题',
+      summary: `明确分析目标：${metrics.join('、') || '核心指标'}分析`,
+      icon: <Sparkles className="h-4 w-4" />,
     },
     {
-      label: '正在查询',
-      doneLabel: '已查询',
-      detail: `${processData.datasetName} · ${primaryMetrics}`,
-      icon: <Database className="h-4 w-4" />,
-    },
-    {
-      label: '正在调用',
-      doneLabel: '已调用',
-      detail: skillTarget,
-      icon: <Wrench className="h-4 w-4" />,
-    },
-    {
-      label: '正在生成',
-      doneLabel: '已生成',
-      detail: '取数 SQL 与维度下钻路径',
+      id: 'plan-analysis' as const,
+      title: '规划分析任务',
+      summary: plannedTaskCount > 0 ? `共规划 ${plannedTaskCount} 个分析任务` : '正在规划分析任务',
       icon: <FileSearch className="h-4 w-4" />,
     },
     {
-      label: '正在总结',
-      doneLabel: '已总结',
-      detail: processData.resultPreview.title,
-      icon: <Sparkles className="h-4 w-4" />,
+      id: 'resolve-data-scope' as const,
+      title: '确定数据口径',
+      summary: `${processData.datasetName || '待确认数据集'}${processData.timeRange ? ` · ${processData.timeRange}` : ''}`,
+      icon: <Database className="h-4 w-4" />,
+    },
+    {
+      id: 'load-skills' as const,
+      title: '匹配分析能力',
+      summary: `匹配到 ${processData.skillMatches.length} 个 Skill、${processData.mcpMatches.length} 个 MCP`,
+      icon: <Wrench className="h-4 w-4" />,
+    },
+    {
+      id: 'execute-skills' as const,
+      title: capabilityExecutionTitle,
+      summary: capabilityExecutionSummary,
+      icon: <Wrench className="h-4 w-4" />,
+    },
+    {
+      id: 'retrieve-knowledge' as const,
+      title: isWebTask ? '搜索并浏览网页' : '检索知识依据',
+      summary: processData.knowledgeHits.length ? `已获取 ${processData.knowledgeHits.length} 条知识依据` : '检索业务口径、规则与分析依据',
+      icon: <Search className="h-4 w-4" />,
+    },
+    {
+      id: 'execute-query' as const,
+      title: '执行数据查询',
+      summary: processData.sql ? '已生成取数 SQL 和维度下钻路径' : '等待生成查询语句',
+      icon: <FileSearch className="h-4 w-4" />,
     },
   ];
+  const visibleActivities = processData.status === 'completed'
+    ? activities
+    : activities.slice(0, Math.min(visibleStepCount, activities.length));
 
   return (
-    <div className="space-y-3 px-1 py-1" data-process-layout="workspace-v2">
-      <div className="text-sm font-medium leading-6 text-gray-800">
-        已接收到你的任务，将立即开始处理...
+    <div
+      data-process-layout="workspace-v3"
+      className="font-['Login_Figma_Sans','PingFang_SC','Microsoft_YaHei',sans-serif]"
+    >
+      <div>
+        {visibleActivities.map((activity, index) => (
+          <WorkspaceActivityItem
+            key={activity.id}
+            id={activity.id}
+            title={activity.title}
+            summary={activity.summary}
+            state={activity.state ?? getWorkspaceActivityState(processData.status, index, visibleStepCount)}
+            icon={activity.icon}
+            isSelected={selectedActivityId === activity.id}
+            isLast={index === visibleActivities.length - 1}
+            onSelect={onActivitySelect ?? (() => {})}
+          />
+        ))}
+        {reportState && reportFileName ? (
+          <WorkspaceReportFileCard
+            fileName={reportFileName}
+            state={reportState}
+            feedback={reportFeedback}
+            isSelected={selectedActivityId === 'draft-report'}
+            onSelect={onActivitySelect ?? (() => {})}
+            onFeedbackChange={onReportFeedbackChange}
+            onRegenerate={onReportRegenerate}
+          />
+        ) : null}
       </div>
-
-      <div className="rounded-xl bg-gray-100 px-4 py-3 text-sm leading-6 text-gray-700">
-        <div className="mb-1.5 flex items-center gap-2 font-semibold text-gray-900">
-          <Sparkles className="h-4 w-4 text-gray-500" />
-          思考过程
-        </div>
-        <div>思考：{thoughtText}</div>
-        <div className="mt-1 text-gray-600">{actionText}</div>
-      </div>
-
-      {toolVisibleCount > 0 && (
-        <div className="flex flex-col items-start gap-2">
-          {tools.slice(0, toolVisibleCount).map((tool, index) => {
-            const state = getWorkspaceProcessState(
-              processData.status,
-              index + 1,
-              visibleStepCount,
-            );
-            const label = state === 'done' ? tool.doneLabel : tool.label;
-
-            return (
-              <WorkspaceProcessItem
-                key={tool.label}
-                icon={tool.icon}
-                label={label}
-                detail={tool.detail}
-                state={state}
-              />
-            );
-          })}
-        </div>
-      )}
-
-      {processData.status === 'running' && (
-        <div className="flex items-center gap-1 px-1 pt-1 text-blue-500">
-          <span className="h-1.5 w-1.5 rounded-full bg-blue-300 animate-pulse" />
-          <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse [animation-delay:160ms]" />
-          <span className="h-1.5 w-1.5 rounded-full bg-blue-700 animate-pulse [animation-delay:320ms]" />
-        </div>
-      )}
     </div>
   );
 }
@@ -986,13 +1270,11 @@ export function WorkspaceAnalysisProcessContent({ processData }: { processData: 
 function AnalysisCard({
   message,
   onRerunSkill,
-  onRetry,
   forceExpanded = false,
   processVariant = 'timeline',
 }: {
   message: Message;
   onRerunSkill?: (skillId: string) => void;
-  onRetry?: () => void;
   forceExpanded?: boolean;
   processVariant?: AnalysisProcessVariant;
 }) {
@@ -1018,12 +1300,7 @@ function AnalysisCard({
       return;
     }
 
-    if (message.analysisProcess.status === 'completed') {
-      setExpanded(false);
-      return;
-    }
-
-    setExpanded(true);
+    setExpanded(false);
   }, [forceExpanded, message.analysisProcess?.status]);
 
   useEffect(() => {
@@ -1047,36 +1324,52 @@ function AnalysisCard({
       return <WorkspaceAnalysisProcessContent processData={message.analysisProcess} />;
     }
 
-    const displayStatus = message.analysisProcess.status;
+    const displayStatus = message.analysisProcess.scenarioCode === 'empty-result'
+      ? 'completed'
+      : isInterruptedQueryOutcome(message.analysisProcess.scenarioCode)
+        ? 'interrupted'
+        : message.analysisProcess.status;
     const title = getAnalysisProcessTitle(displayStatus);
 
-    return (
-      <div className="space-y-1">
-        <div className="overflow-hidden rounded-t-[12px] rounded-b-[16px] border border-[#e5e6eb] bg-white">
-          <button
-            onClick={() => {
-              if (!forceExpanded) setExpanded((current) => !current);
-            }}
-            className="flex w-full items-center justify-between gap-3 bg-[#e8f3ff] p-4 text-left"
-          >
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="text-base font-medium leading-6 text-[#1d2129]">{title}</span>
-              {displayStatus === 'running' ? (
-                <span className="flex items-center gap-1" aria-label="正在进行">
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#4e83ea] animate-pulse" />
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#4e83ea] animate-pulse [animation-delay:160ms]" />
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#4e83ea] animate-pulse [animation-delay:320ms]" />
-                </span>
-              ) : null}
-            </div>
-            <span
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[#86909c] hover:bg-white/60"
-              aria-label={isExpanded ? '收起分析过程' : '展开分析过程'}
+      return (
+        <div className="space-y-1">
+          <div className="overflow-hidden rounded-[12px] border border-[#ecebfd] bg-white">
+            <button
+              type="button"
+              onClick={() => {
+                if (!forceExpanded) setExpanded((current) => !current);
+              }}
+              aria-expanded={isExpanded}
+              className="flex w-full items-center justify-between gap-4 bg-[#e8f3ff] px-4 py-3 text-left transition-colors hover:bg-[#dcecff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#165dff]/25"
             >
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center">
+                  {displayStatus === 'running' ? (
+                    <img
+                      src={loadingLightIcon}
+                      alt=""
+                      className="h-5 w-5 animate-spin motion-reduce:animate-none"
+                    />
+                  ) : displayStatus === 'completed' ? (
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#00b42a]">
+                      <Check aria-hidden="true" className="h-3.5 w-3.5 text-white" strokeWidth={2.5} />
+                    </span>
+                  ) : (
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#f53f3f]">
+                      <X aria-hidden="true" className="h-3.5 w-3.5 text-white" strokeWidth={2.5} />
+                    </span>
+                  )}
+                </span>
+                <span className="truncate text-base font-medium leading-6 text-[#1d2129]">{title}</span>
+              </div>
+              <span
+                className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[#4e5969]"
+                aria-label={isExpanded ? '收起分析过程' : '展开分析过程'}
+              >
               <img
                 alt=""
                 src={arrowUpSLineIcon}
-                className={`h-6 w-6 transition-transform ${isExpanded ? '' : 'rotate-180'}`}
+                className={`h-5 w-5 transition-transform ${isExpanded ? '' : 'rotate-180'}`}
               />
             </span>
           </button>
@@ -1084,7 +1377,6 @@ function AnalysisCard({
             <FigmaAnalysisProcessContent
               processData={message.analysisProcess}
               routingTrace={message.routingTrace}
-              onRetry={onRetry}
             />
           )}
         </div>
@@ -1146,7 +1438,7 @@ function AnalysisCard({
                   <AnalysisTimelineStep
                     key={step}
                     index={index}
-                    title={step}
+                    title={step === '生成查询语句' ? '执行查询语句' : step}
                     badge={templateBadge}
                     state={stepState}
                     isLast={index === visibleMessageStepCount - 1}
@@ -1469,7 +1761,7 @@ function FigmaAskStackedChart() {
       </div>
       <div className="px-4 pb-4 pt-4 font-['Roboto']">
         <div className="relative mb-2 flex items-center">
-          <div className="text-xs leading-5 text-[#4e5969]">金额</div>
+          <div className="w-9 text-right text-xs leading-5 text-[#4e5969]">金额</div>
           {chartType !== 'pie' ? (
             <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-4 text-xs leading-5 text-[#4e5969]">
               <span className="inline-flex items-center gap-1">
@@ -2089,6 +2381,7 @@ export function AssistantMessageCard({
   onRegenerate,
   onRerunSkill,
   onClarificationSelect,
+  onAnalysisCandidateSelect,
   forceAnalysisExpanded,
   analysisProcessVariant,
 }: {
@@ -2097,6 +2390,7 @@ export function AssistantMessageCard({
   onRegenerate?: (messageId: string) => void;
   onRerunSkill?: (skillId: string) => void;
   onClarificationSelect?: (question: string, agentId: string) => void;
+  onAnalysisCandidateSelect?: (messageId: string, option: AnalysisCandidateOption) => void;
   forceAnalysisExpanded?: boolean;
   analysisProcessVariant?: AnalysisProcessVariant;
 }) {
@@ -2109,12 +2403,20 @@ export function AssistantMessageCard({
     );
   }
 
+  if (message.kind === 'text') {
+    return (
+      <AssistantTextReply
+        message={message}
+        onCandidateSelect={(option) => onAnalysisCandidateSelect?.(message.id, option)}
+      />
+    );
+  }
+
   if (message.kind === 'analysis') {
     return (
       <AnalysisCard
         message={message}
         onRerunSkill={onRerunSkill}
-        onRetry={onRegenerate ? () => onRegenerate(message.id) : undefined}
         forceExpanded={forceAnalysisExpanded}
         processVariant={analysisProcessVariant}
       />

@@ -118,24 +118,7 @@ const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 const CONVERSATIONS_STORAGE_KEY = 'chatbi_medical.conversations.v1';
 const ACTIVE_CONVERSATIONS_STORAGE_KEY = 'chatbi_medical.activeConversationIds.v1';
 const STORAGE_SCHEMA_VERSION_KEY = 'chatbi_medical.workspaceSchemaVersion';
-const CURRENT_STORAGE_SCHEMA_VERSION = 'figma-ask-history-20260713-v1';
-const FIGMA_ASK_HISTORY_TITLES = [
-  '眼科近三个月诊量是否异常',
-  '上月门诊总收入和药占比情况',
-  '本季度平均住院日变化',
-  '住院收入增长最快的科室',
-  '门诊治疗收入贡献最大的三个科室',
-  '来诊检查收入变化趋势如何',
-  '近三个月诊量是否异常',
-  '眼科诊量是否异常',
-  '生成本周门诊经营周报',
-  '查询儿童保健疫苗接种率',
-  '分析海外院区床位周转率',
-  '分析上月收入增长情况',
-  '查询眼科 2020 年诊量',
-  '查询门诊收入趋势',
-  '查询住院费用明细',
-];
+const CURRENT_STORAGE_SCHEMA_VERSION = 'ask-exception-demos-20260717-v2';
 
 type StoredConversation = Omit<Conversation, 'createdAt' | 'updatedAt' | 'messages'> & {
   createdAt: string;
@@ -171,22 +154,23 @@ const fromStoredConversation = (conversation: StoredConversation): Conversation 
   })),
 });
 
-const hasFigmaAskHistory = (conversations: Conversation[]) => {
-  const askTitles = conversations
-    .filter((conversation) => (conversation.workspaceType ?? conversation.agentType) === 'ask')
-    .map((conversation) => conversation.title);
+const mergeExceptionDemoConversations = (conversations: Conversation[]) => {
+  const demos = initialConversations.filter((conversation) => conversation.isDemo);
+  const demoIds = new Set(demos.map((conversation) => conversation.id));
+  const preserved = conversations.filter(
+    (conversation) =>
+      !demoIds.has(conversation.id)
+      && !conversation.id.startsWith('conv-boundary-')
+      && !conversation.isDemo,
+  );
 
-  return FIGMA_ASK_HISTORY_TITLES.every((title) => askTitles.includes(title));
+  return [...demos, ...preserved];
 };
 
 const readStoredConversations = () => {
   if (typeof window === 'undefined') return null;
 
   try {
-    if (window.localStorage.getItem(STORAGE_SCHEMA_VERSION_KEY) !== CURRENT_STORAGE_SCHEMA_VERSION) {
-      return null;
-    }
-
     const rawValue = window.localStorage.getItem(CONVERSATIONS_STORAGE_KEY);
     if (!rawValue) return null;
 
@@ -197,7 +181,7 @@ const readStoredConversations = () => {
       fromStoredConversation(conversation as StoredConversation),
     );
 
-    return hasFigmaAskHistory(storedConversations) ? storedConversations : null;
+    return mergeExceptionDemoConversations(storedConversations);
   } catch {
     return null;
   }
@@ -504,7 +488,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       getConversationsForWorkspace: (type) =>
         conversations
           .filter((conversation) => (conversation.workspaceType ?? conversation.agentType) === type)
-          .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()),
+          .sort((a, b) => {
+            if (a.isDemo && b.isDemo) return (a.demoOrder ?? 0) - (b.demoOrder ?? 0);
+            if (a.isDemo) return -1;
+            if (b.isDemo) return 1;
+            return b.updatedAt.getTime() - a.updatedAt.getTime();
+          }),
       setActiveConversationForWorkspace: (type, conversationId) => {
         setActiveConversationIds((current) => ({
           ...current,

@@ -2,15 +2,25 @@ import { type ReactNode } from 'react';
 
 type PromptComposerFrameProps = {
   children: ReactNode;
+  header?: ReactNode;
   className?: string;
+  bodyClassName?: string;
 };
 
-export function PromptComposerFrame({ children, className = '' }: PromptComposerFrameProps) {
+export function PromptComposerFrame({
+  children,
+  header,
+  className = '',
+  bodyClassName = '',
+}: PromptComposerFrameProps) {
   return (
     <div
-      className={`flex flex-col gap-3 rounded-[16px] border-[1.5px] border-[#edeff1] bg-white px-[13.5px] py-[13.5px] shadow-[0_14px_14.1px_rgba(0,0,0,0.11)] ${className}`}
+      className={`overflow-hidden rounded-[16px] border border-[#edeff1] bg-white shadow-[0_8px_20px_rgba(15,23,42,0.08)] ${className}`}
     >
-      {children}
+      {header}
+      <div className={`flex flex-col gap-3 px-[13.5px] py-[13.5px] ${bodyClassName}`}>
+        {children}
+      </div>
     </div>
   );
 }

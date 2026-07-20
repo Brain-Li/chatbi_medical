@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
-import { ArrowUp, Eye, EyeOff, X } from 'lucide-react';
-import { WorkspaceAutoSubmitPayload } from '../types';
+import { ArrowUp, Eye, EyeOff } from 'lucide-react';
+import { HomePrefillPayload, WorkspaceAutoSubmitPayload } from '../types';
 
 import checkboxChecked from '../../assets/figma-login/checkbox-checked.svg';
 import closeLargeFill from '../../assets/figma-login/close-large-fill.svg';
@@ -10,20 +10,24 @@ import arrowRightUpLine from '../../assets/figma-home/arrow-right-up-line.svg';
 import assistantImage from '../../assets/figma-home/assistant.png';
 import caseArrowRightUp from '../../assets/figma-home/case-arrow-right-up.svg';
 import caseTemplateIcon from '../../assets/figma-home/case-template-icon.svg';
+import homeContainerBackground from '../../assets/figma-home/container.png';
 import globalLine from '../../assets/figma-home/global-line.svg';
 import globalLineSelected from '../../assets/figma-home/global-line-selected.svg';
 import micLine from '../../assets/figma-home/mic-line.svg';
-import qaIcon from '../../assets/figma-home/qa-icon.svg';
-import modeReportIcon from '../../assets/figma-home/mode-report-icon.svg';
 import { AppHeader } from '../components/AppHeader';
 import { AppShellBackground } from '../components/AppShellBackground';
 import { ConversationHistorySidebar } from '../components/ConversationHistorySidebar';
 import { PrimaryIconNav } from '../components/PrimaryIconNav';
+import { PromptModeBar, PromptModeHeader } from '../components/PromptModeBar';
 import { PromptComposerFrame } from '../components/PromptComposerFrame';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { inferPromptMode, type PromptMode } from '../utils/promptMode';
 
 type HomeMode = PromptMode;
+type HomeLocationState = {
+  historyOpen?: boolean;
+  prefill?: HomePrefillPayload;
+};
 type LoginErrors = {
   account?: string;
   password?: string;
@@ -42,8 +46,8 @@ type ReportCase = {
 
 const askSuggestions: HomeSuggestion[] = [
   { mode: 'ask', title: '本周门急诊收入环比变化如何？' },
-  { mode: 'ask', title: '住院均次费用最高的科室有哪些？' },
-  { mode: 'ask', title: '门诊治疗收入贡献最大的三个科室是哪些？' },
+  { mode: 'ask', title: '今年以来门诊检查收入变化趋势如何？' },
+  { mode: 'ask', title: '眼科近三个月门诊量是否异常？' },
 ];
 const initialSuggestions: HomeSuggestion[] = [
   { mode: 'ask', title: '上月门诊总收入和药占比情况' },
@@ -67,6 +71,11 @@ const reportCases: ReportCase[] = [
     prompt: '输出本月经营月报并突出异常项。',
   },
 ];
+
+const homeVerticalOffsetStyle = {
+  '--home-vertical-offset': 'max(0px, calc((100vh - 754px) / 2))',
+} as CSSProperties;
+
 export default function HomePage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -74,6 +83,7 @@ export default function HomePage() {
     activeConversationIds,
     deleteConversation,
     getConversationsForWorkspace,
+    renameConversation,
     setActiveConversationForWorkspace,
   } = useWorkspace();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -97,9 +107,9 @@ export default function HomePage() {
   const askConversations = getConversationsForWorkspace('ask');
   const inputPlaceholder =
     selectedMode === 'ask'
-      ? '查询指标、趋势、异常、对比等数据问题...'
+      ? '查询指标、走势、异常等各类数据问题...'
       : selectedMode === 'report'
-        ? '描述报告主题、统计周期和关注重点...'
+        ? '描述报告主题、统计周期、分析重点...'
         : '输入数据问题，或描述要生成的报告...';
 
   useEffect(() => {
@@ -120,14 +130,29 @@ export default function HomePage() {
     }
   }, [location.state]);
 
+  useEffect(() => {
+    const state = location.state as HomeLocationState | null;
+    if (!state?.prefill) return;
+
+    setDraft(state.prefill.draft);
+    setSelectedMode(state.prefill.mode);
+    setDeepAnalysisEnabled(false);
+    window.setTimeout(() => textareaRef.current?.focus(), 0);
+
+    const { prefill: _consumedPrefill, ...remainingState } = state;
+    navigate('.', {
+      replace: true,
+      state: Object.keys(remainingState).length ? remainingState : null,
+    });
+  }, [location.state, navigate]);
+
   const selectMode = (nextMode: HomeMode) => {
-    const nextSelectedMode = selectedMode === nextMode ? null : nextMode;
-    setSelectedMode(nextSelectedMode);
-    if (nextSelectedMode !== 'ask') setDeepAnalysisEnabled(false);
+    setSelectedMode(nextMode);
+    if (nextMode !== 'ask') setDeepAnalysisEnabled(false);
     window.setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
-  const clearSelectedMode = () => {
+  const exitMode = () => {
     setSelectedMode(null);
     setDeepAnalysisEnabled(false);
     window.setTimeout(() => textareaRef.current?.focus(), 0);
@@ -139,7 +164,7 @@ export default function HomePage() {
   ) => {
     const question = submittedQuestion.trim();
     if (!question) return;
-    const resolvedMode = options?.mode ?? inferPromptMode(question, selectedMode);
+    const resolvedMode = options?.mode ?? selectedMode ?? inferPromptMode(question, null);
     const shouldUseDeepAnalysis =
       resolvedMode === 'ask'
         ? options?.deepAnalysisEnabled ?? deepAnalysisEnabled
@@ -153,7 +178,9 @@ export default function HomePage() {
       forceNewConversation: true,
     };
 
-    navigate(resolvedMode === 'ask' ? '/ask' : '/report', { state: { autoSubmit } });
+    navigate(resolvedMode === 'ask' ? '/ask' : '/report', {
+      state: { autoSubmit, sidebarOpen: !shouldUseDeepAnalysis },
+    });
   };
 
   const handleSuggestionClick = (suggestion: HomeSuggestion) => {
@@ -203,10 +230,10 @@ export default function HomePage() {
   };
 
   return (
-    <div className="relative h-full min-h-[754px] overflow-hidden bg-white text-[#1a1c26]">
+    <div className="relative h-full min-h-[754px] overflow-hidden bg-white font-['Login_Figma_Sans','PingFang_SC','Microsoft_YaHei',sans-serif] text-[#1d2129]">
       <AppShellBackground />
 
-      <div className="relative z-10 flex h-full min-w-[1280px] flex-col overflow-hidden">
+      <div className="relative z-10 flex h-full min-w-0 flex-col overflow-hidden">
         <AppHeader
           menuOpen={historyOpen}
           onMenuClick={() => setHistoryOpen((current) => !current)}
@@ -230,28 +257,33 @@ export default function HomePage() {
               }}
               onSelectConversation={(conversationId) => {
                 setActiveConversationForWorkspace('ask', conversationId);
-                navigate('/ask');
+                navigate('/ask', { state: { sidebarOpen: historyOpen } });
               }}
+              onRenameConversation={renameConversation}
               onDeleteConversation={deleteConversation}
             />
           )}
 
           <main className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-tl-[20px] rounded-tr-[20px] bg-white pb-[34px]">
-            <div className="relative h-full overflow-hidden rounded-[inherit]">
+            <div className="relative h-full overflow-hidden rounded-[inherit]" style={homeVerticalOffsetStyle}>
               <div
                 aria-hidden="true"
-                className="absolute left-1/2 top-[151px] h-[230px] w-[940px] -translate-x-1/2 opacity-70"
-                style={{
-                  backgroundImage:
-                    'linear-gradient(#edf1f7 1px, transparent 1px), linear-gradient(90deg, #edf1f7 1px, transparent 1px)',
-                  backgroundSize: '100px 80px',
-                  maskImage: 'linear-gradient(90deg, transparent 0%, #000 9%, #000 91%, transparent 100%)',
-                }}
-              />
+                className="pointer-events-none absolute left-1/2 top-0 h-[609px] w-full max-w-[960px] -translate-x-1/2 overflow-hidden"
+                style={{ top: 'var(--home-vertical-offset)' }}
+              >
+                <img
+                  className="absolute left-1/2 top-[8.26%] h-[70.11%] w-[1522px] max-w-none -translate-x-1/2"
+                  src={homeContainerBackground}
+                  alt=""
+                />
+              </div>
 
-              <section className="relative mx-auto flex w-[1208px] flex-col pt-[72px]">
-                <div className="mx-auto flex w-[860px] flex-col gap-5">
-                  <div className="flex w-[860px] items-center gap-3">
+              <section
+                className="relative mx-auto flex w-full max-w-[1208px] flex-col px-4 lg:px-6"
+                style={{ paddingTop: 'calc(60px + var(--home-vertical-offset))' }}
+              >
+                <div className="mx-auto flex w-full max-w-[960px] flex-col gap-5">
+                  <div className="flex w-full items-center gap-3">
                     <div className="relative h-[104px] w-[104px] shrink-0">
                       <img
                         className="absolute left-0 top-[7px] h-[90px] w-[104px] object-cover"
@@ -260,43 +292,39 @@ export default function HomePage() {
                       />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-[18px] leading-[27px] text-[#6b7380]">
+                      <p className="text-[16px] leading-6 text-[#4e5969]">
                         Hi，我是您的专属智能助手
                       </p>
-                      <h1 className="mt-2 w-[672px] text-[24px] font-medium leading-[28.8px] text-[#1a1c26]">
-                        擅长数据分析与报告生成，助你高效洞察数据价值
+                      <h1 className="mt-2 w-full text-[20px] font-normal leading-7 text-[#1d2129]">
+                        <span>擅长</span>
+                        <span className="font-medium">数据分析</span>
+                        <span className="text-[#4e5969]">与</span>
+                        <span className="font-medium">报告生成，</span>
+                        <span>助你高效洞察数据价值</span>
                       </h1>
                     </div>
                   </div>
 
-                  <PromptComposerFrame className="w-[860px] items-end justify-end">
-                    <div className="flex min-h-[100px] w-[829px] flex-col justify-between gap-3">
+                  <div className="flex w-full flex-col gap-3">
+                    {!selectedMode && (
+                      <PromptModeBar onSelect={selectMode} className="w-full" />
+                    )}
+
+                    <PromptComposerFrame
+                      className="w-full"
+                      bodyClassName="items-end justify-end !py-3 !pl-4 !pr-3"
+                      header={
+                        selectedMode ? (
+                          <PromptModeHeader
+                            mode={selectedMode}
+                            onExit={exitMode}
+                            className="!h-11"
+                          />
+                        ) : undefined
+                      }
+                    >
+                    <div className="flex min-h-[100px] w-full flex-col justify-between gap-3">
                       <div className="flex min-h-[52px] w-full items-start gap-2">
-                        {selectedMode && (
-                          <span
-                            className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[14px] leading-[22px] ${
-                              selectedMode === 'ask'
-                                ? 'border-[#bcd4ff] bg-[#edf2ff] text-[#1f63d7]'
-                                : 'border-[#b7ebc6] bg-[#f0fff4] text-[#00b42a]'
-                            }`}
-                          >
-                            <img
-                              className="h-4 w-4"
-                              src={selectedMode === 'ask' ? qaIcon : modeReportIcon}
-                              alt=""
-                            />
-                            {selectedMode === 'ask' ? '问数' : '报告'}
-                            <button
-                              type="button"
-                              onClick={clearSelectedMode}
-                              className="flex h-4 w-4 items-center justify-center rounded-full transition-colors hover:bg-white/70"
-                              aria-label={`取消${selectedMode === 'ask' ? '问数' : '报告'}`}
-                              title="回到智能识别"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </span>
-                        )}
                         <textarea
                           ref={textareaRef}
                           value={draft}
@@ -304,7 +332,7 @@ export default function HomePage() {
                           onKeyDown={handleKeyDown}
                           placeholder={inputPlaceholder}
                           rows={2}
-                          className="h-[52px] max-h-[112px] min-h-[52px] min-w-0 flex-1 resize-none bg-white pt-1 text-[14px] leading-[21px] text-[#1a1c26] placeholder:text-[#9ca3b0] focus:outline-none"
+                          className="h-[52px] max-h-[112px] min-h-[52px] min-w-0 flex-1 resize-none bg-white text-[14px] leading-[21px] text-[#1d2129] placeholder:text-[#86909c] focus:outline-none"
                         />
                       </div>
                       <div className="flex h-8 items-center">
@@ -313,10 +341,10 @@ export default function HomePage() {
                             <button
                               type="button"
                               onClick={() => setDeepAnalysisEnabled((current) => !current)}
-                              className={`flex h-8 items-center gap-1 rounded-lg p-2 text-[14px] leading-[22.5px] transition-colors ${
+                              className={`inline-flex h-8 items-center gap-1 rounded-[8px] px-3 text-[14px] font-normal leading-[22px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25 ${
                                 deepAnalysisEnabled
                                   ? 'bg-[#e8f3ff] text-[#165dff]'
-                                  : 'bg-[#f9fafc] text-[#4e5969] hover:bg-[#f2f3f5]'
+                                  : 'bg-[#f7f8fa] text-[#1d2129] hover:bg-[#f2f3f5]'
                               }`}
                               aria-pressed={deepAnalysisEnabled}
                             >
@@ -341,7 +369,7 @@ export default function HomePage() {
                             type="button"
                             onClick={() => submit()}
                             className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
-                              canSubmit ? 'bg-[#1677ff]' : 'bg-[#e9e9ea]'
+                              canSubmit ? 'bg-[#1677ff]' : 'bg-[#c9cdd4]'
                             }`}
                             title={
                               selectedMode === 'report'
@@ -351,55 +379,20 @@ export default function HomePage() {
                                   : '智能识别并发送'
                             }
                           >
-                            <ArrowUp className={`h-4 w-4 ${canSubmit ? 'text-white' : 'text-[#7f8896]'}`} />
+                            <ArrowUp className="h-4 w-4 text-white" />
                           </button>
                         </div>
                       </div>
                     </div>
-                  </PromptComposerFrame>
+                    </PromptComposerFrame>
+                  </div>
 
-                  {!selectedMode && (
-                    <div className="flex items-center gap-[13px]">
-                      <button
-                        type="button"
-                        onClick={() => selectMode('ask')}
-                        className="flex h-8 items-center justify-center gap-1 rounded-lg border border-[#d4d6dc] bg-white px-[13px] text-[14px] leading-[22px] text-[#333b46] transition-colors hover:bg-[#f9fafc]"
-                        aria-label="选择问数"
-                        aria-pressed={false}
-                      >
-                        <img className="h-5 w-5" src={qaIcon} alt="" />
-                        问数
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => selectMode('report')}
-                        className="flex h-8 items-center justify-center gap-1 rounded-lg border border-[#d4d6dc] bg-white px-[13px] text-[14px] leading-[22px] text-[#333b46] transition-colors hover:bg-[#f9fafc]"
-                        aria-label="选择报告"
-                        aria-pressed={false}
-                      >
-                        <img className="h-5 w-5" src={modeReportIcon} alt="" />
-                        报告
-                      </button>
-                    </div>
-                  )}
                 </div>
 
-                <div className="mx-auto mt-[clamp(57px,6vh,88px)] flex w-[862px] flex-col gap-4">
+                <div className="mx-auto mt-[50px] flex w-full max-w-[960px] flex-col gap-4">
                   <div className="flex items-center gap-2">
-                    <span
-                      className={
-                        selectedMode === 'report'
-                          ? 'h-[13px] w-[3px] shrink-0 rounded-xl bg-[#165dff]'
-                          : 'h-[15px] w-[3px] shrink-0 rounded-full bg-[#1677ff]'
-                      }
-                    />
-                    <h2
-                      className={
-                        selectedMode === 'report'
-                          ? 'text-[16px] font-medium leading-6 text-[#1d2129]'
-                          : 'text-[14px] font-semibold leading-[22px] text-[#1a1c26]'
-                      }
-                    >
+                    <span className="h-[13px] w-[3px] shrink-0 rounded-xl bg-[#165dff]" />
+                    <h2 className="text-[16px] font-medium leading-6 text-[#1d2129]">
                       {selectedMode === 'report'
                         ? '案例精选'
                         : selectedMode === 'ask'
@@ -444,7 +437,7 @@ export default function HomePage() {
                           key={`${suggestion.title}-${index}`}
                           type="button"
                           onClick={() => handleSuggestionClick(suggestion)}
-                          className="flex w-full items-center justify-between rounded-lg border border-[#e5e8f0] bg-white/90 px-4 py-2 text-left text-[14px] leading-[22px] text-[#1a1c26] transition-colors hover:border-[#bcd4ff] hover:bg-[#f9fbff]"
+                          className="flex h-[38px] w-full items-center justify-between rounded-lg border border-[#e5e6eb] bg-white px-4 py-[7px] text-left text-[14px] font-normal leading-[22px] text-[#1d2129] transition-colors hover:border-[#bcd4ff] hover:bg-[#f9fbff]"
                         >
                           <span>{suggestion.title}</span>
                           <img className="h-4 w-4" src={arrowRightUpLine} alt="" />

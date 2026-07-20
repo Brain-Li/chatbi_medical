@@ -6,10 +6,19 @@ import { PrimaryIconNav } from '../components/PrimaryIconNav';
 
 export default function Root() {
   const location = useLocation();
+  const requestedSidebarOpen = (location.state as { sidebarOpen?: boolean } | null)?.sidebarOpen;
   const isHome = location.pathname === '/home';
   const isLogin = location.pathname === '/';
   const isWorkspacePage = location.pathname === '/ask' || location.pathname === '/report';
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => typeof requestedSidebarOpen === 'boolean' ? requestedSidebarOpen : true,
+  );
+
+  useEffect(() => {
+    if (typeof requestedSidebarOpen === 'boolean') {
+      setSidebarOpen(requestedSidebarOpen);
+    }
+  }, [requestedSidebarOpen, location.key]);
 
   useEffect(() => {
     if (!isHome) {
@@ -32,10 +41,16 @@ export default function Root() {
           onMenuClick={() => setSidebarOpen((current) => !current)}
         />
       </div>
-      <div className="fixed inset-0 z-10 flex min-h-0 pt-16">
+      <div className="fixed inset-0 z-10 flex min-h-0 pt-[54px]">
         <PrimaryIconNav />
         <main className={`min-h-0 min-w-0 flex-1 overflow-hidden rounded-tl-[20px] rounded-tr-[20px] ${isWorkspacePage ? 'bg-transparent pb-0' : 'bg-white pb-[34px]'}`}>
-          <Outlet context={{ sidebarOpen }} />
+          <Outlet
+            context={{
+              sidebarOpen,
+              openSidebar: () => setSidebarOpen(true),
+              closeSidebar: () => setSidebarOpen(false),
+            }}
+          />
         </main>
       </div>
     </>

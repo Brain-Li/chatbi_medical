@@ -6,8 +6,6 @@ import homeSmile2FillActive from '../../assets/figma-home/home-smile-2-fill-acti
 import homeSmile2Line from '../../assets/figma-home/home-smile-2-line.svg';
 import settingsFill from '../../assets/figma-home/settings-fill.svg';
 import settingsLine from '../../assets/figma-home/settings-line.svg';
-import subscriptionSimpleFill from '../../assets/figma-home/subscription-simple-fill.svg';
-import subscriptionSimpleLine from '../../assets/figma-home/subscription-simple-line.svg';
 
 type NavItem = {
   label: string;
@@ -20,11 +18,12 @@ type NavItem = {
 const navItems: NavItem[] = [
   {
     label: '首页',
-    path: '/',
+    path: '/home',
     icon: homeSmile2Line,
     activeIcon: homeSmile2FillActive,
     isActive: (pathname) =>
       pathname === '/' ||
+      pathname === '/home' ||
       pathname === '/ask' ||
       pathname.startsWith('/ask/') ||
       pathname === '/report' ||
@@ -36,14 +35,6 @@ const navItems: NavItem[] = [
     icon: functionLine,
     activeIcon: functionFill,
     isActive: (pathname) => pathname === '/templates' || pathname.startsWith('/templates/'),
-  },
-  {
-    label: '订阅管理',
-    path: '/report-subscriptions',
-    icon: subscriptionSimpleLine,
-    activeIcon: subscriptionSimpleFill,
-    isActive: (pathname) =>
-      pathname === '/report-subscriptions' || pathname.startsWith('/report-subscriptions/'),
   },
   {
     label: '配置中心',
@@ -58,7 +49,7 @@ export function PrimaryIconNav() {
   const { pathname } = useLocation();
 
   return (
-    <aside className="hidden h-full w-[72px] shrink-0 flex-col items-center gap-4 p-4 sm:flex" aria-label="主导航">
+    <aside className="hidden h-full w-[60px] shrink-0 flex-col items-center gap-4 px-[10px] py-4 sm:flex" aria-label="主导航">
       {navItems.map((item) => {
         const active = item.isActive(pathname);
 

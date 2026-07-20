@@ -1,22 +1,45 @@
 export const AUTH_STORAGE_KEY = 'chatbi-medical-authenticated';
 export const PERSISTENT_AUTH_STORAGE_KEY = 'chatbi-medical-persistent-authenticated';
 export const PERSISTENT_AUTH_EXPIRES_AT_STORAGE_KEY = 'chatbi-medical-persistent-auth-expires-at';
+const AUTH_USERNAME_STORAGE_KEY = 'chatbi-medical-auth-username';
 const DEMO_PASSWORD_STORAGE_KEY = 'chatbi-medical-demo-password';
 const DEFAULT_DEMO_PASSWORD = 'admin123';
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
-export function createDemoAuthSession(rememberMe: boolean) {
+export function createDemoAuthSession(rememberMe: boolean, username = 'admin') {
   if (rememberMe) {
     window.sessionStorage.removeItem(AUTH_STORAGE_KEY);
+    window.sessionStorage.removeItem(AUTH_USERNAME_STORAGE_KEY);
     window.localStorage.setItem(PERSISTENT_AUTH_STORAGE_KEY, 'true');
     window.localStorage.setItem(PERSISTENT_AUTH_EXPIRES_AT_STORAGE_KEY, String(Date.now() + SEVEN_DAYS_MS));
+    window.localStorage.setItem(AUTH_USERNAME_STORAGE_KEY, username);
     return;
   }
 
   window.localStorage.removeItem(PERSISTENT_AUTH_STORAGE_KEY);
   window.localStorage.removeItem(PERSISTENT_AUTH_EXPIRES_AT_STORAGE_KEY);
+  window.localStorage.removeItem(AUTH_USERNAME_STORAGE_KEY);
   window.sessionStorage.setItem(AUTH_STORAGE_KEY, 'true');
+  window.sessionStorage.setItem(AUTH_USERNAME_STORAGE_KEY, username);
+}
+
+export function clearDemoAuthSession() {
+  window.sessionStorage.removeItem(AUTH_STORAGE_KEY);
+  window.sessionStorage.removeItem(AUTH_USERNAME_STORAGE_KEY);
+  window.localStorage.removeItem(PERSISTENT_AUTH_STORAGE_KEY);
+  window.localStorage.removeItem(PERSISTENT_AUTH_EXPIRES_AT_STORAGE_KEY);
+  window.localStorage.removeItem(AUTH_USERNAME_STORAGE_KEY);
+}
+
+export function getDemoAuthUsername() {
+  if (typeof window === 'undefined') return 'admin';
+
+  return (
+    window.sessionStorage.getItem(AUTH_USERNAME_STORAGE_KEY) ??
+    window.localStorage.getItem(AUTH_USERNAME_STORAGE_KEY) ??
+    'admin'
+  );
 }
 
 export function getDemoPassword() {
@@ -40,6 +63,7 @@ export function hasDemoAuthSession() {
   if (!isPersistentSessionValid) {
     window.localStorage.removeItem(PERSISTENT_AUTH_STORAGE_KEY);
     window.localStorage.removeItem(PERSISTENT_AUTH_EXPIRES_AT_STORAGE_KEY);
+    window.localStorage.removeItem(AUTH_USERNAME_STORAGE_KEY);
   }
 
   return isPersistentSessionValid;

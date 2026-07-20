@@ -2,9 +2,14 @@
   Agent,
   AgentRoutingTrace,
   AgentClarificationOption,
+  AskQuestionIntentClassification,
+  AnalysisClarification,
   AnalysisResultData,
   AnalysisMcpMatch,
   AnalysisProcessData,
+  AnalysisReferenceSource,
+  AnalysisProcessStep,
+  AnalysisScenarioCode,
   AgentType,
   ChartDatum,
   Conversation,
@@ -33,6 +38,7 @@
   SkillTrace,
   TimeGrain,
 } from './types';
+import { buildAnalysisReportFileName } from './utils/reportFileName';
 
 export const skills: Skill[] = [
   {
@@ -2048,6 +2054,190 @@ function findMatchedTerm(question: string, terms: string[]) {
   return terms.find((term) => term && normalized.includes(normalizeIntentText(term)));
 }
 
+export const ASK_INTENT_BOUNDARY_COPY = {
+  conversation: {
+    greetingReply: '你好，我可以帮你查询医疗经营指标、趋势和异常情况。你可以直接描述问题或需求。',
+    capabilityReply: '我可以查询医疗经营指标、分析趋势和异常，并按科室、时间等维度拆分。例如：“查看上月全院门诊收入，按科室对比。”',
+  },
+  outOfScope: {
+    processDetail: '已识别为非医疗业务分析请求，不再继续分析。',
+    reply: '该问题与医疗业务无关，请重新提问。',
+  },
+  missingInformation: {
+    understandingDetail: '已识别为医疗经营分析需求，但查询条件不完整。',
+    processDetail: '缺少时间范围、指标和分析维度，无法生成数据查询方案。',
+    reply: '请补充时间范围和具体指标。你还可以说明希望按哪个维度分析，例如：“查看上月全院门诊收入，按科室对比。”',
+  },
+} as const;
+
+const medicalDomainTerms = [
+  '医疗', '医院', '院区', '全院', '门诊', '急诊', '住院', '科室', '患者', '病人',
+  '医生', '医师', '护士', '护理', '医保', '药品', '药占比', '耗材', '耗占比', '床位',
+  '手术', '检验', '检查', '治疗', '诊疗', '病种', 'DRG', 'DIP', '出院', '入院',
+];
+
+const analysisIntentTerms = [
+  '查询', '查看', '查一下', '分析', '对比', '比较', '统计', '汇总', '趋势', '排名',
+  '排行', '占比', '变化', '异常', '增长', '下降', '贡献', '原因', '表现', '多少', '是否',
+];
+
+const metricTerms = [
+  '收入', '费用', '收费', '诊量', '人次', '占比', '周转率', '平均住院日', '金额',
+  '数量', '总额', '增长率', '下降幅度', '成本', '效率', '时长', '天数', '例数', '率',
+];
+
+const nonDataTaskPatterns = [
+  /写(?:一首|首)?[^。！？]{0,24}诗/,
+  /作[^。！？]{0,24}诗/,
+  /翻译/,
+  /写(?:一段|个)?代码/,
+  /编程/,
+  /天气/,
+  /新闻/,
+  /菜谱/,
+  /旅游攻略/,
+  /讲故事/,
+  /笑话/,
+  /闲聊/,
+];
+
+const greetingPattern = /^(?:你好|您好|嗨|hi|hello|在吗)$/i;
+const capabilityHelpPattern = /^(?:你是谁|你能做什么|怎么用|如何使用)$/i;
+const vagueAnalysisPattern = /^(?:帮我|请|麻烦|能不能|可以)?(?:看|看看|看一下|查|查一下|查询|分析|分析一下|了解)(?:一下|下)?(?:经营|运营|业务|数据|指标)?(?:情况|表现|问题|怎么样|如何)?(?:吗|呢|吧)?$/;
+const timeRangePattern = /(?:今天|今日|昨日|昨天|前天|本周|上周|本月|上月|本季度|上季度|今年|去年|最近|近[一二三四五六七八九十两\d]+(?:天|周|个月|月|季度|季|年)|过去[一二三四五六七八九十两\d]+(?:天|周|个月|月|季度|季|年)|\d{4}年(?:\d{1,2}月)?|\d{1,2}月(?:\d{1,2}[日号])?|\d{4}[-/.]\d{1,2}(?:[-/.]\d{1,2})?)/i;
+
+function getQuestionIntentAssetTerms({
+  agentPool,
+  datasetPool,
+  skillPool,
+  indicatorPool,
+}: {
+  agentPool: Agent[];
+  datasetPool: SemanticDataset[];
+  skillPool: Skill[];
+  indicatorPool: IndicatorAsset[];
+}) {
+  const genericTerms = new Set(['经营', '运营', '业务', '数据', '指标', '分析']);
+  return Array.from(new Set([
+    ...datasetPool.flatMap((dataset) => [
+      dataset.name,
+      dataset.businessTheme,
+      dataset.subjectObject,
+      ...dataset.synonyms,
+    ]),
+    ...indicatorPool.flatMap((indicator) => [indicator.name, ...indicator.synonyms]),
+    ...agentPool.flatMap((agent) => [agent.name, ...agent.exampleQuestions]),
+    ...skillPool.flatMap((skill) => [skill.name, skill.scene, ...skill.triggerPhrases, ...skill.tags]),
+  ].filter((term) => term && term.length >= 2 && !genericTerms.has(term))));
+}
+
+export function classifyAskQuestionIntent({
+  question,
+  inheritedTimeRange,
+  agentPool = agents,
+  datasetPool = semanticDatasets,
+  skillPool = skills,
+  indicatorPool = indicatorAssets,
+}: {
+  question: string;
+  inheritedTimeRange?: string;
+  agentPool?: Agent[];
+  datasetPool?: SemanticDataset[];
+  skillPool?: Skill[];
+  indicatorPool?: IndicatorAsset[];
+}): AskQuestionIntentClassification {
+  const normalizedQuestion = question
+    .replace(/[\s，。！？,.!?;；:："'“”‘’（）()【】\[\]{}]/g, '')
+    .toLowerCase();
+  const assetTerms = getQuestionIntentAssetTerms({
+    agentPool,
+    datasetPool,
+    skillPool,
+    indicatorPool,
+  });
+  const matchedDomainTerm = findMatchedTerm(question, [...medicalDomainTerms, ...assetTerms]);
+  const matchedAnalysisIntent = findMatchedTerm(question, analysisIntentTerms);
+  const matchedMetric = findMatchedTerm(question, [
+    ...indicatorPool.flatMap((indicator) => [indicator.name, ...indicator.synonyms]),
+    ...datasetPool.flatMap((dataset) => [dataset.name, ...dataset.synonyms]),
+    ...metricTerms,
+  ]);
+  const hasTimeRange = timeRangePattern.test(normalizedQuestion) || Boolean(inheritedTimeRange);
+  const isGreeting = greetingPattern.test(normalizedQuestion);
+  const isCapabilityHelp = capabilityHelpPattern.test(normalizedQuestion);
+  const isExplicitNonDataTask = nonDataTaskPatterns.some((pattern) => pattern.test(normalizedQuestion));
+  const signals = [
+    matchedDomainTerm ? `领域：${matchedDomainTerm}` : '',
+    matchedAnalysisIntent ? `意图：${matchedAnalysisIntent}` : '',
+    matchedMetric ? `指标：${matchedMetric}` : '',
+    hasTimeRange ? `时间范围：${inheritedTimeRange ? '沿用上一轮' : '已识别'}` : '',
+  ].filter(Boolean);
+
+  if (isGreeting) {
+    return {
+      status: 'out-of-scope',
+      reason: '识别为寒暄，不进入数据查询流程。',
+      signals: ['意图：寒暄'],
+      replyVariant: 'greeting',
+    };
+  }
+
+  if (isCapabilityHelp) {
+    return {
+      status: 'out-of-scope',
+      reason: '识别为能力询问，不进入数据查询流程。',
+      signals: ['意图：能力询问'],
+      replyVariant: 'capability',
+    };
+  }
+
+  if (isExplicitNonDataTask && !matchedAnalysisIntent) {
+    return {
+      status: 'out-of-scope',
+      reason: '识别为明确的非数据分析任务。',
+      signals: ['意图：非数据任务'],
+      replyVariant: 'standard',
+    };
+  }
+
+  if (!matchedDomainTerm) {
+    if (vagueAnalysisPattern.test(normalizedQuestion)) {
+      return {
+        status: 'missing-information',
+        reason: '存在模糊的数据分析意图，但缺少医疗经营对象、指标和时间范围。',
+        signals: matchedAnalysisIntent ? [`意图：${matchedAnalysisIntent}`] : ['意图：模糊分析请求'],
+        missingFields: ['metric', 'time-range'],
+      };
+    }
+
+    return {
+      status: 'out-of-scope',
+      reason: '未识别到医疗经营领域信号。',
+      signals: matchedAnalysisIntent ? [`域外分析意图：${matchedAnalysisIntent}`] : ['未识别到问数意图'],
+      replyVariant: 'standard',
+    };
+  }
+
+  const missingFields: Array<'metric' | 'time-range'> = [];
+  if (!matchedMetric) missingFields.push('metric');
+  if (!hasTimeRange) missingFields.push('time-range');
+
+  if (missingFields.length) {
+    return {
+      status: 'missing-information',
+      reason: `医疗经营问题缺少${missingFields.includes('metric') ? '具体指标' : ''}${missingFields.length === 2 ? '和' : ''}${missingFields.includes('time-range') ? '时间范围' : ''}。`,
+      signals,
+      missingFields,
+    };
+  }
+
+  return {
+    status: 'routable',
+    reason: '已识别医疗经营领域、指标和时间范围。',
+    signals,
+  };
+}
+
 function hasSharedValue(left: string[] = [], right: string[] = []) {
   const rightSet = new Set(right);
   return left.some((item) => rightSet.has(item));
@@ -2235,9 +2425,22 @@ function scoreDatasetForQuestion(
       if (indicatorMatch.matched) signals.push(`指标：${indicatorMatch.matched}`);
     });
 
+  const nameOrAliasMatched = Boolean(findMatchedTerm(question, [dataset.name, ...dataset.synonyms]));
+  const semanticSimilarity = Math.min(1, score / 12);
+  const nameAliasTriggerMatch = nameOrAliasMatched ? 1 : datasetMatch.matched ? 0.75 : 0;
+  const contextConsistency = 0.5;
+  const dataScopeCompleteness = dataset.tables.length && getDatasetFields(dataset).length ? 1 : 0;
+  const confidence = Number((
+    semanticSimilarity * 0.45
+    + nameAliasTriggerMatch * 0.25
+    + contextConsistency * 0.2
+    + dataScopeCompleteness * 0.1
+  ).toFixed(3));
+
   return {
     dataset,
     score,
+    confidence,
     signals: Array.from(new Set(signals)).slice(0, 5),
   };
 }
@@ -2249,14 +2452,20 @@ function resolveDatasetsForQuestion(
 ) {
   const scored = datasetPool
     .map((dataset) => scoreDatasetForQuestion(question, dataset, indicatorPool))
-    .sort((left, right) => right.score - left.score);
-  const topScore = scored[0]?.score ?? 0;
-  const closeMatches = scored.filter((item) => item.score > 0 && topScore - item.score <= 2);
+    .sort((left, right) => right.confidence - left.confidence);
+  const qualifiedMatches = scored.filter((item) => item.confidence >= 0.55);
+  const topMatch = qualifiedMatches[0];
+  const secondMatch = qualifiedMatches[1];
+  const isUniqueMatch = Boolean(
+    topMatch
+    && topMatch.confidence >= 0.75
+    && (!secondMatch || topMatch.confidence - secondMatch.confidence >= 0.15),
+  );
 
   return {
     best: scored[0] ?? null,
-    closeMatches,
-    isAmbiguous: closeMatches.length > 1,
+    closeMatches: qualifiedMatches,
+    isAmbiguous: qualifiedMatches.length >= 2 && !isUniqueMatch,
   };
 }
 
@@ -2668,8 +2877,8 @@ function resolveMetricSemantic(question: string, agent: Agent) {
   const candidateSemantics = metricSemantics.filter((semantic) =>
     getMetricSemanticDatasetIds(semantic).some((datasetId) => agentDatasetIds.includes(datasetId)),
   );
-  const matchesMetric = (semantic: MetricSemantic) =>
-    findMatchedTerm(question, [
+  const scoreMetric = (semantic: MetricSemantic) => {
+    const terms = [
       semantic.label,
       ...semantic.indicatorIds.flatMap((indicatorId) => {
         const indicator = indicatorAssets.find((item) => item.id === indicatorId);
@@ -2682,10 +2891,29 @@ function resolveMetricSemantic(question: string, agent: Agent) {
             ]
           : [];
       }),
-    ]);
+    ];
+    const matchedTerm = findMatchedTerm(question, terms);
+    const semanticSimilarity = matchedTerm ? 1 : 0;
+    const nameAliasTriggerMatch = findMatchedTerm(question, [semantic.label]) ? 1 : matchedTerm ? 0.75 : 0;
+    const contextConsistency = 0.5;
+    const dataScopeCompleteness = getMetricSemanticDatasetIds(semantic)
+      .some((datasetId) => agentDatasetIds.includes(datasetId)) ? 1 : 0;
+    const confidence = Number((
+      semanticSimilarity * 0.45
+      + nameAliasTriggerMatch * 0.25
+      + contextConsistency * 0.2
+      + dataScopeCompleteness * 0.1
+    ).toFixed(3));
+
+    return { semantic, confidence };
+  };
+
+  const scoredSemantics = candidateSemantics
+    .map(scoreMetric)
+    .sort((left, right) => right.confidence - left.confidence);
 
   return (
-    candidateSemantics.find((semantic) => Boolean(matchesMetric(semantic))) ??
+    scoredSemantics.find((item) => item.confidence >= 0.55)?.semantic ??
     candidateSemantics[0] ??
     metricSemantics[0]
   );
@@ -3954,11 +4182,52 @@ export function buildAgentAnalysisProcess(
     .map((capability) => ({
       id: capability.id,
       name: capability.name,
-      serverName: capability.serverId,
+      serverName: mcpServers.find((server) => server.id === capability.serverId)?.name ?? capability.serverId,
       status: '可调用',
-      reason: '',
+      reason: capability.description,
     }));
   const metrics = evidence.indicators.map((indicator) => indicator.name);
+  const referenceSequenceStartedAt = Date.now();
+  const knowledgeReferenceSources: Array<Omit<AnalysisReferenceSource, 'usedAt'>> =
+    (evidence.knowledgeHits ?? [])
+      .filter((hit, index, allHits) => allHits.findIndex((item) => item.documentId === hit.documentId) === index)
+      .map((hit) => ({
+        id: `knowledge-${hit.id}`,
+        kind: 'knowledge-document',
+        title: hit.documentTitle,
+        source: `${hit.knowledgeBaseName} · ${hit.documentSource}`,
+        summary: hit.summary,
+        documentType: hit.documentType,
+        citationReason: hit.citationReason,
+      }));
+  const webpageReferenceSources: Array<Omit<AnalysisReferenceSource, 'usedAt'>> =
+    agent.type === 'rca'
+      ? [
+          {
+            id: 'web-nhc-official',
+            kind: 'webpage',
+            title: '国家卫生健康委员会官方网站',
+            source: '国家卫生健康委员会',
+            summary: '浏览医疗服务与卫生健康统计公开信息。',
+            url: 'https://www.nhc.gov.cn/',
+          },
+          {
+            id: 'web-nhsa-official',
+            kind: 'webpage',
+            title: '国家医疗保障局官方网站',
+            source: '国家医疗保障局',
+            summary: '浏览医保政策与医疗服务管理公开信息。',
+            url: 'https://www.nhsa.gov.cn/',
+          },
+        ]
+      : [];
+  const referenceSources: AnalysisReferenceSource[] = [
+    ...knowledgeReferenceSources,
+    ...webpageReferenceSources,
+  ].map((source, index) => ({
+    ...source,
+    usedAt: new Date(referenceSequenceStartedAt + index * 1000).toISOString(),
+  }));
 
   return {
     question,
@@ -3968,10 +4237,12 @@ export function buildAgentAnalysisProcess(
     timeRange: evidence.timeRange,
     filters: evidence.filters,
     knowledgeHits: evidence.knowledgeHits ?? [],
+    referenceSources,
     skillMatches: skillTrace.map((skill) => ({
       id: skill.id,
       name: skill.name,
       source: options.skillMatchSource ?? '自动匹配',
+      description: skills.find((item) => item.id === skill.id)?.description,
     })),
     mcpMatches,
     thoughtItems: [
@@ -3987,16 +4258,6 @@ export function buildAgentAnalysisProcess(
     visibleStepCount: options.visibleStepCount ?? (status === 'running' ? 1 : undefined),
     elapsedSeconds: options.elapsedSeconds ?? (status === 'completed' ? 4 : undefined),
   };
-}
-
-function buildHistoryMarkdownFileName(sentAt: Date) {
-  const stamp = sentAt
-    .toISOString()
-    .replace(/[-:]/g, '')
-    .replace(/\..+$/, '')
-    .replace('T', '_');
-
-  return `deep_analysis_${stamp}.md`;
 }
 
 function buildHistoryDeepAnalysisMarkdown(result: RootCauseResultData) {
@@ -4110,7 +4371,7 @@ function buildHistoryMessages(agent: Agent, question: string, sentAt: Date): Mes
         routingTrace,
         rootCauseResult,
         markdownArtifact: {
-          fileName: buildHistoryMarkdownFileName(sentAt),
+          fileName: buildAnalysisReportFileName(question, sentAt),
           content: markdownContent,
         },
       },
@@ -4157,212 +4418,366 @@ function buildHistoryConversation(
   };
 }
 
-type BoundaryCase =
-  | 'mode-restriction'
-  | 'missing-dataset'
-  | 'missing-agent'
-  | 'ambiguous-scope'
-  | 'empty-result'
-  | 'sql-failed'
-  | 'interrupted';
+const demoStepTitles: Record<AnalysisProcessStep['id'], string> = {
+  'understand-question': '理解用户问题',
+  'resolve-data-scope': '确定数据口径',
+  'match-capability': '匹配分析能力',
+  'retrieve-knowledge': '检索知识依据',
+  'generate-query': '执行查询语句',
+  'execute-query': '执行数据查询',
+};
 
-function buildBoundaryCaseConversation(
-  caseType: BoundaryCase,
-  question: string,
-  updatedAt: string,
+const demoStep = (
+  id: AnalysisProcessStep['id'],
+  status: AnalysisProcessStep['status'],
+  detail?: string,
+): AnalysisProcessStep => ({ id, title: demoStepTitles[id], status, detail });
+
+type ExceptionDemoDefinition = {
+  scenarioCode: AnalysisScenarioCode;
+  title: string;
+  question: string;
+  finalReply: string;
+  introExchange?: { question: string; finalReply: string };
+  steps?: AnalysisProcessStep[];
+  directReplyOnly?: boolean;
+  processOverrides?: Partial<AnalysisProcessData>;
+  clarification?: AnalysisClarification;
+};
+
+const datasetCandidates = [
+  {
+    id: 'dataset-outpatient-charge-detail',
+    type: 'dataset' as const,
+    label: '门诊收费明细',
+    businessTopic: '门诊经营',
+    description: '按收费项目、科室和就诊记录分析门诊收入。',
+    confidence: 0.82,
+  },
+  {
+    id: 'dataset-outpatient-settlement-summary',
+    type: 'dataset' as const,
+    label: '门诊结算汇总',
+    businessTopic: '门诊经营',
+    description: '按结算日期和科室汇总门诊收入。',
+    confidence: 0.76,
+  },
+];
+
+const metricCandidates = [
+  {
+    id: 'metric-outpatient-total-revenue',
+    type: 'metric' as const,
+    label: '门诊总收入',
+    description: '包含药品、检查、治疗及其他门诊收费。',
+    confidence: 0.81,
+  },
+  {
+    id: 'metric-outpatient-medical-revenue',
+    type: 'metric' as const,
+    label: '门诊医疗收入',
+    description: '不含药品收入的门诊医疗服务收入。',
+    confidence: 0.74,
+  },
+];
+
+const exceptionDemoDefinitions: ExceptionDemoDefinition[] = [
+  {
+    scenarioCode: 'greeting-or-capability',
+    title: '【异常演示】寒暄或能力询问',
+    question: '你能做什么',
+    finalReply: ASK_INTENT_BOUNDARY_COPY.conversation.capabilityReply,
+    introExchange: {
+      question: '你好',
+      finalReply: ASK_INTENT_BOUNDARY_COPY.conversation.greetingReply,
+    },
+    directReplyOnly: true,
+  },
+  {
+    scenarioCode: 'out-of-scope',
+    title: '【异常演示】无关或越界问题',
+    question: '帮我写一首关于春天的诗',
+    finalReply: ASK_INTENT_BOUNDARY_COPY.outOfScope.reply,
+    directReplyOnly: true,
+  },
+  {
+    scenarioCode: 'missing-information',
+    title: '【异常演示】关键信息缺失',
+    question: '帮我看一下经营情况',
+    finalReply: '请补充时间范围、指标和分析维度。你可以这样问：“查看上月全院门诊收入，按科室对比。”',
+    steps: [
+      demoStep('understand-question', 'completed', ASK_INTENT_BOUNDARY_COPY.missingInformation.understandingDetail),
+      demoStep('resolve-data-scope', 'needs-input', ASK_INTENT_BOUNDARY_COPY.missingInformation.processDetail),
+    ],
+  },
+  {
+    scenarioCode: 'ambiguous-data-scope',
+    title: '【异常演示】数据口径存在歧义',
+    question: '分析上月门诊收入',
+    finalReply: '检测到多个可用数据集，请先选择本次分析使用的数据范围。',
+    steps: [
+      demoStep('understand-question', 'completed'),
+      demoStep('resolve-data-scope', 'awaiting-confirmation', '检测到多个置信度相近的数据口径，需要用户确认。'),
+    ],
+    processOverrides: {
+      datasetName: '待确认',
+      metrics: ['待确认'],
+    },
+    clarification: {
+      stage: 'dataset',
+      options: datasetCandidates,
+      nextOptions: metricCandidates,
+    },
+  },
+  {
+    scenarioCode: 'capability-unavailable',
+    title: '【异常演示】分析能力不可用',
+    question: '按 DRG 分组分析上月住院费用异常',
+    finalReply: '这个问题暂时无法分析，可以重新描述问题，或切换其他模式后再试。',
+    steps: [
+      demoStep('understand-question', 'completed'),
+      demoStep('resolve-data-scope', 'completed'),
+      demoStep('match-capability', 'failed', '未找到所需 Skill 或 MCP。'),
+    ],
+  },
+  {
+    scenarioCode: 'knowledge-missing',
+    title: '【异常演示】必要知识缺失',
+    question: '按最新医保政策解释门诊控费异常',
+    finalReply: '这个问题暂时无法分析，请补充相关背景知识后重试。',
+    steps: [
+      demoStep('understand-question', 'completed'),
+      demoStep('resolve-data-scope', 'completed'),
+      demoStep('match-capability', 'completed'),
+      demoStep('retrieve-knowledge', 'failed', '未找到有效知识依据。'),
+    ],
+    processOverrides: { knowledgeHits: [] },
+  },
+  {
+    scenarioCode: 'sql-execution-failed',
+    title: '【异常演示】SQL 执行失败',
+    question: '查询昨日门诊收费明细',
+    finalReply: '查询执行出错，可以修改查询条件后重试。',
+    steps: [
+      demoStep('understand-question', 'completed'),
+      demoStep('resolve-data-scope', 'completed'),
+      demoStep('match-capability', 'completed'),
+      demoStep('retrieve-knowledge', 'completed'),
+      demoStep('generate-query', 'failed'),
+    ],
+  },
+  {
+    scenarioCode: 'query-timeout',
+    title: '【异常演示】查询范围过大',
+    question: '查询近十年全院患者级费用明细',
+    finalReply: '查询耗时过长已中断，请缩小查询数据范围。',
+    steps: [
+      demoStep('understand-question', 'completed'),
+      demoStep('resolve-data-scope', 'completed'),
+      demoStep('match-capability', 'completed'),
+      demoStep('retrieve-knowledge', 'completed'),
+      demoStep('generate-query', 'failed'),
+    ],
+  },
+  {
+    scenarioCode: 'empty-result',
+    title: '【异常演示】未查询到数据',
+    question: '查询眼科 2020 年诊量',
+    finalReply: '未查询到相关数据，请修改查询条件后重试。',
+    steps: [
+      demoStep('understand-question', 'completed'),
+      demoStep('resolve-data-scope', 'completed'),
+      demoStep('match-capability', 'completed'),
+      demoStep('retrieve-knowledge', 'completed'),
+      demoStep('generate-query', 'completed'),
+    ],
+  },
+  {
+    scenarioCode: 'user-interrupted',
+    title: '【异常演示】用户主动中断',
+    question: '查询住院费用明细',
+    finalReply: '你已中断本次查询。',
+    steps: [
+      demoStep('understand-question', 'completed'),
+      demoStep('resolve-data-scope', 'completed'),
+      demoStep('match-capability', 'completed'),
+      demoStep('retrieve-knowledge', 'completed'),
+      demoStep('generate-query', 'interrupted', '用户主动停止了本轮分析。'),
+    ],
+  },
+  {
+    scenarioCode: 'unexpected-error',
+    title: '【异常演示】其他异常兜底',
+    question: '对比上月全院综合运营表现',
+    finalReply: '这个问题暂时无法分析，可以重新描述问题，或切换其他模式后再试。',
+    steps: [
+      demoStep('understand-question', 'completed'),
+      demoStep('resolve-data-scope', 'completed'),
+      demoStep('match-capability', 'failed', '分析过程中发生异常，未继续执行后续步骤。'),
+    ],
+  },
+];
+
+const completedExceptionScenarios = new Set<AnalysisScenarioCode>([
+  'missing-information',
+  'ambiguous-data-scope',
+  'empty-result',
+]);
+
+const sqlGeneratedScenarios = new Set<AnalysisScenarioCode>([
+  'empty-result',
+  'sql-execution-failed',
+  'query-timeout',
+]);
+
+function getExceptionSqlStatus(
+  scenarioCode: AnalysisScenarioCode,
+): AnalysisProcessData['sqlExecutionStatus'] {
+  if (scenarioCode === 'empty-result') return 'empty';
+  if (scenarioCode === 'sql-execution-failed' || scenarioCode === 'query-timeout') return 'failed';
+  return 'not-run';
+}
+
+function getExceptionSqlMessage(scenarioCode: AnalysisScenarioCode) {
+  if (scenarioCode === 'empty-result') return '查询执行完成，但未查询到符合条件的数据。';
+  if (scenarioCode === 'sql-execution-failed') return '查询语句已生成，但执行失败。';
+  if (scenarioCode === 'query-timeout') return '查询语句已生成，但执行超时。';
+  return '本轮未执行查询。';
+}
+
+function buildExceptionDemoConversation(
+  definition: ExceptionDemoDefinition,
+  demoOrder: number,
 ): Conversation {
   const agent = agents.find((item) => item.id === 'agent-ask-outpatient');
-  const timestamp = new Date(updatedAt);
+  const timestamp = new Date(
+    new Date('2026-07-17T12:30:00').getTime() - demoOrder * 60 * 60 * 1000,
+  );
 
   if (!agent) {
     throw new Error('Missing outpatient agent for mock boundary conversation');
   }
 
   const userMessage: Message = {
-    id: `msg-boundary-${caseType}-${timestamp.getTime()}-user`,
+    id: `msg-exception-demo-${demoOrder}-user`,
     role: 'user',
     kind: 'text',
-    content: question,
+    content: definition.question,
     timestamp: new Date(timestamp.getTime() - 5 * 60 * 1000),
   };
-  const analysisTimestamp = new Date(timestamp.getTime() - 4 * 60 * 1000);
-  const process = buildAgentAnalysisProcess(agent, question, buildSkillTrace(agent));
-  let messages: Message[];
-
-  switch (caseType) {
-    case 'mode-restriction':
-      messages = [
-        userMessage,
-        {
-          id: `msg-boundary-${caseType}-${timestamp.getTime()}-notice`,
-          role: 'assistant',
-          kind: 'clarification',
-          content: '当前为问数模式，暂不支持生成报告。请退出问数模式后再试。',
-          timestamp: analysisTimestamp,
-          originalQuestion: question,
-        },
-      ];
-      break;
-    case 'ambiguous-scope':
-      messages = [
-        userMessage,
-        {
-          id: `msg-boundary-${caseType}-${timestamp.getTime()}-clarification`,
-          role: 'assistant',
-          kind: 'clarification',
-          content: '识别到多个可执行且置信度相近的分析范围，请确认本次分析范围。',
-          timestamp: analysisTimestamp,
-          originalQuestion: question,
-          clarificationOptions: [
-            { agentId: 'agent-ask-outpatient', label: '门诊收入', reason: '按门诊科室与收费项目分析' },
-            { agentId: 'agent-ask-inpatient', label: '住院收入', reason: '按住院科室与结算收入分析' },
-          ],
-        },
-      ];
-      break;
-    case 'missing-dataset':
-      messages = [
-        userMessage,
-        {
-          id: `msg-boundary-${caseType}-${timestamp.getTime()}-analysis`,
-          role: 'assistant',
-          kind: 'analysis',
-          content: '',
-          timestamp: analysisTimestamp,
-          parentUserMessageId: userMessage.id,
-          analysisProcess: {
-            ...process,
-            datasetName: '',
-            metrics: [],
-            dimensions: [],
-            knowledgeHits: [],
-            skillMatches: [],
-            mcpMatches: [],
-            thoughtItems: [],
-            sql: '',
-            resultPreview: { title: '', metrics: [], chartData: [] },
-            status: 'unavailable',
-            visibleStepCount: 3,
-            matchStatus: 'missing-dataset',
-            matchMessage: '暂未找到可用于分析的数据。请补充分析范围后重试。',
-            sqlExecutionStatus: 'not-run',
-            sqlExecutionMessage: 'SQL 未执行。',
-          },
-        },
-      ];
-      break;
-    case 'missing-agent':
-      messages = [
-        userMessage,
-        {
-          id: `msg-boundary-${caseType}-${timestamp.getTime()}-analysis`,
-          role: 'assistant',
-          kind: 'analysis',
-          content: '',
-          timestamp: analysisTimestamp,
-          parentUserMessageId: userMessage.id,
-          analysisProcess: {
-            ...process,
-            datasetName: '',
-            metrics: [],
-            dimensions: [],
-            knowledgeHits: [],
-            skillMatches: [],
-            mcpMatches: [],
-            thoughtItems: [],
-            sql: '',
-            resultPreview: { title: '', metrics: [], chartData: [] },
-            status: 'unavailable',
-            visibleStepCount: 3,
-            matchStatus: 'missing-agent',
-            matchMessage: '暂未找到可处理该问题的分析能力。请调整问题描述后重试。',
-            sqlExecutionStatus: 'not-run',
-            sqlExecutionMessage: 'SQL 未执行。',
-          },
-        },
-      ];
-      break;
-    case 'empty-result':
-      messages = [
-        userMessage,
-        {
-          id: `msg-boundary-${caseType}-${timestamp.getTime()}-analysis`,
-          role: 'assistant',
-          kind: 'analysis',
-          content: '',
-          timestamp: analysisTimestamp,
-          parentUserMessageId: userMessage.id,
-          analysisProcess: {
-            ...process,
-            resultPreview: { title: '未查询到符合条件的数据', metrics: [], chartData: [] },
-            sqlExecutionStatus: 'empty',
-            sqlExecutionMessage: '未查询到符合当前条件的数据。请检查筛选条件或调整查询范围后重试。',
-          },
-        },
-      ];
-      break;
-    case 'sql-failed':
-      messages = [
-        userMessage,
-        {
-          id: `msg-boundary-${caseType}-${timestamp.getTime()}-analysis`,
-          role: 'assistant',
-          kind: 'analysis',
-          content: '',
-          timestamp: analysisTimestamp,
-          parentUserMessageId: userMessage.id,
-          analysisProcess: {
-            ...process,
-            sqlExecutionStatus: 'failed',
-            sqlExecutionMessage: '查询暂未完成，请稍后重试。',
-          },
-        },
-      ];
-      break;
-    case 'interrupted':
-      messages = [
-        userMessage,
-        {
-          id: `msg-boundary-${caseType}-${timestamp.getTime()}-analysis`,
-          role: 'assistant',
-          kind: 'analysis',
-          content: '',
-          timestamp: analysisTimestamp,
-          parentUserMessageId: userMessage.id,
-          isInterrupted: true,
-          analysisProcess: {
-            ...process,
-            status: 'interrupted',
-            visibleStepCount: 3,
-            sql: '',
-            sqlExecutionStatus: 'not-run',
-            sqlExecutionMessage: '查询已中断，未生成结果或模拟 SQL。',
-          },
-        },
-      ];
-      break;
-  }
-
-  return {
-    id: `conv-boundary-${caseType}-${timestamp.getTime()}`,
-    title: question,
+  const buildConversation = (messages: Message[]): Conversation => ({
+    id: `conv-exception-demo-${demoOrder}`,
+    title: definition.title,
     agentId: agent.id,
     agentType: 'ask',
     workspaceType: 'ask',
     messages,
     createdAt: new Date(timestamp.getTime() - 10 * 60 * 1000),
     updatedAt: timestamp,
+    isDemo: true,
+    demoOrder,
+  });
+
+  if (definition.directReplyOnly) {
+    const introUserMessage: Message | null = definition.introExchange
+      ? {
+          id: `msg-exception-demo-${demoOrder}-intro-user`,
+          role: 'user',
+          kind: 'text',
+          content: definition.introExchange.question,
+          timestamp: new Date(timestamp.getTime() - 7 * 60 * 1000),
+        }
+      : null;
+    const introMessages: Message[] = introUserMessage && definition.introExchange
+      ? [
+          introUserMessage,
+          {
+            id: `msg-exception-demo-${demoOrder}-intro-reply`,
+            role: 'assistant',
+            kind: 'text',
+            content: definition.introExchange.finalReply,
+            timestamp: new Date(timestamp.getTime() - 6 * 60 * 1000),
+            parentUserMessageId: introUserMessage.id,
+          },
+        ]
+      : [];
+
+    return buildConversation([
+      ...introMessages,
+      userMessage,
+      {
+        id: `msg-exception-demo-${demoOrder}-reply`,
+        role: 'assistant',
+        kind: 'text',
+        content: definition.finalReply,
+        timestamp: new Date(timestamp.getTime() - 4 * 60 * 1000),
+        parentUserMessageId: userMessage.id,
+      },
+    ]);
+  }
+
+  const analysisTimestamp = new Date(timestamp.getTime() - 4 * 60 * 1000);
+  const steps = definition.steps ?? [];
+  const process = buildAgentAnalysisProcess(agent, definition.question, buildSkillTrace(agent));
+  const processStatus: AnalysisProcessData['status'] = completedExceptionScenarios.has(definition.scenarioCode)
+    ? 'completed'
+    : 'interrupted';
+  const analysisMessageId = `msg-exception-demo-${demoOrder}-analysis`;
+  const analysisProcess: AnalysisProcessData = {
+    ...process,
+    ...definition.processOverrides,
+    question: definition.question,
+    status: processStatus,
+    visibleStepCount: steps.length,
+    steps,
+    scenarioCode: definition.scenarioCode,
+    hasRealResult: false,
+    canRetry: definition.scenarioCode !== 'ambiguous-data-scope',
+    sql: sqlGeneratedScenarios.has(definition.scenarioCode) ? process.sql : '',
+    resultPreview: { title: '', metrics: [], chartData: [] },
+    sqlExecutionStatus: getExceptionSqlStatus(definition.scenarioCode),
+    sqlExecutionMessage: getExceptionSqlMessage(definition.scenarioCode),
+    executionContext: { originalQuestion: definition.question },
   };
+  const messages: Message[] = [
+    userMessage,
+    {
+      id: analysisMessageId,
+      role: 'assistant',
+      kind: 'analysis',
+      content: '',
+      timestamp: analysisTimestamp,
+      parentUserMessageId: userMessage.id,
+      isInterrupted: processStatus === 'interrupted',
+      routingTrace: definition.scenarioCode === 'missing-agent' || definition.scenarioCode === 'out-of-scope'
+        ? undefined
+        : buildRoutingTrace(
+            agent,
+            'medium',
+            analysisProcess.datasetName ? [analysisProcess.datasetName] : [],
+            analysisProcess.skillMatches.map((skill) => skill.name),
+            ['异常演示数据'],
+          ),
+      analysisProcess,
+    },
+    {
+      id: `msg-exception-demo-${demoOrder}-reply`,
+      role: 'assistant',
+      kind: 'text',
+      content: definition.finalReply,
+      timestamp: new Date(analysisTimestamp.getTime() + 60 * 1000),
+      parentUserMessageId: userMessage.id,
+      relatedAnalysisMessageId: analysisMessageId,
+      analysisClarification: definition.clarification,
+      analysisExecutionContext: { originalQuestion: definition.question },
+    },
+  ];
+
+  return buildConversation(messages);
 }
 
 export const initialConversations: Conversation[] = [
-  buildBoundaryCaseConversation('mode-restriction', '生成本周门诊经营周报', '2026-07-12T11:30:00'),
-  buildBoundaryCaseConversation('missing-dataset', '查询儿童保健疫苗接种率', '2026-07-12T11:20:00'),
-  buildBoundaryCaseConversation('missing-agent', '分析海外院区床位周转率', '2026-07-12T11:10:00'),
-  buildBoundaryCaseConversation('ambiguous-scope', '分析上月收入增长情况', '2026-07-12T11:00:00'),
-  buildBoundaryCaseConversation('empty-result', '查询眼科 2020 年诊量', '2026-07-12T10:50:00'),
-  buildBoundaryCaseConversation('sql-failed', '查询门诊收入趋势', '2026-07-12T10:40:00'),
-  buildBoundaryCaseConversation('interrupted', '查询住院费用明细', '2026-07-12T10:35:00'),
+  ...exceptionDemoDefinitions.map(buildExceptionDemoConversation),
   buildHistoryConversation('agent-ask-outpatient', '眼科近三个月诊量是否异常', '2026-07-12T10:30:00'),
   buildHistoryConversation('agent-ask-outpatient', '上月门诊总收入和药占比情况', '2026-07-12T10:20:00'),
   buildHistoryConversation('agent-ask-inpatient', '本季度平均住院日变化', '2026-07-12T09:24:00'),

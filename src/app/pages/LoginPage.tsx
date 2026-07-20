@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router';
 import { ArrowLeft, EyeOff } from 'lucide-react';
 
 import { AUTH_STORAGE_KEY, createDemoAuthSession, getDemoPassword, resetDemoPassword } from '../utils/demoAuth';
+import { BrandLogo } from '../components/BrandLogo';
 
-import brandLogo from '../../assets/figma-login/figma-brand-logo@2x.png';
 import bannerConnectorBottom from '../../assets/figma-login/figma-banner-connector-bottom.svg';
 import bannerConnectorDot from '../../assets/figma-login/figma-banner-connector-dot.svg';
 import bannerConnectorRight from '../../assets/figma-login/figma-banner-connector-right.svg';
@@ -36,17 +36,6 @@ function getConfirmPasswordError(password: string, confirmation: string) {
   if (!confirmation) return '请再次输入新密码';
   if (password !== confirmation) return '两次输入的密码不一致';
   return undefined;
-}
-
-function BrandLogo() {
-  return (
-    <img
-      className="h-10 w-[147px] select-none mix-blend-multiply"
-      src={brandLogo}
-      alt="智能问数"
-      draggable={false}
-    />
-  );
 }
 
 function LoginField({
@@ -135,15 +124,20 @@ function LoginField({
 
 function LoginBanner() {
   return (
-    <div className="absolute left-[95.5px] top-[132px] h-[511.38px] w-[718.5px]" aria-hidden="true">
+    <div className="absolute left-[95.5px] top-1/2 h-[511.38px] w-[718.5px] -translate-y-[245px] overflow-hidden" aria-hidden="true">
+      <div className="absolute left-[-32.5px] top-[-33px] h-[618px] w-[761px] bg-[#e7f0ff]" />
       <div
-        className="absolute left-[13.71px] top-[-78.47px] h-[642.388px] w-[642.388px] brightness-[1.01] mix-blend-darken"
+        className="absolute left-[13.71px] top-[-78.47px] h-[642.388px] w-[642.388px] mix-blend-darken"
         style={{
-          maskImage: `url(${bannerMask})`,
+          maskImage: `url("${bannerMask}")`,
+          maskClip: 'no-clip',
+          maskComposite: 'intersect',
+          maskMode: 'alpha',
           maskPosition: '-113.707px -21.415px',
           maskRepeat: 'no-repeat',
           maskSize: '846.5px 711.26px',
-          WebkitMaskImage: `url(${bannerMask})`,
+          WebkitMaskImage: `url("${bannerMask}")`,
+          WebkitMaskClip: 'no-clip',
           WebkitMaskPosition: '-113.707px -21.415px',
           WebkitMaskRepeat: 'no-repeat',
           WebkitMaskSize: '846.5px 711.26px',
@@ -271,7 +265,7 @@ export default function LoginPage() {
 
     window.setTimeout(() => {
       if (trimmedAccount === 'admin' && password === getDemoPassword()) {
-        createDemoAuthSession(rememberMe);
+        createDemoAuthSession(rememberMe, trimmedAccount);
         navigate('/home', { replace: true });
         return;
       }

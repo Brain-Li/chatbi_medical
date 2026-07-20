@@ -14,7 +14,7 @@ export interface WorkspaceAutoSubmitPayload {
 }
 
 export interface HomePrefillPayload {
-  mode: Extract<AgentType, 'ask' | 'report'>;
+  mode: Extract<AgentType, 'ask' | 'report'> | null;
   draft: string;
   templateId?: string;
 }
@@ -50,6 +50,87 @@ export interface AgentClarificationOption {
   agentId: string;
   label: string;
   reason: string;
+}
+
+export type AnalysisStepId =
+  | 'understand-question'
+  | 'understand-intent'
+  | 'plan-analysis'
+  | 'resolve-data-scope'
+  | 'match-capability'
+  | 'load-skills'
+  | 'execute-skills'
+  | 'retrieve-knowledge'
+  | 'generate-query'
+  | 'execute-query';
+
+export type AnalysisStepStatus =
+  | 'running'
+  | 'completed'
+  | 'awaiting-confirmation'
+  | 'needs-input'
+  | 'failed'
+  | 'interrupted';
+
+export type AnalysisScenarioCode =
+  | 'greeting-or-capability'
+  | 'out-of-scope'
+  | 'missing-information'
+  | 'ambiguous-data-scope'
+  | 'missing-agent'
+  | 'capability-unavailable'
+  | 'knowledge-missing'
+  | 'sql-generation-failed'
+  | 'empty-result'
+  | 'sql-execution-failed'
+  | 'query-timeout'
+  | 'user-interrupted'
+  | 'unexpected-error';
+
+export type AskQuestionIntentStatus =
+  | 'out-of-scope'
+  | 'missing-information'
+  | 'routable';
+
+export interface AskQuestionIntentClassification {
+  status: AskQuestionIntentStatus;
+  reason: string;
+  signals: string[];
+  missingFields?: Array<'metric' | 'time-range'>;
+  replyVariant?: 'standard' | 'greeting' | 'capability';
+}
+
+export interface AnalysisProcessStep {
+  id: AnalysisStepId;
+  title: string;
+  status: AnalysisStepStatus;
+  detail?: string;
+}
+
+export interface AnalysisCandidateOption {
+  id: string;
+  type: 'dataset' | 'metric';
+  label: string;
+  businessTopic?: string;
+  description: string;
+  confidence: number;
+}
+
+export interface AnalysisClarification {
+  stage: 'dataset' | 'metric';
+  options: AnalysisCandidateOption[];
+  selectedDatasetId?: string;
+  selectedDatasetLabel?: string;
+  selectedMetricId?: string;
+  selectedMetricLabel?: string;
+  nextOptions?: AnalysisCandidateOption[];
+}
+
+export interface AskExecutionContext {
+  originalQuestion: string;
+  selectedDatasetId?: string;
+  selectedMetricId?: string;
+  filters?: string[];
 }
 
 export interface MetricChip {
@@ -375,6 +456,7 @@ export interface AnalysisSkillMatch {
   id: string;
   name: string;
   source: '自动匹配' | '手动选择';
+  description?: string;
 }
 
 export type AnalysisMcpMatchStatus = '可调用' | '已调用' | '跳过';
@@ -387,6 +469,28 @@ export interface AnalysisMcpMatch {
   reason: string;
 }
 
+export interface AnalysisReferenceSource {
+  id: string;
+  kind: 'knowledge-document' | 'webpage';
+  title: string;
+  source: string;
+  summary: string;
+  usedAt: string;
+  url?: string;
+  documentType?: KnowledgeDocument['type'];
+  citationReason?: string;
+}
+
+export type DeepAnalysisActivityId =
+  | 'understand-intent'
+  | 'plan-analysis'
+  | 'resolve-data-scope'
+  | 'load-skills'
+  | 'execute-skills'
+  | 'retrieve-knowledge'
+  | 'execute-query'
+  | 'draft-report';
+
 export interface AnalysisProcessData {
   question: string;
   datasetName: string;
@@ -395,18 +499,25 @@ export interface AnalysisProcessData {
   timeRange?: string;
   filters?: string[];
   knowledgeHits: KnowledgeHit[];
+  referenceSources?: AnalysisReferenceSource[];
   skillMatches: AnalysisSkillMatch[];
   mcpMatches: AnalysisMcpMatch[];
   thoughtItems: string[];
   sql: string;
   resultPreview: AnalysisProcessResultPreview;
-  status: 'running' | 'completed' | 'interrupted' | 'unavailable';
+  status: 'running' | 'completed' | 'interrupted';
+  plannedTaskCount?: number;
   visibleStepCount?: number;
   elapsedSeconds?: number;
   matchStatus?: 'matched' | 'missing-agent' | 'missing-dataset';
   matchMessage?: string;
   sqlExecutionStatus?: 'pending' | 'success' | 'empty' | 'failed' | 'not-run';
   sqlExecutionMessage?: string;
+  steps?: AnalysisProcessStep[];
+  scenarioCode?: AnalysisScenarioCode;
+  hasRealResult?: boolean;
+  canRetry?: boolean;
+  executionContext?: AskExecutionContext;
 }
 
 export interface Message {
@@ -429,6 +540,10 @@ export interface Message {
   skillTrace?: SkillTrace[];
   routingTrace?: AgentRoutingTrace;
   clarificationOptions?: AgentClarificationOption[];
+  relatedAnalysisMessageId?: string;
+  analysisClarification?: AnalysisClarification;
+  analysisExecutionContext?: AskExecutionContext;
+  selectedAnalysisCandidateId?: string;
   originalQuestion?: string;
   analysisResult?: AnalysisResultData;
   reportResult?: ReportResultData;
@@ -450,6 +565,8 @@ export interface Conversation {
   messages: Message[];
   createdAt: Date;
   updatedAt: Date;
+  isDemo?: boolean;
+  demoOrder?: number;
 }
 
 export interface Skill {

@@ -58,3 +58,26 @@ button:disabled,
   box-shadow: 0 0 0 1000px #ffffff inset;
   transition: background-color 9999s ease-out;
 }
+
+@keyframes report-progress-slide {
+  from {
+    transform: translateX(-110%);
+  }
+
+  to {
+    transform: translateX(335%);
+  }
+}
+
+.report-progress-indeterminate {
+  animation: report-progress-slide 1.35s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .report-progress-indeterminate {
+    animation: none;
+    opacity: 0.72;
+    transform: translateX(0);
+  }
+}
