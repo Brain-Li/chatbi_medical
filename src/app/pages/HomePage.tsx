@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { ArrowUp, Eye, EyeOff } from 'lucide-react';
 import { HomePrefillPayload, WorkspaceAutoSubmitPayload } from '../types';
@@ -27,6 +27,7 @@ type HomeMode = PromptMode;
 type HomeLocationState = {
   historyOpen?: boolean;
   prefill?: HomePrefillPayload;
+  deleteConversationId?: string;
 };
 type LoginErrors = {
   account?: string;
@@ -129,6 +130,20 @@ export default function HomePage() {
       setHistoryOpen(true);
     }
   }, [location.state]);
+
+  useLayoutEffect(() => {
+    const state = location.state as HomeLocationState | null;
+    if (!state?.deleteConversationId) return;
+
+    setActiveConversationForWorkspace('ask', null);
+    deleteConversation(state.deleteConversationId);
+
+    const { deleteConversationId: _consumedDeleteId, ...remainingState } = state;
+    navigate('.', {
+      replace: true,
+      state: Object.keys(remainingState).length ? remainingState : null,
+    });
+  }, [location.state, navigate]);
 
   useEffect(() => {
     const state = location.state as HomeLocationState | null;

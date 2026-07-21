@@ -1166,15 +1166,15 @@ function InlineDeepAnalysisResult({
           ) : null}
 
           {visibleResultBlockCount >= conclusionBlockIndex ? <section className="border-y border-[#e5e6eb] py-4" aria-labelledby="inline-analysis-conclusion-title">
-            <h3 id="inline-analysis-conclusion-title" className="text-sm font-medium leading-[22px] text-[#1d2129]">分析结论</h3>
+            <h3 id="inline-analysis-conclusion-title" className="text-[16px] font-medium leading-6 text-[#1d2129]">分析结论</h3>
             {visibleConclusion ? (
-              <p className="mt-1.5 min-h-6 text-sm leading-6 text-[#4e5969]" aria-label={result.conclusion}>{visibleConclusion}</p>
+              <p className="mt-1.5 min-h-6 text-[15px] leading-6 text-[#4e5969]" aria-label={result.conclusion}>{visibleConclusion}</p>
             ) : null}
           </section> : null}
 
           {result.sections.length && isConclusionComplete ? (
             <details className="group border-b border-[#e5e6eb] pb-4" open>
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium leading-[22px] text-[#1d2129] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[16px] font-medium leading-6 text-[#1d2129] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20">
                 <span>详细分析</span>
                 <ChevronDown className="h-4 w-4 shrink-0 text-[#86909c] transition-transform group-open:rotate-180" aria-hidden="true" />
               </summary>
@@ -1184,13 +1184,13 @@ function InlineDeepAnalysisResult({
                     <div className="flex items-start gap-2.5">
                       <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#e8f3ff] text-[11px] font-medium text-[#165dff]">{index + 1}</span>
                       <div className="min-w-0">
-                        <h4 className="min-h-5 text-sm font-medium leading-5 text-[#1d2129]" aria-label={section.title}>{section.visibleTitle}</h4>
+                        <h4 className="min-h-6 text-[15px] font-medium leading-6 text-[#1d2129]" aria-label={section.title}>{section.visibleTitle}</h4>
                         {section.visibleDescription ? (
-                          <p className="mt-1 min-h-6 text-sm leading-6 text-[#86909c]" aria-label={section.description}>{section.visibleDescription}</p>
+                          <p className="mt-1 min-h-6 text-sm leading-6 text-[#657180]" aria-label={section.description}>{section.visibleDescription}</p>
                         ) : null}
                         {section.visibleBullets.length ? <ul className="mt-1.5 space-y-1.5">
                           {section.visibleBullets.map((bullet) => (
-                            <li key={bullet.fullText} className="flex min-h-6 gap-2 text-sm leading-6 text-[#4e5969]" aria-label={bullet.fullText}>
+                            <li key={bullet.fullText} className="flex min-h-6 gap-2 text-[15px] leading-6 text-[#4e5969]" aria-label={bullet.fullText}>
                               <span className="mt-[9px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#165dff]" />
                               <span className="min-w-0">{bullet.visibleText}</span>
                             </li>

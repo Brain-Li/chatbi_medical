@@ -22,7 +22,7 @@ import {
 import { useWorkspace } from '../context/WorkspaceContext';
 import { inferPromptMode } from '../utils/promptMode';
 import { buildAnalysisReportFileName } from '../utils/reportFileName';
-import { Agent, AgentClarificationOption, AgentRuntimeConfig, AgentType, AnalysisCandidateOption, AnalysisMcpMatch, AnalysisProcessData, AnalysisProcessStep, AnalysisResultData, AskQuestionIntentClassification, DeepAnalysisActivityId, McpCapability, Message, ReportResultData, ResultScope, Skill, WorkspaceAutoSubmitPayload } from '../types';
+import { Agent, AgentClarificationOption, AgentRuntimeConfig, AgentType, AnalysisCandidateOption, AnalysisMcpMatch, AnalysisProcessData, AnalysisProcessStep, AnalysisResultData, AskQuestionIntentClassification, Conversation, DeepAnalysisActivityId, McpCapability, Message, ReportResultData, ResultScope, Skill, WorkspaceAutoSubmitPayload } from '../types';
 import { ConversationHistorySidebar } from './ConversationHistorySidebar';
 import { PromptModeBar, PromptModeTag } from './PromptModeBar';
 import { PromptComposerFrame } from './PromptComposerFrame';
@@ -531,6 +531,19 @@ function buildAskIntentBoundaryProcess({
   };
 }
 
+function getConversationDeepAnalysisEnabled(conversation: Conversation | null) {
+  if (!conversation) return false;
+  if (typeof conversation.deepAnalysisEnabled === 'boolean') {
+    return conversation.deepAnalysisEnabled;
+  }
+
+  return conversation.messages.some(
+    (message) =>
+      message.routingTrace?.agentType === 'rca' ||
+      message.kind === 'rca-result',
+  );
+}
+
 export default function AgentWorkspace({
   mode,
   sidebarOpen = true,
@@ -941,7 +954,9 @@ export default function AgentWorkspace({
   useEffect(() => {
     setInputValue('');
     setIsRecording(false);
-    setIsDeepAnalysisEnabled(false);
+    setIsDeepAnalysisEnabled(
+      mode === 'ask' && getConversationDeepAnalysisEnabled(currentConversation),
+    );
     setSelectedComposerMode(currentConversation ? mode : null);
     setSelectedQuestionId(null);
     setDeepAnalysisDockTab('progress');
@@ -957,7 +972,7 @@ export default function AgentWorkspace({
     setReportPreviewedFileMessageId(null);
     setIsFollowingReportActivity(true);
     resetManualSkillState();
-  }, [currentConversation?.id, mode]);
+  }, [currentConversation?.id, currentConversation?.deepAnalysisEnabled, mode]);
 
   useEffect(() => {
     return () => {
@@ -991,6 +1006,26 @@ export default function AgentWorkspace({
     setIsDeepAnalysisEnabled(false);
     setSelectedComposerMode(mode);
     resetManualSkillState();
+  };
+
+  const handleDeleteConversation = (conversationId: string) => {
+    const isDeletingCurrentConversation = conversationId === resolvedConversationId;
+
+    if (isDeletingCurrentConversation && mode === 'ask') {
+      navigate('/home', {
+        state: {
+          historyOpen: true,
+          deleteConversationId: conversationId,
+        },
+      });
+      return;
+    }
+
+    if (isDeletingCurrentConversation) {
+      handleNewConversation();
+    }
+
+    deleteConversation(conversationId);
   };
 
   const handleStopGeneration = () => {
@@ -1274,8 +1309,9 @@ export default function AgentWorkspace({
         })
       : null;
 
+    const isNewConversation = options?.forceNewConversation || !currentConversation;
     const conversation =
-      options?.forceNewConversation || !currentConversation
+      isNewConversation
         ? createConversation(mode, newConversationLabel)
         : currentConversation;
 
@@ -1289,6 +1325,11 @@ export default function AgentWorkspace({
     }
 
     setActiveConversationForWorkspace(mode, conversation.id);
+    if (mode === 'ask' && isNewConversation) {
+      updateConversation(conversation.id, {
+        deepAnalysisEnabled: options?.forceDeepAnalysis ?? isDeepAnalysisEnabled,
+      });
+    }
 
     const userMessage: Message = {
       id: `msg-${Date.now()}-user`,
@@ -2329,9 +2370,22 @@ export default function AgentWorkspace({
 
   const manualSkillSummary = selectedManualSkills.map((skill) => skill.name).join(' / ');
 
+  const handleToggleDeepAnalysis = () => {
+    const nextEnabled = !isDeepAnalysisEnabled;
+    setIsDeepAnalysisEnabled(nextEnabled);
+
+    if (currentConversation) {
+      updateConversation(currentConversation.id, {
+        deepAnalysisEnabled: nextEnabled,
+      });
+    }
+  };
+
   const selectComposerMode = (nextMode: WorkspaceSwitchMode) => {
     setSelectedComposerMode(nextMode);
-    if (nextMode !== 'ask') setIsDeepAnalysisEnabled(false);
+    setIsDeepAnalysisEnabled(
+      nextMode === 'ask' && getConversationDeepAnalysisEnabled(currentConversation),
+    );
     window.setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
@@ -2493,7 +2547,7 @@ export default function AgentWorkspace({
               {selectedComposerMode === 'ask' ? (
                 <button
                   type="button"
-                  onClick={() => setIsDeepAnalysisEnabled((current) => !current)}
+                  onClick={handleToggleDeepAnalysis}
                   className={`inline-flex h-8 items-center gap-1 rounded-[8px] px-3 text-[14px] font-normal leading-[22px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25 ${
                     isDeepAnalysisEnabled
                       ? 'bg-[#e8f3ff] text-[#165dff]'
@@ -2584,7 +2638,7 @@ export default function AgentWorkspace({
           setActiveConversationForWorkspace(mode, conversationId)
         }
         onRenameConversation={renameConversation}
-        onDeleteConversation={deleteConversation}
+        onDeleteConversation={handleDeleteConversation}
       />
     );
   };

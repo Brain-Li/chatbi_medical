@@ -1,4 +1,4 @@
-import { type UIEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type UIEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Ellipsis, PanelLeftClose, Pencil, Trash2 } from 'lucide-react';
 import historyCorner from '../../assets/figma-home/history-corner.png';
 import newQaIcon from '../../assets/figma-home/new-qa-icon.svg';
@@ -137,10 +137,27 @@ export function ConversationHistorySidebar({
     visible: false,
   });
   const scrollTimerRef = useRef<number | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const selectedConversationRef = useRef<HTMLDivElement>(null);
   const conversationGroups = useMemo(
     () => groupConversationsByDate(conversations),
     [conversations],
   );
+
+  useLayoutEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    const selectedConversation = selectedConversationRef.current;
+    if (!scrollContainer || !selectedConversation) return;
+
+    const containerRect = scrollContainer.getBoundingClientRect();
+    const selectedRect = selectedConversation.getBoundingClientRect();
+
+    if (selectedRect.top < containerRect.top) {
+      scrollContainer.scrollTop += selectedRect.top - containerRect.top;
+    } else if (selectedRect.bottom > containerRect.bottom) {
+      scrollContainer.scrollTop += selectedRect.bottom - containerRect.bottom;
+    }
+  }, [selectedConversationId]);
 
   useEffect(() => {
     return () => {
@@ -235,6 +252,7 @@ export function ConversationHistorySidebar({
 
         <div className="relative min-h-0 min-w-0 flex-1">
           <div
+            ref={scrollContainerRef}
             onScroll={handleScroll}
             className="history-scrollbar h-full min-h-0 min-w-0 overflow-x-hidden overflow-y-auto pb-2"
           >
@@ -263,6 +281,7 @@ export function ConversationHistorySidebar({
                           <Tooltip key={conversation.id} delayDuration={260}>
                             <TooltipTrigger asChild>
                               <div
+                                ref={isSelected ? selectedConversationRef : undefined}
                                 data-testid={`conversation-history-item-${conversation.id}`}
                                 className={`group relative box-border flex h-9 min-w-0 max-w-full items-center gap-2 overflow-visible rounded-[8px] border py-1 pl-[9px] pr-1 opacity-80 transition-colors ${
                                   isSelected
@@ -346,7 +365,7 @@ export function ConversationHistorySidebar({
               </div>
             ) : (
               <div className="px-2 py-10 text-center text-sm leading-[22px] text-[#86909c]">
-                当前入口暂无会话
+                暂无会话
               </div>
             )}
           </div>

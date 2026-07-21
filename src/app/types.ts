@@ -579,6 +579,7 @@ export interface Conversation {
   agentId?: string;
   agentType?: AgentType;
   workspaceType: AgentType;
+  deepAnalysisEnabled?: boolean;
   messages: Message[];
   createdAt: Date;
   updatedAt: Date;
