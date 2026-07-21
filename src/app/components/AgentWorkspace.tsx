@@ -117,19 +117,17 @@ function WorkbenchRestoreControl({
           <button
             type="button"
             onClick={onOpen}
-            className="group inline-flex h-11 w-7 items-center justify-end rounded-l-[5px] bg-transparent text-[#6b7785] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#165dff]/20"
+            className="group inline-flex h-12 w-8 items-center justify-center rounded-l-[999px] border border-r-0 border-[#d9e2ec] bg-white text-[#657180] shadow-[-4px_0_12px_rgba(29,33,41,0.07)] transition-[border-color,background-color,color,box-shadow] duration-150 hover:border-[#94bfff] hover:bg-[#f2f7ff] hover:text-[#165dff] hover:shadow-[-6px_0_16px_rgba(22,93,255,0.10)] active:bg-[#e8f3ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#165dff]/25 motion-reduce:transition-none"
             aria-label={`展开${label}`}
           >
-            <span className="inline-flex h-9 w-4 items-center justify-center rounded-l-[4px] border border-r-0 border-[#e5e6eb] bg-white transition-colors group-hover:border-[#bedaff] group-hover:bg-[#f2f7ff] group-hover:text-[#165dff]">
-              <ChevronsLeft aria-hidden="true" className="h-3 w-3" strokeWidth={1.6} />
-            </span>
+            <ChevronsLeft aria-hidden="true" className="h-4 w-4 transition-transform duration-150 group-hover:-translate-x-px motion-reduce:transition-none" strokeWidth={1.8} />
           </button>
         </TooltipTrigger>
         <TooltipContent
           side="left"
           sideOffset={8}
           showArrow={false}
-          className="relative rounded-[4px] bg-[#1d2129] px-3 py-1 text-sm font-normal leading-[22px] whitespace-nowrap text-white shadow-none"
+          className="relative border-0 rounded-[4px] bg-[#1d2129] px-2.5 py-1 text-xs font-normal leading-[18px] whitespace-nowrap text-white shadow-[0_6px_16px_rgba(29,33,41,0.16)]"
         >
           展开工作台
           <span aria-hidden="true" className="absolute left-full top-1/2 h-0 w-0 -translate-y-1/2 border-y-[5px] border-l-[4px] border-y-transparent border-l-[#1d2129]" />
