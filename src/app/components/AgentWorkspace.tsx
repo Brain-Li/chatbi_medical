@@ -2731,7 +2731,7 @@ export default function AgentWorkspace({
             </button>
           </div>
 
-          <div className={`relative grid min-h-0 flex-1 grid-cols-1 ${isDeepAnalysisWorkbenchOpen ? 'gap-4 xl:grid-cols-[minmax(380px,44fr)_minmax(500px,56fr)]' : 'xl:grid-cols-1'}`}>
+          <div className={`relative grid min-h-0 flex-1 grid-cols-1 ${isDeepAnalysisWorkbenchOpen ? 'gap-4 xl:grid-cols-[minmax(480px,1fr)_minmax(480px,1fr)]' : 'xl:grid-cols-1'}`}>
             <section className={`${deepAnalysisMobilePane === 'activity' ? 'flex' : 'hidden'} min-h-0 flex-col overflow-hidden bg-transparent xl:flex ${isDeepAnalysisWorkbenchOpen ? '' : 'xl:mx-auto xl:w-full xl:max-w-[1024px]'}`}>
               <div className="shrink-0 px-4 py-3 md:px-5">
                 <div className="flex justify-end">
@@ -2909,7 +2909,7 @@ export default function AgentWorkspace({
             </button>
           </div>
 
-          <div className={`relative grid min-h-0 flex-1 grid-cols-1 ${isReportWorkbenchOpen ? 'gap-4 xl:grid-cols-[minmax(380px,44fr)_minmax(500px,56fr)]' : 'xl:grid-cols-1'}`}>
+          <div className={`relative grid min-h-0 flex-1 grid-cols-1 ${isReportWorkbenchOpen ? 'gap-4 xl:grid-cols-[minmax(480px,1fr)_minmax(480px,1fr)]' : 'xl:grid-cols-1'}`}>
             <section className={`${reportMobilePane === 'activity' ? 'flex' : 'hidden'} min-h-0 flex-col overflow-hidden bg-transparent xl:flex ${isReportWorkbenchOpen ? '' : 'xl:mx-auto xl:w-full xl:max-w-[1024px]'}`}>
               <div className="shrink-0 px-4 py-3 md:px-5">
                 <div className="flex justify-end">
