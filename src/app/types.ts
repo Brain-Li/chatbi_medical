@@ -444,6 +444,20 @@ export interface AnalysisResultData {
   chartData: ChartDatum[];
   recommendations: string[];
   evidence?: ResultEvidence;
+  datasetResults?: DatasetAnalysisResult[];
+}
+
+export interface DatasetAnalysisResult {
+  datasetId: string;
+  datasetName: string;
+  businessTopic: string;
+  summary: string;
+  metrics: MetricChip[];
+  chartTitle: string;
+  chartData: ChartDatum[];
+  status: 'completed' | 'empty' | 'failed';
+  statusMessage?: string;
+  evidence?: ResultEvidence;
 }
 
 export interface AnalysisProcessResultPreview {
@@ -489,6 +503,7 @@ export type DeepAnalysisActivityId =
   | 'execute-skills'
   | 'retrieve-knowledge'
   | 'execute-query'
+  | 'generate-insights'
   | 'draft-report';
 
 export interface AnalysisProcessData {
@@ -534,6 +549,8 @@ export interface Message {
   isAwaitingResult?: boolean;
   visibleStepCount?: number;
   visibleMarkdownLineCount?: number;
+  visibleDeepAnalysisBlockCount?: number;
+  visibleDeepAnalysisTextLength?: number;
   analysisSteps?: string[];
   matchedReportTemplateName?: string;
   analysisSummary?: string;

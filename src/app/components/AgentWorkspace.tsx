@@ -4,6 +4,7 @@ import {
   Activity,
   ArrowUp,
   Check,
+  ChevronsLeft,
   Square,
   X,
 } from 'lucide-react';
@@ -21,9 +22,9 @@ import {
 import { useWorkspace } from '../context/WorkspaceContext';
 import { inferPromptMode } from '../utils/promptMode';
 import { buildAnalysisReportFileName } from '../utils/reportFileName';
-import { Agent, AgentClarificationOption, AgentRuntimeConfig, AgentType, AnalysisCandidateOption, AnalysisMcpMatch, AnalysisProcessData, AnalysisProcessStep, AnalysisResultData, AskQuestionIntentClassification, DeepAnalysisActivityId, McpCapability, Message, ResultScope, RootCauseResultData, Skill, WorkspaceAutoSubmitPayload } from '../types';
+import { Agent, AgentClarificationOption, AgentRuntimeConfig, AgentType, AnalysisCandidateOption, AnalysisMcpMatch, AnalysisProcessData, AnalysisProcessStep, AnalysisResultData, AskQuestionIntentClassification, DeepAnalysisActivityId, McpCapability, Message, ReportResultData, ResultScope, Skill, WorkspaceAutoSubmitPayload } from '../types';
 import { ConversationHistorySidebar } from './ConversationHistorySidebar';
-import { PromptModeBar, PromptModeHeader } from './PromptModeBar';
+import { PromptModeBar, PromptModeTag } from './PromptModeBar';
 import { PromptComposerFrame } from './PromptComposerFrame';
 import {
   DeepAnalysisWorkbench,
@@ -42,6 +43,7 @@ import {
   CommandItem,
   CommandList,
 } from './ui/command';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import globalLine from '../../assets/figma-home/global-line.svg';
 import globalLineSelected from '../../assets/figma-home/global-line-selected.svg';
 import micLine from '../../assets/figma-home/mic-line.svg';
@@ -72,10 +74,70 @@ const agentTypeLabels: Record<AgentType, string> = {
 
 const STREAM_STEP_INTERVAL_MS = 1500;
 const RESULT_APPEND_DELAY_MS = 420;
-const MARKDOWN_STREAM_INTERVAL_MS = 90;
 const ASK_PROCESS_STEP_COUNT = 6;
 const DEEP_ANALYSIS_PROCESS_STEP_COUNT = 7;
 const FINAL_PROCESS_STEP_STREAM_DURATION_MS = 1000;
+const REPORT_PROCESS_STEP_COUNT = 7;
+const REPORT_STREAM_STEP_INTERVAL_MS = 1500;
+const REPORT_MARKDOWN_STREAM_INTERVAL_MS = 90;
+const REPORT_FINAL_PROCESS_STEP_STREAM_DURATION_MS = 1000;
+const DEEP_ANALYSIS_LEADING_STREAM_INTERVAL_MS = 360;
+const DEEP_ANALYSIS_TYPEWRITER_INTERVAL_MS = 40;
+const DEEP_ANALYSIS_TYPEWRITER_CHARS_PER_TICK = 3;
+
+function getDeepAnalysisLeadingBlockCount(result: Message['rootCauseResult']) {
+  if (!result) return 0;
+
+  return 3 + (result.overviewMetrics.length ? 1 : 0);
+}
+
+function getDeepAnalysisTypingTextLength(result: Message['rootCauseResult']) {
+  if (!result) return 0;
+
+  return result.conclusion.length + result.sections.reduce(
+    (count, section) => count
+      + section.title.length
+      + section.description.length
+      + section.bullets.reduce((bulletCount, bullet) => bulletCount + bullet.length, 0),
+    0,
+  );
+}
+
+function WorkbenchRestoreControl({
+  label,
+  onOpen,
+}: {
+  label: string;
+  onOpen: () => void;
+}) {
+  return (
+    <aside className="absolute right-0 top-1/2 z-10 hidden -translate-y-1/2 xl:block" aria-label={`${label}控制`}>
+      <Tooltip delayDuration={240}>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={onOpen}
+            className="group inline-flex h-11 w-7 items-center justify-end rounded-l-[5px] bg-transparent text-[#6b7785] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#165dff]/20"
+            aria-label={`展开${label}`}
+          >
+            <span className="inline-flex h-9 w-4 items-center justify-center rounded-l-[4px] border border-r-0 border-[#e5e6eb] bg-white transition-colors group-hover:border-[#bedaff] group-hover:bg-[#f2f7ff] group-hover:text-[#165dff]">
+              <ChevronsLeft aria-hidden="true" className="h-3 w-3" strokeWidth={1.6} />
+            </span>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent
+          side="left"
+          sideOffset={8}
+          showArrow={false}
+          className="relative rounded-[4px] bg-[#1d2129] px-3 py-1 text-sm font-normal leading-[22px] whitespace-nowrap text-white shadow-none"
+        >
+          展开工作台
+          <span aria-hidden="true" className="absolute left-full top-1/2 h-0 w-0 -translate-y-1/2 border-y-[5px] border-l-[4px] border-y-transparent border-l-[#1d2129]" />
+        </TooltipContent>
+      </Tooltip>
+    </aside>
+  );
+}
 
 const askProcessStepDefinitions: Array<Pick<AnalysisProcessStep, 'id' | 'title'>> = [
   { id: 'understand-question', title: '理解用户问题' },
@@ -126,6 +188,23 @@ function buildVisibleDeepAnalysisSteps(
   status: AnalysisProcessData['status'],
 ): AnalysisProcessStep[] {
   return buildVisibleProcessSteps(deepAnalysisProcessStepDefinitions, visibleStepCount, status);
+}
+
+const reportProcessStepDefinitions: Array<Pick<AnalysisProcessStep, 'id' | 'title'>> = [
+  { id: 'understand-intent', title: '理解用户问题' },
+  { id: 'plan-analysis', title: '规划分析任务' },
+  { id: 'resolve-data-scope', title: '确定数据口径' },
+  { id: 'load-skills', title: '匹配分析能力' },
+  { id: 'execute-skills', title: '调用 Skill 和 MCP' },
+  { id: 'retrieve-knowledge', title: '检索知识依据' },
+  { id: 'execute-query', title: '执行数据查询' },
+];
+
+function buildVisibleReportSteps(
+  visibleStepCount: number,
+  status: AnalysisProcessData['status'],
+): AnalysisProcessStep[] {
+  return buildVisibleProcessSteps(reportProcessStepDefinitions, visibleStepCount, status);
 }
 
 type ProcessMcpCapability = McpCapability & { serverName?: string };
@@ -230,54 +309,6 @@ function getMessageQuestionText(content: string) {
 
 function isEnabledStatus(status: string) {
   return status === '已启用' || status.includes('启用') || status.includes('惎');
-}
-
-function buildDeepAnalysisMarkdown(question: string, result: RootCauseResultData) {
-  const metricLines = result.overviewMetrics.map(
-    (metric) => `- ${metric.label}: ${metric.value}`,
-  );
-  const contributionLines = result.contributionChart.map(
-    (item) => `- ${item.name}: ${item.value}`,
-  );
-  const sectionLines = result.sections.flatMap((section, index) => [
-    `### ${index + 1}. ${section.title}`,
-    section.description,
-    ...section.bullets.map((bullet) => `- ${bullet}`),
-    '',
-  ]);
-  const candidateLines = result.candidates.flatMap((candidate, index) => [
-    `### ${index + 1}. ${candidate.title}`,
-    `置信度: ${candidate.confidence}`,
-    ...candidate.evidence.map((evidence) => `- ${evidence}`),
-    '',
-  ]);
-
-  return [
-    `# ${result.title}`,
-    '',
-    '## 一、核心结论',
-    result.summary,
-    '',
-    result.conclusion,
-    '',
-    '## 二、指标概览',
-    ...metricLines,
-    '',
-    '## 三、趋势与维度拆解',
-    ...contributionLines,
-    '',
-    ...sectionLines,
-    '## 四、候选原因与证据',
-    ...candidateLines,
-    '## 五、业务建议',
-    '- 优先核查贡献度最高的维度和异常分组明细。',
-    '- 对关键科室、病种和费用结构进行二次复核。',
-    '- 将本次结论沉淀为后续看板或周期报告的重点观察项。',
-    '',
-    '## 六、数据口径与说明',
-    '- 本报告基于当前 ChatBI 可访问的数据、指标口径和模拟分析链路生成。',
-    '- 结论用于经营分析辅助判断，正式发布前建议结合业务人员复核。',
-  ].join('\n');
 }
 
 function getAgentRuntimeConfig(agent: Agent): AgentRuntimeConfig {
@@ -412,6 +443,39 @@ function buildUnavailableAskProcess({
   };
 }
 
+function buildReportMarkdown(question: string, result: ReportResultData) {
+  return [
+    `# ${result.title}`,
+    '',
+    `统计周期：${result.period}`,
+    '',
+    '## 核心结论',
+    result.summary,
+    '',
+    '## 关键指标',
+    ...result.keyMetrics.map((metric) => `- ${metric.label}：${metric.value}`),
+    '',
+    `## ${result.chartTitle}`,
+    ...result.chartData.map((item) => `- ${item.name}：${item.value}`),
+    '',
+    '## 关键发现',
+    ...result.findings.map((finding) => `- ${finding}`),
+    '',
+    '## 风险提示',
+    ...result.alerts.map((alert) => `- ${alert}`),
+    '',
+    '## 分析依据',
+    ...result.embeddedAnalysis.map((item) => `- ${item}`),
+    '',
+    '## 推送配置',
+    `- 频率：${result.pushConfig.frequency}`,
+    `- 渠道：${result.pushConfig.channel}`,
+    `- 接收对象：${result.pushConfig.audience}`,
+    '',
+    `问题：${question}`,
+  ].join('\n');
+}
+
 function buildAskIntentBoundaryProcess({
   question,
   classification,
@@ -529,6 +593,18 @@ export default function AgentWorkspace({
     useState(true);
   const [deepAnalysisFeedbackByMessageId, setDeepAnalysisFeedbackByMessageId] =
     useState<Record<string, DeepAnalysisFeedback | undefined>>({});
+  const [reportDockTab, setReportDockTab] =
+    useState<DeepAnalysisWorkbenchTab>('progress');
+  const [reportMobilePane, setReportMobilePane] =
+    useState<'activity' | 'workbench'>('activity');
+  const [isReportWorkbenchOpen, setIsReportWorkbenchOpen] = useState(true);
+  const [selectedReportActivityId, setSelectedReportActivityId] =
+    useState<DeepAnalysisActivityId>('understand-intent');
+  const [reportPreviewedFileMessageId, setReportPreviewedFileMessageId] =
+    useState<string | null>(null);
+  const [isFollowingReportActivity, setIsFollowingReportActivity] = useState(true);
+  const [reportFeedbackByMessageId, setReportFeedbackByMessageId] =
+    useState<Record<string, DeepAnalysisFeedback | undefined>>({});
   const timersRef = useRef<number[]>([]);
   const pendingAnalysisProcessRef = useRef<AnalysisProcessData | undefined>(undefined);
   const pendingAnalysisProcessTargetRef = useRef<{ conversationId: string; messageId: string } | null>(null);
@@ -627,21 +703,64 @@ export default function AgentWorkspace({
       .find(
         (message) =>
           message.kind === 'rca-result' &&
-          Boolean(message.markdownArtifact),
+          Boolean(message.rootCauseResult),
       );
 
     return resultMessage ?? null;
   }, [activeQuestionThread, mode]);
+  const activeReportProcessMessage = useMemo(() => {
+    if (mode !== 'report' || !activeQuestionThread) return null;
+
+    return (
+      [...activeQuestionThread.assistantMessages]
+        .reverse()
+        .find(
+          (message) =>
+            message.kind === 'analysis' &&
+            message.routingTrace?.agentType === 'report',
+        ) ?? null
+    );
+  }, [activeQuestionThread, mode]);
+  const activeReportResultMessage = useMemo(() => {
+    if (mode !== 'report' || !activeQuestionThread) return null;
+
+    const resultMessage = [...activeQuestionThread.assistantMessages]
+      .reverse()
+      .find((message) => message.kind === 'report-result' && Boolean(message.reportResult));
+
+    if (!resultMessage?.reportResult || resultMessage.markdownArtifact) return resultMessage ?? null;
+
+    const markdownContent = buildReportMarkdown(
+      activeQuestionThread.userMessage.content,
+      resultMessage.reportResult,
+    );
+
+    return {
+      ...resultMessage,
+      markdownArtifact: {
+        fileName: buildAnalysisReportFileName(activeQuestionThread.userMessage.content),
+        content: markdownContent,
+      },
+      visibleMarkdownLineCount: markdownContent.split('\n').length,
+    };
+  }, [activeQuestionThread, mode]);
   const activeDeepAnalysisStage: DeepAnalysisStage | null = activeDeepAnalysisProcessMessage
-    ? getDeepAnalysisStage(activeDeepAnalysisProcessMessage, activeDeepAnalysisResultMessage)
+    ? getDeepAnalysisStage(activeDeepAnalysisProcessMessage, activeDeepAnalysisResultMessage, 'deep-analysis')
+    : null;
+  const activeReportStage: DeepAnalysisStage | null = activeReportProcessMessage
+    ? getDeepAnalysisStage(activeReportProcessMessage, activeReportResultMessage, 'report')
     : null;
   const currentDeepAnalysisActivityId = activeDeepAnalysisProcessMessage && activeDeepAnalysisStage
-    ? getCurrentDeepAnalysisActivityId(activeDeepAnalysisProcessMessage, activeDeepAnalysisStage)
+    ? getCurrentDeepAnalysisActivityId(activeDeepAnalysisProcessMessage, activeDeepAnalysisStage, 'deep-analysis')
     : null;
   const isDeepAnalysisWorkspace =
     mode === 'ask' &&
     Boolean(activeQuestionThread) &&
     Boolean(activeDeepAnalysisProcessMessage);
+  const isReportWorkspace =
+    mode === 'report' &&
+    Boolean(activeQuestionThread) &&
+    Boolean(activeReportProcessMessage);
 
   const newConversationLabel = newConversationLabels[mode];
   const inputPlaceholder =
@@ -757,14 +876,12 @@ export default function AgentWorkspace({
   }, [currentConversation?.messages]);
 
   useEffect(() => {
-    const shouldFocusDraftingReport = activeDeepAnalysisStage === 'drafting';
     if (
       !currentDeepAnalysisActivityId ||
       !activeQuestionId ||
-      (!isFollowingDeepAnalysisActivity && !shouldFocusDraftingReport)
+      !isFollowingDeepAnalysisActivity
     ) return;
 
-    if (shouldFocusDraftingReport) setIsFollowingDeepAnalysisActivity(true);
     setSelectedDeepAnalysisActivityId(currentDeepAnalysisActivityId);
     setDeepAnalysisDockTab(getWorkbenchTabForActivity(currentDeepAnalysisActivityId));
     setDeepAnalysisMobilePane(currentDeepAnalysisActivityId === 'understand-intent' ? 'activity' : 'workbench');
@@ -773,6 +890,36 @@ export default function AgentWorkspace({
     activeQuestionId,
     currentDeepAnalysisActivityId,
     isFollowingDeepAnalysisActivity,
+  ]);
+
+  useEffect(() => {
+    const shouldFocusDraftingReport = activeReportStage === 'drafting';
+    if (
+      !activeReportProcessMessage ||
+      !activeReportStage ||
+      !activeQuestionId ||
+      (!isFollowingReportActivity && !shouldFocusDraftingReport)
+    ) return;
+
+    if (shouldFocusDraftingReport) setIsFollowingReportActivity(true);
+    setSelectedReportActivityId(
+      getCurrentDeepAnalysisActivityId(activeReportProcessMessage, activeReportStage, 'report'),
+    );
+    setReportDockTab(
+      getWorkbenchTabForActivity(
+        getCurrentDeepAnalysisActivityId(activeReportProcessMessage, activeReportStage, 'report'),
+      ),
+    );
+    setReportMobilePane(
+      getCurrentDeepAnalysisActivityId(activeReportProcessMessage, activeReportStage, 'report') === 'understand-intent'
+        ? 'activity'
+        : 'workbench',
+    );
+  }, [
+    activeQuestionId,
+    activeReportProcessMessage,
+    activeReportStage,
+    isFollowingReportActivity,
   ]);
 
   useEffect(() => {
@@ -805,6 +952,12 @@ export default function AgentWorkspace({
     setSelectedDeepAnalysisActivityId('understand-intent');
     setDeepAnalysisPreviewedFileMessageId(null);
     setIsFollowingDeepAnalysisActivity(true);
+    setReportDockTab('progress');
+    setReportMobilePane('activity');
+    setIsReportWorkbenchOpen(true);
+    setSelectedReportActivityId('understand-intent');
+    setReportPreviewedFileMessageId(null);
+    setIsFollowingReportActivity(true);
     resetManualSkillState();
   }, [currentConversation?.id, mode]);
 
@@ -932,6 +1085,7 @@ export default function AgentWorkspace({
         reportTemplateId,
         reportTemplates,
       });
+      const markdownContent = buildReportMarkdown(question, reportResult);
 
       return {
         id: `msg-${Date.now()}-report`,
@@ -939,6 +1093,12 @@ export default function AgentWorkspace({
         kind: 'report-result',
         ...baseMessage,
         reportResult,
+        isGenerating: streamMarkdown,
+        visibleMarkdownLineCount: streamMarkdown ? 1 : markdownContent.split('\n').length,
+        markdownArtifact: {
+          fileName: buildAnalysisReportFileName(question),
+          content: markdownContent,
+        },
       };
     }
 
@@ -948,7 +1108,8 @@ export default function AgentWorkspace({
         manualSkillIds: selectedSkillIds,
         primarySkillId,
       });
-      const markdownContent = buildDeepAnalysisMarkdown(question, rootCauseResult);
+      const deepAnalysisBlockCount = getDeepAnalysisLeadingBlockCount(rootCauseResult);
+      const deepAnalysisTextLength = getDeepAnalysisTypingTextLength(rootCauseResult);
 
       return {
         id: `msg-${Date.now()}-rca`,
@@ -956,12 +1117,9 @@ export default function AgentWorkspace({
         kind: 'rca-result',
         ...baseMessage,
         rootCauseResult,
-        isGenerating: streamMarkdown,
-        visibleMarkdownLineCount: streamMarkdown ? 1 : markdownContent.split('\n').length,
-        markdownArtifact: {
-          fileName: buildAnalysisReportFileName(question),
-          content: markdownContent,
-        },
+        isGenerating: streamMarkdown && (deepAnalysisBlockCount > 1 || deepAnalysisTextLength > 0),
+        visibleDeepAnalysisBlockCount: streamMarkdown ? 1 : deepAnalysisBlockCount,
+        visibleDeepAnalysisTextLength: streamMarkdown ? 0 : deepAnalysisTextLength,
       };
     }
 
@@ -987,6 +1145,75 @@ export default function AgentWorkspace({
         status: 'completed',
       }),
     };
+  };
+
+  const startDeepAnalysisResultStream = (conversationId: string, resultMessage: Message) => {
+    const leadingBlockCount = getDeepAnalysisLeadingBlockCount(resultMessage.rootCauseResult);
+    const typingTextLength = getDeepAnalysisTypingTextLength(resultMessage.rootCauseResult);
+
+    if (
+      resultMessage.kind !== 'rca-result'
+      || !resultMessage.isGenerating
+      || (leadingBlockCount <= 1 && typingTextLength === 0)
+    ) {
+      return false;
+    }
+
+    setPendingConversationId(conversationId);
+    setPendingMessageId(resultMessage.id);
+
+    const leadingTimers = Array.from({ length: Math.max(0, leadingBlockCount - 1) }, (_, index) => {
+      const visibleDeepAnalysisBlockCount = index + 2;
+      const timerDelay = (index + 1) * DEEP_ANALYSIS_LEADING_STREAM_INTERVAL_MS;
+
+      return window.setTimeout(() => {
+        const isDeepAnalysisComplete = visibleDeepAnalysisBlockCount >= leadingBlockCount
+          && typingTextLength === 0;
+
+        updateMessage(conversationId, resultMessage.id, {
+          visibleDeepAnalysisBlockCount,
+          isGenerating: !isDeepAnalysisComplete,
+          isInterrupted: false,
+        });
+
+        if (isDeepAnalysisComplete) {
+          setIsGenerating(false);
+          setPendingConversationId(null);
+          setPendingMessageId(null);
+        }
+      }, timerDelay);
+    });
+
+    const typingStartDelay = Math.max(0, leadingBlockCount - 1)
+      * DEEP_ANALYSIS_LEADING_STREAM_INTERVAL_MS;
+    const typingTickCount = Math.ceil(
+      typingTextLength / DEEP_ANALYSIS_TYPEWRITER_CHARS_PER_TICK,
+    );
+    const typingTimers = Array.from({ length: typingTickCount }, (_, index) =>
+      window.setTimeout(() => {
+        const visibleDeepAnalysisTextLength = Math.min(
+          typingTextLength,
+          (index + 1) * DEEP_ANALYSIS_TYPEWRITER_CHARS_PER_TICK,
+        );
+        const isDeepAnalysisComplete = visibleDeepAnalysisTextLength >= typingTextLength;
+
+        updateMessage(conversationId, resultMessage.id, {
+          visibleDeepAnalysisBlockCount: leadingBlockCount,
+          visibleDeepAnalysisTextLength,
+          isGenerating: !isDeepAnalysisComplete,
+          isInterrupted: false,
+        });
+
+        if (isDeepAnalysisComplete) {
+          setIsGenerating(false);
+          setPendingConversationId(null);
+          setPendingMessageId(null);
+        }
+      }, typingStartDelay + (index + 1) * DEEP_ANALYSIS_TYPEWRITER_INTERVAL_MS),
+    );
+
+    timersRef.current = [...timersRef.current, ...leadingTimers, ...typingTimers];
+    return true;
   };
 
   const generateConversationTitle = (question: string) =>
@@ -1018,6 +1245,7 @@ export default function AgentWorkspace({
     const executionMode = resolveExecutionMode(options?.forceDeepAnalysis);
     const forcedAgentId = getAllowedForcedAgentId(options?.forcedAgentId, executionMode);
     const usingDeepAnalysisInAsk = mode === 'ask' && executionMode === 'rca';
+    const usingAnalysisWorkspace = usingDeepAnalysisInAsk || mode === 'report';
     if (usingDeepAnalysisInAsk) {
       onDeepAnalysisStart?.();
     } else {
@@ -1225,15 +1453,17 @@ export default function AgentWorkspace({
             reportTemplates,
           }).templateUsage?.name
         : undefined;
-    const pendingDeepAnalysisProcess = usingDeepAnalysisInAsk
+    const pendingDeepAnalysisProcess = usingAnalysisWorkspace
       ? {
           ...buildAgentAnalysisProcess(routing.agent, executionQuestion, skillTrace, {
           status: 'running',
           skillMatchSource: resolvedManualSkillIds.length ? '手动选择' : '自动匹配',
           visibleStepCount: 1,
           }),
-          plannedTaskCount: deepAnalysisProcessStepDefinitions.length - 2,
-          steps: buildVisibleDeepAnalysisSteps(1, 'running'),
+          plannedTaskCount: (mode === 'report' ? reportProcessStepDefinitions : deepAnalysisProcessStepDefinitions).length - 2,
+          steps: mode === 'report'
+            ? buildVisibleReportSteps(1, 'running')
+            : buildVisibleDeepAnalysisSteps(1, 'running'),
         }
       : undefined;
 
@@ -1253,7 +1483,7 @@ export default function AgentWorkspace({
         routing.agent.type === 'report'
           ? '正在识别数据范围、指标口径、报告模板和推送信息。'
           : routing.agent.type === 'rca'
-            ? usingDeepAnalysisInAsk
+            ? usingAnalysisWorkspace
               ? '已使用深度分析能力，正在基于指标口径下钻时间、维度和结构变化，并生成候选根因。'
               : '正在基于指标口径下钻时间、维度和结构变化，并生成候选根因。'
             : '正在识别数据集、指标口径、维度和 SQL 查询链路。',
@@ -1286,21 +1516,28 @@ export default function AgentWorkspace({
     setIsRecording(false);
     resetManualSkillState();
 
+    const streamStepIntervalMs = mode === 'report' ? REPORT_STREAM_STEP_INTERVAL_MS : STREAM_STEP_INTERVAL_MS;
+    const finalProcessStepDurationMs = mode === 'report'
+      ? REPORT_FINAL_PROCESS_STEP_STREAM_DURATION_MS
+      : FINAL_PROCESS_STEP_STREAM_DURATION_MS;
+    const workspaceProcessStepCount = mode === 'report'
+      ? REPORT_PROCESS_STEP_COUNT
+      : DEEP_ANALYSIS_PROCESS_STEP_COUNT;
     const streamStepCount = analysisMessage.analysisProcess
-      ? usingDeepAnalysisInAsk
-        ? DEEP_ANALYSIS_PROCESS_STEP_COUNT
+      ? usingAnalysisWorkspace
+        ? workspaceProcessStepCount
         : ASK_PROCESS_STEP_COUNT
       : analysisMessage.analysisSteps?.length ?? 1;
     const shouldStreamFinalProcessStep = Boolean(
       analysisMessage.analysisProcess
-      && streamStepCount === (usingDeepAnalysisInAsk ? DEEP_ANALYSIS_PROCESS_STEP_COUNT : ASK_PROCESS_STEP_COUNT),
+      && streamStepCount === (usingAnalysisWorkspace ? workspaceProcessStepCount : ASK_PROCESS_STEP_COUNT),
     );
     const streamTimerCount = streamStepCount + (shouldStreamFinalProcessStep ? 1 : 0);
     const streamTimers = Array.from({ length: streamTimerCount }, (_, index) => {
       const isFinalStreamCompletion = shouldStreamFinalProcessStep && index === streamStepCount;
       const timerDelay = isFinalStreamCompletion
-        ? (streamStepCount - 1) * STREAM_STEP_INTERVAL_MS + FINAL_PROCESS_STEP_STREAM_DURATION_MS
-        : index * STREAM_STEP_INTERVAL_MS;
+        ? (streamStepCount - 1) * streamStepIntervalMs + finalProcessStepDurationMs
+        : index * streamStepIntervalMs;
 
       return window.setTimeout(() => {
         const visibleStepCount = Math.min(index + 1, streamStepCount);
@@ -1318,10 +1555,12 @@ export default function AgentWorkspace({
             ...analysisMessage.analysisProcess,
             status: isComplete ? 'completed' : 'running',
             visibleStepCount,
-            steps: usingDeepAnalysisInAsk
-              ? buildVisibleDeepAnalysisSteps(visibleStepCount, isComplete ? 'completed' : 'running')
+            steps: usingAnalysisWorkspace
+              ? mode === 'report'
+                ? buildVisibleReportSteps(visibleStepCount, isComplete ? 'completed' : 'running')
+                : buildVisibleDeepAnalysisSteps(visibleStepCount, isComplete ? 'completed' : 'running')
               : buildVisibleAskSteps(visibleStepCount, isComplete ? 'completed' : 'running'),
-            elapsedSeconds: isComplete ? Math.max(1, Math.round((streamStepCount * STREAM_STEP_INTERVAL_MS) / 1000)) : undefined,
+            elapsedSeconds: isComplete ? Math.max(1, Math.round((streamStepCount * streamStepIntervalMs) / 1000)) : undefined,
             sqlExecutionStatus: isComplete ? 'success' : 'pending',
           };
           pendingAnalysisProcessRef.current = updates.analysisProcess;
@@ -1329,14 +1568,14 @@ export default function AgentWorkspace({
 
         updateMessage(conversation.id, analysisMessage.id, updates);
 
-        if (isComplete && !usingDeepAnalysisInAsk && pendingAnalysisProcessTargetRef.current?.messageId === analysisMessage.id) {
+        if (isComplete && !usingAnalysisWorkspace && pendingAnalysisProcessTargetRef.current?.messageId === analysisMessage.id) {
           pendingAnalysisProcessRef.current = undefined;
           pendingAnalysisProcessTargetRef.current = null;
         }
       }, timerDelay);
     });
 
-    const resultAppendDelay = streamStepCount * STREAM_STEP_INTERVAL_MS + RESULT_APPEND_DELAY_MS;
+    const resultAppendDelay = streamStepCount * streamStepIntervalMs + RESULT_APPEND_DELAY_MS;
     const resultTimer = window.setTimeout(() => {
       const resultMessage = createResultMessage(
         routing.agent,
@@ -1345,7 +1584,7 @@ export default function AgentWorkspace({
         effectiveManualSkillIds,
         routing.routingTrace,
         userMessage.id,
-        usingDeepAnalysisInAsk,
+        usingAnalysisWorkspace,
         options?.reportTemplateId,
       );
       updateMessage(conversation.id, analysisMessage.id, {
@@ -1359,9 +1598,13 @@ export default function AgentWorkspace({
         resultMessage,
       ]);
 
+      if (usingAnalysisWorkspace && startDeepAnalysisResultStream(conversation.id, resultMessage)) {
+        return;
+      }
+
       const markdownLineCount = resultMessage.markdownArtifact?.content.split('\n').length ?? 0;
 
-      if (usingDeepAnalysisInAsk && resultMessage.markdownArtifact && markdownLineCount > 1) {
+      if (usingAnalysisWorkspace && resultMessage.markdownArtifact && markdownLineCount > 1) {
         setPendingConversationId(conversation.id);
         setPendingMessageId(resultMessage.id);
 
@@ -1381,7 +1624,7 @@ export default function AgentWorkspace({
               setPendingConversationId(null);
               setPendingMessageId(null);
             }
-          }, (index + 1) * MARKDOWN_STREAM_INTERVAL_MS),
+          }, (index + 1) * REPORT_MARKDOWN_STREAM_INTERVAL_MS),
         );
 
         timersRef.current = [...timersRef.current, ...markdownTimers];
@@ -1720,6 +1963,7 @@ export default function AgentWorkspace({
     const executionMode = resolveMessageExecutionMode(targetMessage.routingTrace);
     const forcedAgentId = getAllowedForcedAgentId(targetMessage.routingTrace?.agentId, executionMode);
     const usingDeepAnalysisInAsk = mode === 'ask' && executionMode === 'rca';
+    const usingAnalysisWorkspace = usingDeepAnalysisInAsk || mode === 'report';
     const preservedReportTemplateId = targetMessage.reportResult?.templateUsage?.templateId;
     const routing = resolveAgentForQuestion({
       mode: executionMode,
@@ -1793,15 +2037,17 @@ export default function AgentWorkspace({
             reportTemplates,
           }).templateUsage?.name
         : undefined;
-    const pendingDeepAnalysisProcess = usingDeepAnalysisInAsk
+    const pendingDeepAnalysisProcess = usingAnalysisWorkspace
       ? {
           ...buildAgentAnalysisProcess(routing.agent, baseQuestion, skillTrace, {
           status: 'running',
           skillMatchSource: resolvedManualSkillIds.length ? '手动选择' : '自动匹配',
           visibleStepCount: 1,
           }),
-          plannedTaskCount: deepAnalysisProcessStepDefinitions.length - 2,
-          steps: buildVisibleDeepAnalysisSteps(1, 'running'),
+          plannedTaskCount: (mode === 'report' ? reportProcessStepDefinitions : deepAnalysisProcessStepDefinitions).length - 2,
+          steps: mode === 'report'
+            ? buildVisibleReportSteps(1, 'running')
+            : buildVisibleDeepAnalysisSteps(1, 'running'),
         }
       : undefined;
 
@@ -1819,7 +2065,7 @@ export default function AgentWorkspace({
         routing.agent.type === 'report'
           ? '正在重新识别数据范围、指标口径、报告模板和推送信息。'
           : routing.agent.type === 'rca'
-            ? usingDeepAnalysisInAsk
+            ? usingAnalysisWorkspace
               ? '已使用深度分析能力，正在重新下钻时间、维度和结构变化，并生成候选根因。'
               : '正在重新下钻时间、维度和结构变化，并生成候选根因。'
             : '正在重新识别数据集、指标口径、维度和 SQL 查询链路。',
@@ -1859,21 +2105,28 @@ export default function AgentWorkspace({
     setIsRecording(false);
     resetManualSkillState();
 
+    const streamStepIntervalMs = mode === 'report' ? REPORT_STREAM_STEP_INTERVAL_MS : STREAM_STEP_INTERVAL_MS;
+    const finalProcessStepDurationMs = mode === 'report'
+      ? REPORT_FINAL_PROCESS_STEP_STREAM_DURATION_MS
+      : FINAL_PROCESS_STEP_STREAM_DURATION_MS;
+    const workspaceProcessStepCount = mode === 'report'
+      ? REPORT_PROCESS_STEP_COUNT
+      : DEEP_ANALYSIS_PROCESS_STEP_COUNT;
     const streamStepCount = analysisMessage.analysisProcess
-      ? usingDeepAnalysisInAsk
-        ? DEEP_ANALYSIS_PROCESS_STEP_COUNT
+      ? usingAnalysisWorkspace
+        ? workspaceProcessStepCount
         : ASK_PROCESS_STEP_COUNT
       : analysisMessage.analysisSteps?.length ?? 1;
     const shouldStreamFinalProcessStep = Boolean(
       analysisMessage.analysisProcess
-      && streamStepCount === (usingDeepAnalysisInAsk ? DEEP_ANALYSIS_PROCESS_STEP_COUNT : ASK_PROCESS_STEP_COUNT),
+      && streamStepCount === (usingAnalysisWorkspace ? workspaceProcessStepCount : ASK_PROCESS_STEP_COUNT),
     );
     const streamTimerCount = streamStepCount + (shouldStreamFinalProcessStep ? 1 : 0);
     const streamTimers = Array.from({ length: streamTimerCount }, (_, index) => {
       const isFinalStreamCompletion = shouldStreamFinalProcessStep && index === streamStepCount;
       const timerDelay = isFinalStreamCompletion
-        ? (streamStepCount - 1) * STREAM_STEP_INTERVAL_MS + FINAL_PROCESS_STEP_STREAM_DURATION_MS
-        : index * STREAM_STEP_INTERVAL_MS;
+        ? (streamStepCount - 1) * streamStepIntervalMs + finalProcessStepDurationMs
+        : index * streamStepIntervalMs;
 
       return window.setTimeout(() => {
         const visibleStepCount = Math.min(index + 1, streamStepCount);
@@ -1891,10 +2144,12 @@ export default function AgentWorkspace({
             ...analysisMessage.analysisProcess,
             status: isComplete ? 'completed' : 'running',
             visibleStepCount,
-            steps: usingDeepAnalysisInAsk
-              ? buildVisibleDeepAnalysisSteps(visibleStepCount, isComplete ? 'completed' : 'running')
+            steps: usingAnalysisWorkspace
+              ? mode === 'report'
+                ? buildVisibleReportSteps(visibleStepCount, isComplete ? 'completed' : 'running')
+                : buildVisibleDeepAnalysisSteps(visibleStepCount, isComplete ? 'completed' : 'running')
               : buildVisibleAskSteps(visibleStepCount, isComplete ? 'completed' : 'running'),
-            elapsedSeconds: isComplete ? Math.max(1, Math.round((streamStepCount * STREAM_STEP_INTERVAL_MS) / 1000)) : undefined,
+            elapsedSeconds: isComplete ? Math.max(1, Math.round((streamStepCount * streamStepIntervalMs) / 1000)) : undefined,
             sqlExecutionStatus: isComplete ? 'success' : 'pending',
           };
           pendingAnalysisProcessRef.current = updates.analysisProcess;
@@ -1902,14 +2157,14 @@ export default function AgentWorkspace({
 
         updateMessage(currentConversation.id, targetMessage.id, updates);
 
-        if (isComplete && !usingDeepAnalysisInAsk && pendingAnalysisProcessTargetRef.current?.messageId === targetMessage.id) {
+        if (isComplete && !usingAnalysisWorkspace && pendingAnalysisProcessTargetRef.current?.messageId === targetMessage.id) {
           pendingAnalysisProcessRef.current = undefined;
           pendingAnalysisProcessTargetRef.current = null;
         }
       }, timerDelay);
     });
 
-    const resultAppendDelay = streamStepCount * STREAM_STEP_INTERVAL_MS + RESULT_APPEND_DELAY_MS;
+    const resultAppendDelay = streamStepCount * streamStepIntervalMs + RESULT_APPEND_DELAY_MS;
     const resultTimer = window.setTimeout(() => {
       const regeneratedMessage = createResultMessage(
         routing.agent,
@@ -1918,7 +2173,7 @@ export default function AgentWorkspace({
         effectiveManualSkillIds,
         routing.routingTrace,
         targetMessage.parentUserMessageId ?? previousUserMessage.id,
-        usingDeepAnalysisInAsk,
+        usingAnalysisWorkspace,
         preservedReportTemplateId,
       );
 
@@ -1931,9 +2186,13 @@ export default function AgentWorkspace({
       }
       appendMessages(currentConversation.id, [regeneratedMessage]);
 
+      if (usingAnalysisWorkspace && startDeepAnalysisResultStream(currentConversation.id, regeneratedMessage)) {
+        return;
+      }
+
       const markdownLineCount = regeneratedMessage.markdownArtifact?.content.split('\n').length ?? 0;
 
-      if (usingDeepAnalysisInAsk && regeneratedMessage.markdownArtifact && markdownLineCount > 1) {
+      if (usingAnalysisWorkspace && regeneratedMessage.markdownArtifact && markdownLineCount > 1) {
         setPendingMessageId(regeneratedMessage.id);
 
         const markdownTimers = Array.from({ length: markdownLineCount - 1 }, (_, index) =>
@@ -1952,7 +2211,7 @@ export default function AgentWorkspace({
               setPendingConversationId(null);
               setPendingMessageId(null);
             }
-          }, (index + 1) * MARKDOWN_STREAM_INTERVAL_MS),
+          }, (index + 1) * REPORT_MARKDOWN_STREAM_INTERVAL_MS),
         );
 
         timersRef.current = [...timersRef.current, ...markdownTimers];
@@ -2096,16 +2355,6 @@ export default function AgentWorkspace({
       ) : null}
       <PromptComposerFrame
         bodyClassName="!gap-2 !py-2.5"
-        header={
-          selectedComposerMode ? (
-            <PromptModeHeader
-              mode={selectedComposerMode}
-              onExit={exitComposerMode}
-              disabled={isGenerating}
-              className="!h-[38px]"
-            />
-          ) : undefined
-        }
       >
       {selectedManualSkills.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 px-5 pb-3 pt-4">
@@ -2213,13 +2462,21 @@ export default function AgentWorkspace({
           </div>
         )}
 
+        {selectedComposerMode && (
+          <PromptModeTag
+            mode={selectedComposerMode}
+            onRemove={exitComposerMode}
+            disabled={isGenerating}
+            className="mt-px"
+          />
+        )}
         <textarea
           ref={textareaRef}
           value={inputValue}
           onChange={(event) => handleInputChange(event.target.value)}
           onKeyDown={handleTextareaKeyDown}
           placeholder={inputPlaceholder}
-          className="h-[44px] min-w-0 flex-1 resize-none overflow-y-auto bg-white text-[14px] leading-[21px] text-[#1a1c26] placeholder:text-[#9ca3b0] focus:outline-none"
+          className="h-[44px] min-w-0 flex-1 resize-none overflow-y-auto bg-white text-[14px] leading-[21px] text-[#1a1c26] placeholder:leading-[29px] placeholder:text-[#9ca3b0] focus:outline-none"
           rows={2}
         />
       </div>
@@ -2386,16 +2643,13 @@ export default function AgentWorkspace({
                       <div
                         key={message.id}
                         className={`mx-auto w-full space-y-3 ${
-                          message.kind === 'ask-result' || message.kind === 'rca-result'
+                          message.kind === 'rca-result'
                             ? 'max-w-[1200px]'
                             : 'max-w-[1024px]'
                         }`}
                       >
                         <AssistantMessageCard
                           message={message}
-                          onQuestionClick={(question) => executeQuestion(question, {
-                            inheritedTimeRange: message.analysisProcess?.timeRange,
-                          })}
                           onRegenerate={handleRegenerate}
                           onRerunSkill={handleSkillRerun}
                           onClarificationSelect={handleClarificationSelect}
@@ -2445,19 +2699,10 @@ export default function AgentWorkspace({
       (message) => message.kind === 'analysis',
     );
     const selectActivity = (activityId: DeepAnalysisActivityId) => {
-      const shouldPreviewCompletedReport =
-        activityId === 'draft-report' &&
-        activeDeepAnalysisStage === 'completed' &&
-        Boolean(activeDeepAnalysisResultMessage?.markdownArtifact);
-
       setSelectedDeepAnalysisActivityId(activityId);
       setIsFollowingDeepAnalysisActivity(false);
-      setDeepAnalysisPreviewedFileMessageId(
-        shouldPreviewCompletedReport ? activeDeepAnalysisResultMessage?.id ?? null : null,
-      );
-      setDeepAnalysisDockTab(
-        shouldPreviewCompletedReport ? 'files' : getWorkbenchTabForActivity(activityId),
-      );
+      setDeepAnalysisPreviewedFileMessageId(null);
+      setDeepAnalysisDockTab(getWorkbenchTabForActivity(activityId));
       setIsDeepAnalysisWorkbenchOpen(true);
       setDeepAnalysisMobilePane('workbench');
     };
@@ -2486,7 +2731,7 @@ export default function AgentWorkspace({
             </button>
           </div>
 
-          <div className={`grid min-h-0 flex-1 grid-cols-1 ${isDeepAnalysisWorkbenchOpen ? 'gap-4 xl:grid-cols-[minmax(380px,44fr)_minmax(500px,56fr)]' : 'xl:grid-cols-1'}`}>
+          <div className={`relative grid min-h-0 flex-1 grid-cols-1 ${isDeepAnalysisWorkbenchOpen ? 'gap-4 xl:grid-cols-[minmax(380px,44fr)_minmax(500px,56fr)]' : 'xl:grid-cols-1'}`}>
             <section className={`${deepAnalysisMobilePane === 'activity' ? 'flex' : 'hidden'} min-h-0 flex-col overflow-hidden bg-transparent xl:flex ${isDeepAnalysisWorkbenchOpen ? '' : 'xl:mx-auto xl:w-full xl:max-w-[1024px]'}`}>
               <div className="shrink-0 px-4 py-3 md:px-5">
                 <div className="flex justify-end">
@@ -2507,17 +2752,26 @@ export default function AgentWorkspace({
                         <WorkspaceAnalysisProcessContent
                           key={`workspace-process-v3-${message.id}`}
                           processData={message.analysisProcess}
-                          reportState={message.id === activeDeepAnalysisProcessMessage.id && activeDeepAnalysisResultMessage?.markdownArtifact
-                            ? activeDeepAnalysisStage === 'completed'
-                              ? 'completed'
-                              : activeDeepAnalysisStage === 'interrupted'
-                                ? 'interrupted'
-                                : 'running'
+                          variant="deep-analysis"
+                          analysisResult={message.id === activeDeepAnalysisProcessMessage.id
+                            ? activeDeepAnalysisResultMessage?.rootCauseResult
                             : undefined}
-                          reportFileName={message.id === activeDeepAnalysisProcessMessage.id
-                            ? activeDeepAnalysisResultMessage?.markdownArtifact?.fileName
+                          analysisResultVisibleBlockCount={message.id === activeDeepAnalysisProcessMessage.id
+                            ? activeDeepAnalysisResultMessage?.visibleDeepAnalysisBlockCount
                             : undefined}
-                          reportFeedback={message.id === activeDeepAnalysisProcessMessage.id && activeDeepAnalysisResultMessage
+                          analysisResultVisibleTextLength={message.id === activeDeepAnalysisProcessMessage.id
+                            ? activeDeepAnalysisResultMessage?.visibleDeepAnalysisTextLength
+                            : undefined}
+                          analysisResultGenerating={message.id === activeDeepAnalysisProcessMessage.id
+                            ? activeDeepAnalysisResultMessage?.isGenerating
+                            : undefined}
+                          analysisResultInterrupted={message.id === activeDeepAnalysisProcessMessage.id
+                            ? activeDeepAnalysisResultMessage?.isInterrupted
+                            : undefined}
+                          analysisResultLoading={message.id === activeDeepAnalysisProcessMessage.id
+                            && message.analysisProcess.status === 'completed'
+                            && !activeDeepAnalysisResultMessage}
+                          analysisFeedback={message.id === activeDeepAnalysisProcessMessage.id && activeDeepAnalysisResultMessage
                             ? deepAnalysisFeedbackByMessageId[activeDeepAnalysisResultMessage.id]
                             : undefined}
                           selectedActivityId={
@@ -2526,10 +2780,10 @@ export default function AgentWorkspace({
                               : undefined
                           }
                           onActivitySelect={selectActivity}
-                          onReportFeedbackChange={message.id === activeDeepAnalysisProcessMessage.id && activeDeepAnalysisResultMessage
+                          onAnalysisFeedbackChange={message.id === activeDeepAnalysisProcessMessage.id && activeDeepAnalysisResultMessage
                             ? (feedback) => handleDeepAnalysisFeedbackChange(activeDeepAnalysisResultMessage.id, feedback)
                             : undefined}
-                          onReportRegenerate={message.id === activeDeepAnalysisProcessMessage.id && activeDeepAnalysisResultMessage
+                          onAnalysisRegenerate={message.id === activeDeepAnalysisProcessMessage.id && activeDeepAnalysisResultMessage
                             ? () => handleRegenerate(activeDeepAnalysisResultMessage.id)
                             : undefined}
                         />
@@ -2560,10 +2814,18 @@ export default function AgentWorkspace({
               </div>
             </section>
 
+            {!isDeepAnalysisWorkbenchOpen ? (
+              <WorkbenchRestoreControl
+                label="深度分析工作台"
+                onOpen={() => setIsDeepAnalysisWorkbenchOpen(true)}
+              />
+            ) : null}
+
             <div className={`${deepAnalysisMobilePane === 'workbench' ? 'block' : 'hidden'} h-full min-h-0 pb-2 ${isDeepAnalysisWorkbenchOpen ? 'xl:block' : 'xl:hidden'}`}>
               <DeepAnalysisWorkbench
                 processMessage={activeDeepAnalysisProcessMessage}
                 resultMessage={activeDeepAnalysisResultMessage}
+                variant="deep-analysis"
                 stage={activeDeepAnalysisStage}
                 tab={deepAnalysisDockTab}
                 selectedActivityId={selectedDeepAnalysisActivityId}
@@ -2586,10 +2848,180 @@ export default function AgentWorkspace({
     );
   };
 
+  const handleReportFeedbackChange = (
+    messageId: string,
+    nextFeedback: DeepAnalysisFeedback,
+  ) => {
+    setReportFeedbackByMessageId((current) => ({
+      ...current,
+      [messageId]: current[messageId] === nextFeedback ? undefined : nextFeedback,
+    }));
+  };
+
+  const renderReportWorkspace = () => {
+    if (!activeQuestionThread || !activeReportProcessMessage || !activeReportStage) {
+      return renderStandardWorkspace();
+    }
+
+    const analysisMessages = activeQuestionThread.assistantMessages.filter(
+      (message) => message.kind === 'analysis',
+    );
+    const selectActivity = (activityId: DeepAnalysisActivityId) => {
+      const shouldPreviewCompletedReport =
+        activityId === 'draft-report' &&
+        activeReportStage === 'completed' &&
+        Boolean(activeReportResultMessage?.markdownArtifact);
+
+      setSelectedReportActivityId(activityId);
+      setIsFollowingReportActivity(false);
+      setReportPreviewedFileMessageId(
+        shouldPreviewCompletedReport ? activeReportResultMessage?.id ?? null : null,
+      );
+      setReportDockTab(
+        shouldPreviewCompletedReport ? 'files' : getWorkbenchTabForActivity(activityId),
+      );
+      setIsReportWorkbenchOpen(true);
+      setReportMobilePane('workbench');
+    };
+
+    return (
+      <div
+        className="flex min-h-0 flex-1 overflow-hidden rounded-tl-[20px] rounded-tr-[20px] bg-white px-3 pt-3 sm:px-4 lg:px-5"
+        style={{ fontFamily: '"PingFang SC", "PingFang_SC", "Microsoft YaHei", Arial, sans-serif' }}
+      >
+        <div className="mx-auto flex h-full min-h-0 w-full max-w-[1520px] flex-col gap-3">
+          <div className="grid h-10 shrink-0 grid-cols-2 rounded-[10px] bg-[#f2f3f5] p-1 xl:hidden" role="group" aria-label="报告生成视图切换">
+            <button
+              type="button"
+              onClick={() => setReportMobilePane('activity')}
+              className={`rounded-[7px] text-sm font-normal transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${reportMobilePane === 'activity' ? 'bg-white text-[#165dff] shadow-[0_1px_2px_rgba(29,33,41,0.08)]' : 'text-[#4e5969]'}`}
+              aria-pressed={reportMobilePane === 'activity'}
+            >
+              生成过程
+            </button>
+            <button
+              type="button"
+              onClick={() => setReportMobilePane('workbench')}
+              className={`rounded-[7px] text-sm font-normal transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${reportMobilePane === 'workbench' ? 'bg-white text-[#165dff] shadow-[0_1px_2px_rgba(29,33,41,0.08)]' : 'text-[#4e5969]'}`}
+              aria-pressed={reportMobilePane === 'workbench'}
+            >
+              工作台
+            </button>
+          </div>
+
+          <div className={`relative grid min-h-0 flex-1 grid-cols-1 ${isReportWorkbenchOpen ? 'gap-4 xl:grid-cols-[minmax(380px,44fr)_minmax(500px,56fr)]' : 'xl:grid-cols-1'}`}>
+            <section className={`${reportMobilePane === 'activity' ? 'flex' : 'hidden'} min-h-0 flex-col overflow-hidden bg-transparent xl:flex ${isReportWorkbenchOpen ? '' : 'xl:mx-auto xl:w-full xl:max-w-[1024px]'}`}>
+              <div className="shrink-0 px-4 py-3 md:px-5">
+                <div className="flex justify-end">
+                  <div className="inline-flex max-w-[720px] flex-wrap items-center justify-end gap-1.5 rounded-[18px] bg-[#f2f4f7] px-3 py-2 text-sm font-normal leading-[22px] text-[#1d2129]">
+                    <span className="inline-flex h-[22px] shrink-0 items-center rounded-full bg-[#e8f3ff] px-2 text-xs font-normal leading-[18px] text-[#165dff]">
+                      报告生成
+                    </span>
+                    <span className="whitespace-pre-wrap break-words">{activeQuestionThread.userMessage.content}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto bg-white px-4 py-4 md:px-5">
+                {analysisMessages.length ? (
+                  <div key="report-generation-process-v1" className="space-y-4">
+                    {analysisMessages.map((message) =>
+                      message.analysisProcess ? (
+                        <WorkspaceAnalysisProcessContent
+                          key={`report-process-${message.id}`}
+                          processData={message.analysisProcess}
+                          reportState={message.id === activeReportProcessMessage.id && activeReportResultMessage?.markdownArtifact
+                            ? activeReportStage === 'completed'
+                              ? 'completed'
+                              : activeReportStage === 'interrupted'
+                                ? 'interrupted'
+                                : 'running'
+                            : undefined}
+                          reportFileName={message.id === activeReportProcessMessage.id
+                            ? activeReportResultMessage?.markdownArtifact?.fileName
+                            : undefined}
+                          reportFeedback={message.id === activeReportProcessMessage.id && activeReportResultMessage
+                            ? reportFeedbackByMessageId[activeReportResultMessage.id]
+                            : undefined}
+                          selectedActivityId={isReportWorkbenchOpen ? selectedReportActivityId : undefined}
+                          onActivitySelect={selectActivity}
+                          onReportFeedbackChange={message.id === activeReportProcessMessage.id && activeReportResultMessage
+                            ? (feedback) => handleReportFeedbackChange(activeReportResultMessage.id, feedback)
+                            : undefined}
+                          onReportRegenerate={message.id === activeReportProcessMessage.id && activeReportResultMessage
+                            ? () => handleRegenerate(activeReportResultMessage.id)
+                            : undefined}
+                        />
+                      ) : (
+                        <AssistantMessageCard
+                          key={message.id}
+                          message={message}
+                          onQuestionClick={executeQuestion}
+                          onRegenerate={handleRegenerate}
+                          onRerunSkill={handleSkillRerun}
+                          onClarificationSelect={handleClarificationSelect}
+                          onAnalysisCandidateSelect={handleAnalysisCandidateSelect}
+                          forceAnalysisExpanded
+                          analysisProcessVariant="workspace"
+                        />
+                      ),
+                    )}
+                  </div>
+                ) : (
+                  <div className="rounded-[12px] border border-dashed border-[#c9cdd4] bg-white px-5 py-12 text-center text-sm text-[#86909c]">
+                    正在准备报告生成过程
+                  </div>
+                )}
+              </div>
+
+              <div className="shrink-0 bg-white px-4 pb-2 pt-1">
+                {renderComposer()}
+              </div>
+            </section>
+
+            {!isReportWorkbenchOpen ? (
+              <WorkbenchRestoreControl
+                label="报告生成工作台"
+                onOpen={() => setIsReportWorkbenchOpen(true)}
+              />
+            ) : null}
+
+            <div className={`${reportMobilePane === 'workbench' ? 'block' : 'hidden'} h-full min-h-0 pb-2 ${isReportWorkbenchOpen ? 'xl:block' : 'xl:hidden'}`}>
+              <DeepAnalysisWorkbench
+                processMessage={activeReportProcessMessage}
+                resultMessage={activeReportResultMessage}
+                variant="report"
+                workbenchLabel="报告生成工作台"
+                stage={activeReportStage}
+                tab={reportDockTab}
+                selectedActivityId={selectedReportActivityId}
+                previewedFileMessageId={reportPreviewedFileMessageId}
+                onRegenerate={handleRegenerate}
+                onClose={() => {
+                  setIsReportWorkbenchOpen(false);
+                  setReportMobilePane('activity');
+                }}
+                onTabChange={(nextTab) => {
+                  setReportDockTab(nextTab);
+                  if (nextTab !== 'files') setReportPreviewedFileMessageId(null);
+                }}
+                onPreviewedFileMessageIdChange={setReportPreviewedFileMessageId}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="relative flex h-full min-h-0 flex-1 overflow-hidden bg-transparent">
       {renderHistorySidebar()}
-      {isDeepAnalysisWorkspace ? renderDeepAnalysisWorkspace() : renderStandardWorkspace()}
+      {isDeepAnalysisWorkspace
+        ? renderDeepAnalysisWorkspace()
+        : isReportWorkspace
+          ? renderReportWorkspace()
+          : renderStandardWorkspace()}
     </div>
   );
 }

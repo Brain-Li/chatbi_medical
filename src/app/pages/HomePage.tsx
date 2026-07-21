@@ -18,7 +18,7 @@ import { AppHeader } from '../components/AppHeader';
 import { AppShellBackground } from '../components/AppShellBackground';
 import { ConversationHistorySidebar } from '../components/ConversationHistorySidebar';
 import { PrimaryIconNav } from '../components/PrimaryIconNav';
-import { PromptModeBar, PromptModeHeader } from '../components/PromptModeBar';
+import { PromptModeBar, PromptModeTag } from '../components/PromptModeBar';
 import { PromptComposerFrame } from '../components/PromptComposerFrame';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { inferPromptMode, type PromptMode } from '../utils/promptMode';
@@ -305,26 +305,36 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  <div className="flex w-full flex-col gap-3">
-                    {!selectedMode && (
-                      <PromptModeBar onSelect={selectMode} className="w-full" />
-                    )}
+                  <div
+                    className={`relative w-full pt-11 transition-transform duration-[180ms] ease-out motion-reduce:transition-none ${
+                      selectedMode ? '-translate-y-[12px]' : 'translate-y-0'
+                    }`}
+                  >
+                    <div
+                      aria-hidden={selectedMode ? true : undefined}
+                      className={`absolute left-0 top-0 w-full transition-opacity duration-150 motion-reduce:transition-none ${
+                        selectedMode ? 'pointer-events-none opacity-0' : 'opacity-100'
+                      }`}
+                    >
+                      <PromptModeBar
+                        onSelect={selectMode}
+                        disabled={Boolean(selectedMode)}
+                        className="w-full"
+                      />
+                    </div>
 
                     <PromptComposerFrame
                       className="w-full"
                       bodyClassName="items-end justify-end !py-3 !pl-4 !pr-3"
-                      header={
-                        selectedMode ? (
-                          <PromptModeHeader
-                            mode={selectedMode}
-                            onExit={exitMode}
-                            className="!h-11"
-                          />
-                        ) : undefined
-                      }
                     >
                     <div className="flex min-h-[100px] w-full flex-col justify-between gap-3">
                       <div className="flex min-h-[52px] w-full items-start gap-2">
+                        {selectedMode && (
+                          <PromptModeTag
+                            mode={selectedMode}
+                            onRemove={exitMode}
+                          />
+                        )}
                         <textarea
                           ref={textareaRef}
                           value={draft}
@@ -332,7 +342,7 @@ export default function HomePage() {
                           onKeyDown={handleKeyDown}
                           placeholder={inputPlaceholder}
                           rows={2}
-                          className="h-[52px] max-h-[112px] min-h-[52px] min-w-0 flex-1 resize-none bg-white text-[14px] leading-[21px] text-[#1d2129] placeholder:text-[#86909c] focus:outline-none"
+                          className="h-[52px] max-h-[112px] min-h-[52px] min-w-0 flex-1 resize-none bg-white pt-[3px] text-[14px] leading-[22px] text-[#1d2129] placeholder:text-[#86909c] focus:outline-none"
                         />
                       </div>
                       <div className="flex h-8 items-center">
@@ -389,7 +399,11 @@ export default function HomePage() {
 
                 </div>
 
-                <div className="mx-auto mt-[50px] flex w-full max-w-[960px] flex-col gap-4">
+                <div
+                  className={`mx-auto mt-[50px] flex w-full max-w-[960px] flex-col gap-4 transition-transform duration-[180ms] ease-out motion-reduce:transition-none ${
+                    selectedMode ? '-translate-y-[12px]' : 'translate-y-0'
+                  }`}
+                >
                   <div className="flex items-center gap-2">
                     <span className="h-[13px] w-[3px] shrink-0 rounded-xl bg-[#165dff]" />
                     <h2 className="text-[16px] font-medium leading-6 text-[#1d2129]">

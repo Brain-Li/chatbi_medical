@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Check,
   CheckCircle2,
+  ChevronsRight,
   Download,
   Eye,
   ExternalLink,
@@ -11,7 +12,6 @@ import {
   Loader2,
   RefreshCw,
   Search,
-  X,
 } from 'lucide-react';
 import type { AnalysisProcessData, AnalysisReferenceSource, DeepAnalysisActivityId, Message } from '../types';
 import {
@@ -24,6 +24,8 @@ import copyLineIcon from '../../assets/figma-ask/file-copy-line.svg';
 type DeepAnalysisWorkbenchProps = {
   processMessage: Message;
   resultMessage?: Message | null;
+  variant?: 'deep-analysis' | 'report';
+  workbenchLabel?: string;
   stage: DeepAnalysisStage;
   tab: DeepAnalysisWorkbenchTab;
   selectedActivityId: DeepAnalysisActivityId;
@@ -76,9 +78,10 @@ const processStepDefinitions: Array<{ id: DeepAnalysisActivityId; label: string 
 export function getCurrentDeepAnalysisActivityId(
   processMessage: Message,
   stage: DeepAnalysisStage,
+  variant: 'deep-analysis' | 'report' = 'deep-analysis',
 ): DeepAnalysisActivityId {
-  if (stage === 'drafting' || stage === 'completed') return 'draft-report';
-  if (stage === 'interrupted' && processMessage.analysisProcess?.status === 'completed') {
+  if (variant === 'report' && (stage === 'drafting' || stage === 'completed')) return 'draft-report';
+  if (variant === 'report' && stage === 'interrupted' && processMessage.analysisProcess?.status === 'completed') {
     return 'draft-report';
   }
 
@@ -113,6 +116,7 @@ function getVisibleMarkdown(message?: Message | null) {
 export function getDeepAnalysisStage(
   processMessage: Message,
   resultMessage?: Message | null,
+  variant: 'deep-analysis' | 'report' = 'deep-analysis',
 ): DeepAnalysisStage {
   if (
     processMessage.isInterrupted ||
@@ -129,12 +133,17 @@ export function getDeepAnalysisStage(
       : 'completed';
   }
 
+  if (resultMessage?.rootCauseResult) {
+    return resultMessage.isGenerating ? 'drafting' : 'completed';
+  }
+
   const process = processMessage.analysisProcess;
   const activeStep = [...(process?.steps ?? [])].reverse().find((step) => step.status === 'running')
     ?? (process?.steps ?? []).at(-1);
 
   if (activeStep?.id === 'retrieve-knowledge') return 'researching';
   if (activeStep?.id === 'execute-query') return 'querying';
+  if (activeStep?.id === 'generate-insights') return 'drafting';
   if ((process?.visibleStepCount ?? 1) >= 7) return 'querying';
   if ((process?.visibleStepCount ?? 1) >= 6) return 'researching';
   return 'planning';
@@ -488,12 +497,14 @@ function ActivityDetailPanel({
   resultMessage,
   stage,
   activityId,
+  variant,
   onRetry,
 }: {
   processMessage: Message;
   resultMessage?: Message | null;
   stage: DeepAnalysisStage;
   activityId: DeepAnalysisActivityId;
+  variant: 'deep-analysis' | 'report';
   onRetry?: () => void;
 }) {
   const [isSqlCopied, setIsSqlCopied] = useState(false);
@@ -520,13 +531,16 @@ function ActivityDetailPanel({
     ? '搜索并浏览网页'
     : activityId === 'execute-skills'
       ? capabilityExecutionTitle
-      : processStepDefinitions[activityIndex]?.label ?? '步骤详情';
+      : activityId === 'draft-report' && variant === 'report'
+        ? '生成分析报告'
+        : processStepDefinitions[activityIndex]?.label ?? '步骤详情';
   const planItems = [
     '确认数据集、指标、维度和时间范围',
     '调用本次分析所需的 Skill 和 MCP 工具',
     '检索分析依据，查阅内部知识文档，无结果再联网查询',
-    '执行数据查询和维度下钻',
-    '整理证据并生成分析报告',
+    ...(variant === 'report'
+      ? ['执行数据查询和维度下钻', '整理证据并生成分析报告']
+      : ['执行数据查询、生成图表并整理分析结论']),
   ];
   const questionIntentSummary = getQuestionIntentSummary(process);
 
@@ -704,8 +718,9 @@ function ActivityDetailPanel({
       />
     );
   } else if (activityId === 'execute-query') {
-    content = process?.sql
-      ? (
+    content = (
+      <div>
+        {process?.sql ? (
           <div className="relative max-h-80 rounded-[8px] bg-[#f7f8fa]">
             <AppTooltip delayDuration={240}>
               <TooltipTrigger asChild>
@@ -729,11 +744,14 @@ function ActivityDetailPanel({
                 <span aria-hidden="true" className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[5px] border-t-[4px] border-x-transparent border-t-[#1d2129]" />
               </TooltipContent>
             </AppTooltip>
-            <pre className="max-h-80 overflow-auto whitespace-pre p-3 pr-20 font-mono text-xs leading-5 text-[#4e5969]">{process.sql}</pre>
+            <pre className="max-h-80 overflow-auto whitespace-pre p-3 pr-20 font-mono text-[13px] leading-5 text-[#4e5969]">{process.sql}</pre>
           </div>
-        )
-      : <div className="rounded-[8px] bg-[#f7f8fa] px-3 py-8 text-center text-sm text-[#86909c]">查询语句尚未生成</div>;
-  } else {
+        ) : (
+          <div className="rounded-[8px] bg-[#f7f8fa] px-3 py-8 text-center text-sm text-[#86909c]">查询语句尚未生成</div>
+        )}
+      </div>
+    );
+  } else if (variant === 'report') {
     const reportFileName = resultMessage?.markdownArtifact?.fileName ?? '分析报告.md';
     const markdown = getVisibleMarkdown(resultMessage);
     const reportActivities: ActivityStreamItem[] = [
@@ -767,6 +785,12 @@ function ActivityDetailPanel({
         interrupted={status === 'interrupted'}
         emptyText="正在准备报告文件"
       />
+    );
+  } else {
+    content = (
+      <div className="rounded-[8px] border border-dashed border-[#c9cdd4] bg-white px-4 py-8 text-center text-sm leading-6 text-[#86909c]">
+        图表和分析结论已展示在左侧“执行数据查询”步骤下方
+      </div>
     );
   }
 
@@ -916,7 +940,15 @@ export function downloadMarkdownArtifact(message?: Message | null) {
   URL.revokeObjectURL(url);
 }
 
-function FilesPanel({ resultMessage, onPreview }: { resultMessage?: Message | null; onPreview: () => void }) {
+function FilesPanel({
+  resultMessage,
+  variant,
+  onPreview,
+}: {
+  resultMessage?: Message | null;
+  variant: 'deep-analysis' | 'report';
+  onPreview: () => void;
+}) {
   const markdown = getVisibleMarkdown(resultMessage);
   const hasFile = Boolean(resultMessage?.markdownArtifact);
   const isInterrupted = Boolean(resultMessage?.isInterrupted);
@@ -1050,6 +1082,8 @@ function ReportPanel({ resultMessage, onBack }: {
 export function DeepAnalysisWorkbench({
   processMessage,
   resultMessage,
+  variant = 'deep-analysis',
+  workbenchLabel = '深度分析工作台',
   stage,
   tab,
   selectedActivityId,
@@ -1060,7 +1094,7 @@ export function DeepAnalysisWorkbench({
   onPreviewedFileMessageIdChange,
 }: DeepAnalysisWorkbenchProps) {
   const isFilesPreviewOpen = Boolean(
-    resultMessage?.markdownArtifact && previewedFileMessageId === resultMessage.id,
+    variant === 'report' && resultMessage?.markdownArtifact && previewedFileMessageId === resultMessage.id,
   );
 
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -1076,7 +1110,7 @@ export function DeepAnalysisWorkbench({
     <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-[12px] border border-[#dde2e8] bg-[#fafbfc] xl:shadow-[-6px_0_18px_rgba(29,33,41,0.04)]">
       <div className="shrink-0 border-b border-[#e5e6eb] bg-white px-4 md:px-5">
         <div className="flex items-center gap-2">
-          <div role="tablist" aria-label="深度分析工作台" className="flex min-w-0 flex-1 gap-5 overflow-x-auto">
+          <div role="tablist" aria-label={workbenchLabel} className="flex min-w-0 flex-1 gap-5 overflow-x-auto">
             {workbenchTabs.map((item, index) => (
               <button
                 key={item.id}
@@ -1095,14 +1129,14 @@ export function DeepAnalysisWorkbench({
               </button>
             ))}
           </div>
-          <ActionTooltip label="关闭分析工作台">
+          <ActionTooltip label="收起工作台">
             <button
               type="button"
               onClick={onClose}
               className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-[#86909c] transition-colors hover:bg-[#f2f3f5] hover:text-[#4e5969] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 xl:flex"
-              aria-label="关闭分析工作台"
+              aria-label={`收起${workbenchLabel}`}
             >
-              <X className="h-4 w-4" />
+              <ChevronsRight aria-hidden="true" className="h-4 w-4" strokeWidth={1.75} />
             </button>
           </ActionTooltip>
         </div>
@@ -1114,9 +1148,9 @@ export function DeepAnalysisWorkbench({
         aria-labelledby={`deep-analysis-tab-${tab}`}
         className="relative min-h-0 flex-1 overflow-y-auto bg-[#fafbfc] p-5 md:p-6"
       >
-        {tab === 'progress' ? selectedActivityId === 'draft-report'
+        {tab === 'progress' ? variant === 'report' && selectedActivityId === 'draft-report'
           ? <ReportPanel resultMessage={resultMessage} />
-          : <ActivityDetailPanel processMessage={processMessage} resultMessage={resultMessage} stage={stage} activityId={selectedActivityId} onRetry={stage === 'interrupted' && onRegenerate ? () => onRegenerate((resultMessage ?? processMessage).id) : undefined} />
+          : <ActivityDetailPanel processMessage={processMessage} resultMessage={resultMessage} stage={stage} activityId={selectedActivityId} variant={variant} onRetry={stage === 'interrupted' && onRegenerate ? () => onRegenerate((resultMessage ?? processMessage).id) : undefined} />
           : null}
         {tab === 'sources' ? <SourcesPanel processMessage={processMessage} stage={stage} /> : null}
         {tab === 'files' ? isFilesPreviewOpen ? (
@@ -1127,6 +1161,7 @@ export function DeepAnalysisWorkbench({
         ) : (
           <FilesPanel
             resultMessage={resultMessage}
+            variant={variant}
             onPreview={() => onPreviewedFileMessageIdChange(resultMessage?.id ?? null)}
           />
         ) : null}

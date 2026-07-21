@@ -58,38 +58,36 @@ export function PromptModeBar({
   );
 }
 
-export function PromptModeHeader({
+export function PromptModeTag({
   mode,
-  onExit,
+  onRemove,
   disabled = false,
   className = '',
 }: {
   mode: PromptMode;
-  onExit: () => void;
+  onRemove: () => void;
   disabled?: boolean;
   className?: string;
 }) {
   const item = modeMeta[mode];
-  const exitLabel = disabled ? '生成中暂不可退出模式' : `退出${item.label}模式`;
+  const removeLabel = disabled ? `生成中暂不可退出${item.label}模式` : `退出${item.label}模式`;
 
   return (
     <div
-      className={`flex h-10 items-center justify-between gap-4 border-b border-[#e5e6eb] bg-[#f5f8ff] px-4 ${className}`}
+      className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-[7px] border border-[#d8e7ff] bg-[#f2f7ff] pl-2.5 pr-1 text-[14px] font-normal leading-[22px] text-[#165dff] ${className}`}
     >
-      <span className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg bg-[#e8f3ff] px-3 text-[14px] font-normal leading-[22px] text-[#165dff]">
-        <img src={item.selectedIcon} alt="" className="h-4 w-4" />
-        {item.label}模式
-      </span>
+      <img src={item.selectedIcon} alt="" className="h-3.5 w-3.5" />
+      <span className="whitespace-nowrap">{item.label}</span>
       <Tooltip delayDuration={240}>
         <TooltipTrigger asChild>
           <button
             type="button"
-            onClick={onExit}
+            onClick={onRemove}
             disabled={disabled}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-[#86909c] transition-colors hover:bg-[#e8f3ff] hover:text-[#165dff] active:bg-[#dbeafe] focus-visible:bg-[#e8f3ff] focus-visible:text-[#165dff] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[#165dff]/20 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-[#86909c]"
-            aria-label={exitLabel}
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-[#6b8fc9] transition-colors hover:bg-[#dfeaff] hover:text-[#165dff] active:bg-[#d4e3ff] focus-visible:bg-[#dfeaff] focus-visible:text-[#165dff] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[#165dff]/30 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-[#6b8fc9]"
+            aria-label={removeLabel}
           >
-            <X className="h-4 w-4" />
+            <X className="h-3.5 w-3.5" />
           </button>
         </TooltipTrigger>
         <TooltipContent
@@ -99,7 +97,7 @@ export function PromptModeHeader({
           showArrow={false}
           className="relative rounded-[4px] bg-[#1d2129] px-3 py-1 text-center font-['PingFang_SC'] text-[14px] font-normal leading-[22px] tracking-normal text-white whitespace-nowrap shadow-none"
         >
-          {exitLabel}
+          {removeLabel}
           <span
             aria-hidden="true"
             className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[5px] border-t-[4px] border-x-transparent border-t-[#1d2129]"

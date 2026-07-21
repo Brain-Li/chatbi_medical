@@ -42,7 +42,7 @@ import {
   Wrench,
   X,
 } from 'lucide-react';
-import { AgentRoutingTrace, AgentRuntimeConfig, AnalysisCandidateOption, AnalysisProcessData, AnalysisProcessStep, DeepAnalysisActivityId, Message, SkillTrace } from '../types';
+import { AgentRoutingTrace, AgentRuntimeConfig, AnalysisCandidateOption, AnalysisProcessData, AnalysisProcessStep, DatasetAnalysisResult, DeepAnalysisActivityId, Message, RootCauseResultData, SkillTrace } from '../types';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { ReportSubscriptionDialog } from './ReportSubscriptionDialog';
 import {
@@ -50,7 +50,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from './ui/tooltip';
-import arrowRightUpLineIcon from '../../assets/figma-ask/arrow-right-up-line.svg';
 import arrowUpSLineIcon from '../../assets/figma-ask/arrow-up-s-line.svg';
 import checkFillIcon from '../../assets/figma-ask/check-fill.svg';
 import copyLineIcon from '../../assets/figma-ask/file-copy-line.svg';
@@ -1004,6 +1003,266 @@ function WorkspaceActivityItem({
   );
 }
 
+function InlineDeepAnalysisResult({
+  result,
+  loading,
+  autoFollow,
+  visibleBlockCount,
+  visibleTextLength,
+  isGenerating,
+  isInterrupted,
+  feedback,
+  onFeedbackChange,
+  onRegenerate,
+}: {
+  result?: RootCauseResultData;
+  loading?: boolean;
+  autoFollow?: boolean;
+  visibleBlockCount?: number;
+  visibleTextLength?: number;
+  isGenerating?: boolean;
+  isInterrupted?: boolean;
+  feedback?: 'like' | 'dislike';
+  onFeedbackChange?: (feedback: 'like' | 'dislike') => void;
+  onRegenerate?: () => void;
+}) {
+  const resultRef = useRef<HTMLElement>(null);
+  const latestResultRef = useRef<HTMLDivElement>(null);
+  const actionButtonClassName =
+    'inline-flex h-8 w-8 items-center justify-center rounded bg-white p-2 text-gray-500 hover:bg-[#f7f8fa] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20';
+  const leadingBlockCount = result
+    ? 3 + (result.overviewMetrics.length ? 1 : 0)
+    : 0;
+  const totalTypingTextLength = result
+    ? result.conclusion.length + result.sections.reduce(
+        (count, section) => count
+          + section.title.length
+          + section.description.length
+          + section.bullets.reduce((bulletCount, bullet) => bulletCount + bullet.length, 0),
+        0,
+      )
+    : 0;
+  const visibleResultBlockCount = result
+    ? Math.min(Math.max(visibleBlockCount ?? leadingBlockCount, 1), leadingBlockCount)
+    : 0;
+  const visibleResultTextLength = result
+    ? Math.min(Math.max(visibleTextLength ?? totalTypingTextLength, 0), totalTypingTextLength)
+    : 0;
+  const overviewMetricsBlockIndex = result?.overviewMetrics.length ? 3 : null;
+  const conclusionBlockIndex = overviewMetricsBlockIndex ? 4 : 3;
+  let typingTextCursor = 0;
+  const takeVisibleText = (text: string) => {
+    const startIndex = typingTextCursor;
+    typingTextCursor += text.length;
+    const visibleLength = Math.min(
+      text.length,
+      Math.max(0, visibleResultTextLength - startIndex),
+    );
+
+    return text.slice(0, visibleLength);
+  };
+  const visibleConclusion = result ? takeVisibleText(result.conclusion) : '';
+  const visibleSections = result?.sections.map((section) => {
+    const visibleTitle = takeVisibleText(section.title);
+    const visibleDescription = takeVisibleText(section.description);
+    const visibleBullets = section.bullets.map((bullet) => ({
+      fullText: bullet,
+      visibleText: takeVisibleText(bullet),
+    }));
+
+    return {
+      ...section,
+      visibleTitle,
+      visibleDescription,
+      visibleBullets: visibleBullets.filter((bullet) => bullet.visibleText.length > 0),
+    };
+  }).filter((section) => section.visibleTitle.length > 0) ?? [];
+  const isConclusionComplete = Boolean(result && visibleConclusion.length >= result.conclusion.length);
+  const isResultComplete = Boolean(
+    result
+    && !isGenerating
+    && !isInterrupted
+    && visibleResultBlockCount >= leadingBlockCount
+    && visibleResultTextLength >= totalTypingTextLength,
+  );
+
+  useEffect(() => {
+    if (!autoFollow || (!loading && !result)) return;
+
+    let frame = 0;
+    let settleTimer = 0;
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const followBehavior: ScrollBehavior = prefersReducedMotion ? 'auto' : 'smooth';
+    const finalTimer = window.setTimeout(() => {
+      latestResultRef.current?.scrollIntoView({ behavior: followBehavior, block: 'end' });
+    }, 320);
+    const scrollToLatest = (behavior: ScrollBehavior = 'auto') => {
+      latestResultRef.current?.scrollIntoView({
+        behavior,
+        block: 'end',
+      });
+    };
+    const scheduleFollow = () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(settleTimer);
+      frame = window.requestAnimationFrame(() => scrollToLatest(followBehavior));
+      settleTimer = window.setTimeout(() => scrollToLatest(followBehavior), 160);
+    };
+
+    scheduleFollow();
+    const resultElement = resultRef.current;
+    const resizeObserver = resultElement && typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(scheduleFollow)
+      : null;
+
+    resizeObserver?.observe(resultElement!);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(settleTimer);
+      window.clearTimeout(finalTimer);
+      resizeObserver?.disconnect();
+    };
+  }, [autoFollow, isGenerating, isInterrupted, loading, result, visibleBlockCount]);
+
+  return (
+    <section
+      ref={resultRef}
+      data-testid="workspace-deep-analysis-result"
+      className="mt-3 pb-2"
+      aria-label="深度分析结果"
+    >
+      {!result || loading ? (
+        <div
+          className="flex h-7 items-center gap-1.5 px-2"
+          role="status"
+          aria-live="polite"
+          aria-label="正在生成图表和分析结论"
+        >
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#8fbdff] [animation-duration:1.2s] motion-reduce:animate-none" aria-hidden="true" />
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#5b9cff] [animation-delay:160ms] [animation-duration:1.2s] motion-reduce:animate-none" aria-hidden="true" />
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#165dff] [animation-delay:320ms] [animation-duration:1.2s] motion-reduce:animate-none" aria-hidden="true" />
+        </div>
+      ) : (
+        <div className="space-y-4" aria-busy={isGenerating}>
+          {visibleResultBlockCount >= 1 ? (
+            <BaseChart title="维度贡献分析" data={result.contributionChart} />
+          ) : null}
+
+          {visibleResultBlockCount >= 2 ? <div>
+            <h3 className="text-base font-medium leading-6 text-[#1d2129]">{result.title}</h3>
+            <p className="mt-1.5 text-sm leading-6 text-[#4e5969]">{result.summary}</p>
+          </div> : null}
+
+          {overviewMetricsBlockIndex && visibleResultBlockCount >= overviewMetricsBlockIndex ? (
+            <div className="grid grid-cols-2 gap-2">
+              {result.overviewMetrics.map((metric) => (
+                <div key={metric.label} className="min-h-[68px] rounded-[8px] border border-[#e5e6eb] bg-white px-3 py-2.5">
+                  <div className="text-xs leading-[18px] text-[#86909c]">{metric.label}</div>
+                  <div className="mt-0.5 break-words text-base font-medium leading-6 text-[#1d2129]">{metric.value}</div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {visibleResultBlockCount >= conclusionBlockIndex ? <section className="border-y border-[#e5e6eb] py-4" aria-labelledby="inline-analysis-conclusion-title">
+            <h3 id="inline-analysis-conclusion-title" className="text-sm font-medium leading-[22px] text-[#1d2129]">分析结论</h3>
+            {visibleConclusion ? (
+              <p className="mt-1.5 min-h-6 text-sm leading-6 text-[#4e5969]" aria-label={result.conclusion}>{visibleConclusion}</p>
+            ) : null}
+          </section> : null}
+
+          {result.sections.length && isConclusionComplete ? (
+            <details className="group border-b border-[#e5e6eb] pb-4" open>
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium leading-[22px] text-[#1d2129] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20">
+                <span>详细分析</span>
+                <ChevronDown className="h-4 w-4 shrink-0 text-[#86909c] transition-transform group-open:rotate-180" aria-hidden="true" />
+              </summary>
+              {visibleSections.length ? <div className="mt-3 divide-y divide-[#f2f3f5]">
+                {visibleSections.map((section, index) => (
+                  <article key={section.title} className="py-3 first:pt-0 last:pb-0">
+                    <div className="flex items-start gap-2.5">
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#e8f3ff] text-[11px] font-medium text-[#165dff]">{index + 1}</span>
+                      <div className="min-w-0">
+                        <h4 className="min-h-5 text-sm font-medium leading-5 text-[#1d2129]" aria-label={section.title}>{section.visibleTitle}</h4>
+                        {section.visibleDescription ? (
+                          <p className="mt-1 min-h-6 text-sm leading-6 text-[#86909c]" aria-label={section.description}>{section.visibleDescription}</p>
+                        ) : null}
+                        {section.visibleBullets.length ? <ul className="mt-1.5 space-y-1.5">
+                          {section.visibleBullets.map((bullet) => (
+                            <li key={bullet.fullText} className="flex min-h-6 gap-2 text-sm leading-6 text-[#4e5969]" aria-label={bullet.fullText}>
+                              <span className="mt-[9px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#165dff]" />
+                              <span className="min-w-0">{bullet.visibleText}</span>
+                            </li>
+                          ))}
+                        </ul> : null}
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div> : null}
+            </details>
+          ) : null}
+
+          {isResultComplete && (onFeedbackChange || onRegenerate) ? (
+            <div className="flex flex-wrap items-center justify-start py-[5px]" aria-label="深度分析操作">
+              {onFeedbackChange ? (
+                <>
+                  <FeedbackTooltip label="点赞">
+                    <button
+                      type="button"
+                      onClick={() => onFeedbackChange('like')}
+                      className={`${actionButtonClassName} ${
+                        feedback === 'like' ? 'bg-blue-50 text-blue-600 hover:bg-blue-50 hover:text-blue-600' : ''
+                      }`}
+                      aria-label="点赞"
+                      aria-pressed={feedback === 'like'}
+                    >
+                      <ThumbsUp className={`h-4 w-4 ${feedback === 'like' ? 'fill-blue-600' : ''}`} />
+                    </button>
+                  </FeedbackTooltip>
+                  <FeedbackTooltip label="点踩">
+                    <button
+                      type="button"
+                      onClick={() => onFeedbackChange('dislike')}
+                      className={`${actionButtonClassName} ${
+                        feedback === 'dislike' ? 'bg-red-50 text-red-600 hover:bg-red-50 hover:text-red-600' : ''
+                      }`}
+                      aria-label="点踩"
+                      aria-pressed={feedback === 'dislike'}
+                    >
+                      <ThumbsDown className={`h-4 w-4 ${feedback === 'dislike' ? 'fill-red-600' : ''}`} />
+                    </button>
+                  </FeedbackTooltip>
+                </>
+              ) : null}
+              {onFeedbackChange && onRegenerate ? <span className="h-4 w-px bg-[#e5e6eb]" aria-hidden="true" /> : null}
+              {onRegenerate ? (
+                <FeedbackTooltip label="重新分析">
+                  <button
+                    type="button"
+                    onClick={onRegenerate}
+                    className={actionButtonClassName}
+                    aria-label="重新分析"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </button>
+                </FeedbackTooltip>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      )}
+      <div
+        ref={latestResultRef}
+        data-testid="workspace-deep-analysis-result-latest"
+        className="h-px scroll-mb-28"
+        aria-hidden="true"
+      />
+    </section>
+  );
+}
+
 function WorkspaceReportFileCard({
   fileName,
   state,
@@ -1022,17 +1281,27 @@ function WorkspaceReportFileCard({
   onRegenerate?: () => void;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
+  const actionRef = useRef<HTMLDivElement>(null);
   const stateLabel = state === 'completed' ? '已生成' : state === 'running' ? '生成中' : '生成已中断';
   const actionButtonClassName =
     'inline-flex h-8 w-8 items-center justify-center rounded bg-white p-2 text-gray-500 hover:bg-[#f7f8fa]';
 
   useEffect(() => {
-    if (state !== 'running' || !isSelected) return;
+    let settleTimer = 0;
+    const scrollToCurrentTarget = () => {
+      const target = state === 'completed' ? actionRef.current : cardRef.current;
+      target?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    };
     const frame = window.requestAnimationFrame(() => {
-      cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      scrollToCurrentTarget();
     });
-    return () => window.cancelAnimationFrame(frame);
-  }, [isSelected, state]);
+    settleTimer = window.setTimeout(scrollToCurrentTarget, 240);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(settleTimer);
+    };
+  }, [state]);
 
   return (
     <div
@@ -1088,7 +1357,12 @@ function WorkspaceReportFileCard({
         </button>
       </div>
       {state === 'completed' && (onFeedbackChange || onRegenerate) ? (
-        <div className="mt-2 flex flex-wrap items-center justify-start py-[5px]" aria-label="报告操作">
+        <div
+          ref={actionRef}
+          data-testid="workspace-report-actions"
+          className="mt-2 flex scroll-mb-28 flex-wrap items-center justify-start py-[5px]"
+          aria-label="报告操作"
+        >
           {onFeedbackChange ? (
             <>
               <FeedbackTooltip label="点赞">
@@ -1140,24 +1414,45 @@ function WorkspaceReportFileCard({
 
 export function WorkspaceAnalysisProcessContent({
   processData,
+  variant = 'report',
+  analysisResult,
+  analysisResultLoading,
+  analysisResultVisibleBlockCount,
+  analysisResultVisibleTextLength,
+  analysisResultGenerating,
+  analysisResultInterrupted,
+  analysisFeedback,
   reportState,
   reportFileName,
   reportFeedback,
   selectedActivityId,
   onActivitySelect,
+  onAnalysisFeedbackChange,
+  onAnalysisRegenerate,
   onReportFeedbackChange,
   onReportRegenerate,
 }: {
   processData: AnalysisProcessData;
+  variant?: 'deep-analysis' | 'report';
+  analysisResult?: RootCauseResultData;
+  analysisResultLoading?: boolean;
+  analysisResultVisibleBlockCount?: number;
+  analysisResultVisibleTextLength?: number;
+  analysisResultGenerating?: boolean;
+  analysisResultInterrupted?: boolean;
+  analysisFeedback?: 'like' | 'dislike';
   reportState?: Extract<WorkspaceActivityState, 'running' | 'completed' | 'interrupted'>;
   reportFileName?: string;
   reportFeedback?: 'like' | 'dislike';
   selectedActivityId?: DeepAnalysisActivityId;
   onActivitySelect?: (id: DeepAnalysisActivityId) => void;
+  onAnalysisFeedbackChange?: (feedback: 'like' | 'dislike') => void;
+  onAnalysisRegenerate?: () => void;
   onReportFeedbackChange?: (feedback: 'like' | 'dislike') => void;
   onReportRegenerate?: () => void;
 }) {
-  const visibleStepCount = Math.min(Math.max(processData.visibleStepCount ?? 7, 1), 7);
+  const activityCount = 7;
+  const visibleStepCount = Math.min(Math.max(processData.visibleStepCount ?? activityCount, 1), activityCount);
   const metrics = processData.metrics.slice(0, 3);
   const capabilityCalls = [
     ...processData.skillMatches.map((skill) => `Skill：${skill.name}`),
@@ -1251,7 +1546,20 @@ export function WorkspaceAnalysisProcessContent({
             onSelect={onActivitySelect ?? (() => {})}
           />
         ))}
-        {reportState && reportFileName ? (
+        {variant === 'deep-analysis' && (analysisResult || analysisResultLoading) ? (
+          <InlineDeepAnalysisResult
+            result={analysisResult}
+            loading={analysisResultLoading}
+            autoFollow={Boolean(analysisResult || analysisResultLoading)}
+            visibleBlockCount={analysisResultVisibleBlockCount}
+            visibleTextLength={analysisResultVisibleTextLength}
+            isGenerating={analysisResultGenerating}
+            isInterrupted={analysisResultInterrupted}
+            feedback={analysisFeedback}
+            onFeedbackChange={onAnalysisFeedbackChange}
+            onRegenerate={onAnalysisRegenerate}
+          />
+        ) : reportState && reportFileName ? (
           <WorkspaceReportFileCard
             fileName={reportFileName}
             state={reportState}
@@ -1456,7 +1764,7 @@ function AnalysisCard({
   );
 }
 
-function BaseChart({ title, data }: { title: string; data: { name: string; value: number }[] }) {
+export function BaseChart({ title, data }: { title: string; data: { name: string; value: number }[] }) {
   const [chartType, setChartType] = useState<BaseChartType>('bar');
   const [isChartTypeMenuOpen, setIsChartTypeMenuOpen] = useState(false);
   const chartTypeMenuRef = useRef<HTMLDivElement>(null);
@@ -1850,24 +2158,201 @@ function FigmaAskStackedChart() {
   );
 }
 
+function DatasetResultSection({
+  result,
+  index,
+  total,
+  onRetry,
+}: {
+  result: DatasetAnalysisResult;
+  index: number;
+  total: number;
+  onRetry?: () => void;
+}) {
+  const statusConfig = {
+    completed: {
+      label: '已完成',
+      className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    },
+    empty: {
+      label: '无数据',
+      className: 'border-amber-200 bg-amber-50 text-amber-700',
+    },
+    failed: {
+      label: '查询失败',
+      className: 'border-red-200 bg-red-50 text-red-700',
+    },
+  }[result.status];
+  const stateMessage = result.statusMessage
+    ?? (result.status === 'empty'
+      ? '该数据集未查询到符合当前条件的数据。'
+      : '该数据集本次查询失败，其他数据集结果不受影响。');
+
+  return (
+    <section
+      className="overflow-hidden rounded-[12px] border border-[#e5e6eb] bg-white"
+      aria-labelledby={`dataset-result-${result.datasetId}`}
+    >
+      <div className="border-b border-[#e5e6eb] bg-[#f7f8fa] px-4 py-3.5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] bg-[#e8f3ff] text-[#165dff]">
+              <Database className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <div className="text-xs leading-5 text-[#86909c]">数据集 {index + 1}/{total}</div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3
+                  id={`dataset-result-${result.datasetId}`}
+                  className="break-words text-base font-semibold leading-6 text-[#1d2129]"
+                >
+                  {result.datasetName}
+                </h3>
+                <span className="rounded-full border border-[#e5e6eb] bg-white px-2 py-0.5 text-xs leading-5 text-[#4e5969]">
+                  {result.businessTopic}
+                </span>
+              </div>
+            </div>
+          </div>
+          <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium ${statusConfig.className}`}>
+            {statusConfig.label}
+          </span>
+        </div>
+        <p className="mt-2 break-words text-sm leading-6 text-[#4e5969]">{result.summary}</p>
+      </div>
+
+      {result.status === 'completed' ? (
+        <div className="space-y-3 p-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {result.metrics.map((metric) => (
+              <div
+                key={metric.label}
+                className="min-h-[72px] rounded-[8px] border border-[#e5e6eb] bg-white p-4"
+              >
+                <div className="text-sm leading-5 text-[#4e5969]">{metric.label}</div>
+                <div className="mt-1 break-words text-xl font-medium leading-7 text-[#1d2129]">{metric.value}</div>
+              </div>
+            ))}
+          </div>
+          <BaseChart title={result.chartTitle} data={result.chartData} />
+        </div>
+      ) : (
+        <div className="p-4">
+          <div className={`flex flex-wrap items-center justify-between gap-3 rounded-[8px] border px-4 py-3 ${
+            result.status === 'empty'
+              ? 'border-amber-200 bg-amber-50/70 text-amber-900'
+              : 'border-red-200 bg-red-50/70 text-red-900'
+          }`}>
+            <div className="flex min-w-0 items-start gap-2 text-sm leading-6">
+              <AlertTriangle className="mt-1 h-4 w-4 shrink-0" aria-hidden="true" />
+              <span className="break-words">{stateMessage}</span>
+            </div>
+            {onRetry ? (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="shrink-0 rounded-[6px] border border-current bg-white px-3 py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25"
+              >
+                仅重试该数据集
+              </button>
+            ) : null}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function AskResultCard({
   message,
-  onQuestionClick,
   onRegenerate,
   onRerunSkill,
 }: {
   message: Message;
-  onQuestionClick?: (question: string) => void;
   onRegenerate?: (messageId: string) => void;
   onRerunSkill?: (skillId: string) => void;
 }) {
-  const recommendations = message.analysisResult?.recommendations ?? [];
   const [feedback, setFeedback] = useState<'like' | 'dislike' | null>(null);
 
   if (!message.analysisResult) return null;
 
   const actionButtonClassName =
     'inline-flex h-8 w-8 items-center justify-center rounded bg-white p-2 text-gray-500 hover:bg-[#f7f8fa]';
+  const datasetResults = message.analysisResult.datasetResults ?? [];
+
+  if (datasetResults.length > 1) {
+    return (
+      <div className="space-y-4">
+        <div
+          className="flex items-start gap-3 rounded-[10px] border border-[#bedaff] bg-[#f2f8ff] px-4 py-3 text-sm leading-6 text-[#245b9e]"
+          role="status"
+        >
+          <Database className="mt-1 h-4 w-4 shrink-0 text-[#165dff]" aria-hidden="true" />
+          <span>
+            本次命中 {datasetResults.length} 个数据集，以下结果按各自口径独立展示，请勿直接相加。
+          </span>
+        </div>
+
+        <div className="space-y-4">
+          {datasetResults.map((result, index) => (
+            <DatasetResultSection
+              key={result.datasetId}
+              result={result}
+              index={index}
+              total={datasetResults.length}
+              onRetry={result.status === 'completed' || !onRegenerate
+                ? undefined
+                : () => onRegenerate(message.id)}
+            />
+          ))}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-start py-[5px]">
+          <FeedbackTooltip label="点赞">
+            <button
+              type="button"
+              onClick={() => setFeedback(feedback === 'like' ? null : 'like')}
+              className={`${actionButtonClassName} ${
+                feedback === 'like' ? 'bg-blue-50 text-blue-600 hover:bg-blue-50 hover:text-blue-600' : ''
+              }`}
+              aria-label="点赞"
+              aria-pressed={feedback === 'like'}
+            >
+              <ThumbsUp className={`h-4 w-4 ${feedback === 'like' ? 'fill-blue-600' : ''}`} />
+            </button>
+          </FeedbackTooltip>
+          <FeedbackTooltip label="点踩">
+            <button
+              type="button"
+              onClick={() => setFeedback(feedback === 'dislike' ? null : 'dislike')}
+              className={`${actionButtonClassName} ${
+                feedback === 'dislike' ? 'bg-red-50 text-red-600 hover:bg-red-50 hover:text-red-600' : ''
+              }`}
+              aria-label="点踩"
+              aria-pressed={feedback === 'dislike'}
+            >
+              <ThumbsDown className={`h-4 w-4 ${feedback === 'dislike' ? 'fill-red-600' : ''}`} />
+            </button>
+          </FeedbackTooltip>
+          {onRegenerate ? (
+            <>
+              <span className="h-4 w-px bg-[#e5e6eb]" />
+              <FeedbackTooltip label="重新分析">
+                <button
+                  type="button"
+                  onClick={() => onRegenerate(message.id)}
+                  className={actionButtonClassName}
+                  aria-label="重新分析"
+                >
+                  <img alt="" src={refreshLineIcon} className="h-4 w-4" />
+                </button>
+              </FeedbackTooltip>
+            </>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -1931,21 +2416,6 @@ function AskResultCard({
           </>
         )}
       </div>
-
-      {recommendations.length > 0 && (
-        <div className="grid gap-4">
-          {recommendations.map((question) => (
-            <button
-              key={question}
-              onClick={() => onQuestionClick?.(question)}
-              className="flex w-full items-center justify-between rounded-[8px] border border-[#e5e6eb] bg-white px-4 py-2 text-left text-sm font-normal leading-[22px] text-[#1d2129] hover:border-[#c9cdd4] hover:bg-[#f7f8fa]"
-            >
-              <span className="min-w-0 truncate">{question}</span>
-              <img alt="" src={arrowRightUpLineIcon} className="ml-3 h-4 w-4 shrink-0" />
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 
@@ -2008,20 +2478,6 @@ function AskResultCard({
           </FeedbackTooltip>
         )}
       </div>
-
-      {recommendations.length > 0 && (
-        <div className="grid max-w-3xl gap-2">
-          {recommendations.map((question) => (
-            <button
-              key={question}
-              onClick={() => onQuestionClick?.(question)}
-              className="w-fit max-w-3xl whitespace-normal rounded-md border border-gray-200 bg-white px-3.5 py-2 text-left text-[13px] leading-5 text-gray-600 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900"
-            >
-              {question}
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -2377,7 +2833,6 @@ function RootCauseResultCard({
 
 export function AssistantMessageCard({
   message,
-  onQuestionClick,
   onRegenerate,
   onRerunSkill,
   onClarificationSelect,
@@ -2386,7 +2841,6 @@ export function AssistantMessageCard({
   analysisProcessVariant,
 }: {
   message: Message;
-  onQuestionClick?: (question: string) => void;
   onRegenerate?: (messageId: string) => void;
   onRerunSkill?: (skillId: string) => void;
   onClarificationSelect?: (question: string, agentId: string) => void;
@@ -2445,7 +2899,6 @@ export function AssistantMessageCard({
   return (
     <AskResultCard
       message={message}
-      onQuestionClick={onQuestionClick}
       onRegenerate={onRegenerate}
       onRerunSkill={onRerunSkill}
     />

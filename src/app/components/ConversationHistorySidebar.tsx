@@ -197,7 +197,7 @@ export function ConversationHistorySidebar({
     <aside
       data-testid="conversation-history-sidebar"
       aria-label="历史对话"
-      className="relative flex h-full w-[280px] min-h-0 shrink-0 flex-col rounded-tl-[20px] bg-white/50"
+      className="relative flex h-full w-[280px] min-h-0 shrink-0 flex-col rounded-tl-[20px] bg-white/50 max-sm:hidden"
     >
       <div
         className="flex h-full min-h-0 w-full flex-col px-4 pt-4"
