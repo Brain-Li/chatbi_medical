@@ -119,6 +119,8 @@ const CONVERSATIONS_STORAGE_KEY = 'chatbi_medical.conversations.v1';
 const ACTIVE_CONVERSATIONS_STORAGE_KEY = 'chatbi_medical.activeConversationIds.v1';
 const STORAGE_SCHEMA_VERSION_KEY = 'chatbi_medical.workspaceSchemaVersion';
 const CURRENT_STORAGE_SCHEMA_VERSION = 'ask-exception-demos-20260717-v2';
+const CONVERSATION_RETENTION_DAYS = 30;
+const CONVERSATION_RETENTION_MS = CONVERSATION_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 type StoredConversation = Omit<Conversation, 'createdAt' | 'updatedAt' | 'messages'> & {
   createdAt: string;
@@ -153,6 +155,11 @@ const fromStoredConversation = (conversation: StoredConversation): Conversation 
     timestamp: parseStoredDate(message.timestamp),
   })),
 });
+
+const getRetainedConversations = (conversations: Conversation[], now = Date.now()) => {
+  const cutoff = now - CONVERSATION_RETENTION_MS;
+  return conversations.filter((conversation) => conversation.updatedAt.getTime() >= cutoff);
+};
 
 const mergeExceptionDemoConversations = (conversations: Conversation[]) => {
   const demos = initialConversations.filter((conversation) => conversation.isDemo);
@@ -243,7 +250,9 @@ const getDefaultActiveConversationIds = (conversations: Conversation[]) => {
 };
 
 const storedInitialConversations = readStoredConversations();
-const workspaceInitialConversations = storedInitialConversations ?? initialConversations;
+const workspaceInitialConversations = getRetainedConversations(
+  storedInitialConversations ?? initialConversations,
+);
 const defaultActiveConversationIds = getDefaultActiveConversationIds(workspaceInitialConversations);
 const workspaceInitialActiveConversationIds = readStoredActiveConversationIds(
   workspaceInitialConversations,
@@ -275,10 +284,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     try {
+      const retainedConversations = getRetainedConversations(conversations);
       window.localStorage.setItem(STORAGE_SCHEMA_VERSION_KEY, CURRENT_STORAGE_SCHEMA_VERSION);
       window.localStorage.setItem(
         CONVERSATIONS_STORAGE_KEY,
-        JSON.stringify(conversations.map(toStoredConversation)),
+        JSON.stringify(retainedConversations.map(toStoredConversation)),
       );
     } catch {
       // Ignore storage quota and privacy-mode failures; in-memory state still works.

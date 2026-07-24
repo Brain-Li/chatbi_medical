@@ -9,16 +9,24 @@ export default function Root() {
   const requestedSidebarOpen = (location.state as { sidebarOpen?: boolean } | null)?.sidebarOpen;
   const isHome = location.pathname === '/home';
   const isLogin = location.pathname === '/';
+  const isReportWorkspace = location.pathname === '/report';
   const isWorkspacePage = location.pathname === '/ask' || location.pathname === '/report';
   const [sidebarOpen, setSidebarOpen] = useState(
-    () => typeof requestedSidebarOpen === 'boolean' ? requestedSidebarOpen : true,
+    () => typeof requestedSidebarOpen === 'boolean'
+      ? requestedSidebarOpen
+      : !isReportWorkspace,
   );
 
   useEffect(() => {
     if (typeof requestedSidebarOpen === 'boolean') {
       setSidebarOpen(requestedSidebarOpen);
+      return;
     }
-  }, [requestedSidebarOpen, location.key]);
+
+    if (isReportWorkspace) {
+      setSidebarOpen(false);
+    }
+  }, [isReportWorkspace, requestedSidebarOpen, location.key]);
 
   useEffect(() => {
     if (!isHome) {
@@ -36,10 +44,7 @@ export default function Root() {
         <AppShellBackground />
       </div>
       <div className="fixed inset-x-0 top-0 z-50">
-        <AppHeader
-          menuOpen={sidebarOpen}
-          onMenuClick={() => setSidebarOpen((current) => !current)}
-        />
+        <AppHeader />
       </div>
       <div className="fixed inset-0 z-10 flex min-h-0 pt-[54px]">
         <PrimaryIconNav />

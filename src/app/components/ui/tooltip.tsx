@@ -7,6 +7,7 @@ import { cn } from "./utils";
 
 type TooltipContentProps = React.ComponentProps<typeof TooltipPrimitive.Content> & {
   showArrow?: boolean;
+  arrowClassName?: string;
 };
 
 function TooltipProvider({
@@ -43,6 +44,7 @@ function TooltipContent({
   sideOffset = 0,
   children,
   showArrow = true,
+  arrowClassName,
   ...props
 }: TooltipContentProps) {
   return (
@@ -58,7 +60,12 @@ function TooltipContent({
       >
         {children}
         {showArrow && (
-          <TooltipPrimitive.Arrow className="bg-primary fill-primary z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-[2px]" />
+          <TooltipPrimitive.Arrow
+            className={cn(
+              "bg-primary fill-primary z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-[2px]",
+              arrowClassName,
+            )}
+          />
         )}
       </TooltipPrimitive.Content>
     </TooltipPrimitive.Portal>

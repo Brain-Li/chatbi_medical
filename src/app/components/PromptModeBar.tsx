@@ -74,7 +74,11 @@ export function PromptModeTag({
 
   return (
     <div
-      className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-[7px] border border-[#d8e7ff] bg-[#f2f7ff] pl-2.5 pr-1 text-[14px] font-normal leading-[22px] text-[#165dff] ${className}`}
+      className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-[7px] border pl-2.5 pr-1 text-[14px] font-normal leading-[22px] ${
+        mode === 'ask'
+          ? 'border-[#d8e7ff] bg-[#e8f3ff] text-[#165dff]'
+          : 'border-[#d8e7ff] bg-[#e8f3ff] text-[#165dff]'
+      } ${className}`}
     >
       <img src={item.selectedIcon} alt="" className="h-3.5 w-3.5" />
       <span className="whitespace-nowrap">{item.label}</span>
@@ -84,7 +88,7 @@ export function PromptModeTag({
             type="button"
             onClick={onRemove}
             disabled={disabled}
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-[#6b8fc9] transition-colors hover:bg-[#dfeaff] hover:text-[#165dff] active:bg-[#d4e3ff] focus-visible:bg-[#dfeaff] focus-visible:text-[#165dff] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[#165dff]/30 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-[#6b8fc9]"
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] transition-colors hover:bg-[#dfeaff] active:bg-[#d4e3ff] focus-visible:bg-[#dfeaff] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[#165dff]/30 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent"
             aria-label={removeLabel}
           >
             <X className="h-3.5 w-3.5" />

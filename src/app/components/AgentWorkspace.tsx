@@ -18,14 +18,17 @@ import {
   classifyAskQuestionIntent,
   getSuggestionSet,
   resolveAgentForQuestion,
+  resolveReportTemplateUsage,
 } from '../mockData';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { inferPromptMode } from '../utils/promptMode';
 import { buildAnalysisReportFileName } from '../utils/reportFileName';
-import { Agent, AgentClarificationOption, AgentRuntimeConfig, AgentType, AnalysisCandidateOption, AnalysisMcpMatch, AnalysisProcessData, AnalysisProcessStep, AnalysisResultData, AskQuestionIntentClassification, Conversation, DeepAnalysisActivityId, McpCapability, Message, ReportResultData, ResultScope, Skill, WorkspaceAutoSubmitPayload } from '../types';
+import { Agent, AgentClarificationOption, AgentRuntimeConfig, AgentType, AnalysisCandidateOption, AnalysisMcpMatch, AnalysisProcessData, AnalysisProcessStep, AnalysisResultData, AskQuestionIntentClassification, Conversation, DeepAnalysisActivityId, McpCapability, Message, ReportResultData, ReportTemplateUsage, ResultScope, Skill, WorkspaceAutoSubmitPayload } from '../types';
 import { ConversationHistorySidebar } from './ConversationHistorySidebar';
+import { HistorySidebarToggle } from './HistorySidebarToggle';
 import { PromptModeBar, PromptModeTag } from './PromptModeBar';
 import { PromptComposerFrame } from './PromptComposerFrame';
+import { ReportTemplateSelector } from './ReportTemplateSelector';
 import {
   DeepAnalysisWorkbench,
   getCurrentDeepAnalysisActivityId,
@@ -111,16 +114,16 @@ function WorkbenchRestoreControl({
   onOpen: () => void;
 }) {
   return (
-    <aside className="absolute right-0 top-1/2 z-10 hidden -translate-y-1/2 xl:block" aria-label={`${label}控制`}>
+    <aside className="absolute right-5 top-1 z-10 hidden xl:block" aria-label={`${label}控制`}>
       <Tooltip delayDuration={240}>
         <TooltipTrigger asChild>
           <button
             type="button"
             onClick={onOpen}
-            className="group inline-flex h-12 w-8 items-center justify-center rounded-l-[999px] border border-r-0 border-[#d9e2ec] bg-white text-[#657180] shadow-[-4px_0_12px_rgba(29,33,41,0.07)] transition-[border-color,background-color,color,box-shadow] duration-150 hover:border-[#94bfff] hover:bg-[#f2f7ff] hover:text-[#165dff] hover:shadow-[-6px_0_16px_rgba(22,93,255,0.10)] active:bg-[#e8f3ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#165dff]/25 motion-reduce:transition-none"
+            className="group flex h-8 w-8 items-center justify-center rounded-[8px] text-[#86909c] transition-colors hover:bg-[#f2f3f5] hover:text-[#4e5969] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 motion-reduce:transition-none"
             aria-label={`展开${label}`}
           >
-            <ChevronsLeft aria-hidden="true" className="h-4 w-4 transition-transform duration-150 group-hover:-translate-x-px motion-reduce:transition-none" strokeWidth={1.8} />
+            <ChevronsLeft aria-hidden="true" className="h-4 w-4" strokeWidth={1.75} />
           </button>
         </TooltipTrigger>
         <TooltipContent
@@ -216,6 +219,7 @@ type ExecuteQuestionOptions = {
   forceDeepAnalysis?: boolean;
   forceNewConversation?: boolean;
   reportTemplateId?: string;
+  reportTemplateUsage?: ReportTemplateUsage;
   inheritedTimeRange?: string;
 };
 
@@ -232,11 +236,19 @@ type QuestionThread = {
   assistantMessages: Message[];
 };
 
+function isReportRevisionRequest(question: string) {
+  const normalizedQuestion = question.trim();
+
+  return /^(?:请)?(?:继续|修改|补充|增加|新增|删除|移除|调整|优化|完善|重写|重新生成|再生成|改成|替换|更新)/.test(normalizedQuestion)
+    || /(?:这份|当前|刚才的|上述|上面的)报告|报告(?:中|里)/.test(normalizedQuestion)
+    || /^(?:请)?(?:把|将).*(?:改|调整|替换|增加|删除|补充)/.test(normalizedQuestion);
+}
+
 function getAnalysisSteps(agent: Agent, question: string) {
   if (agent.type === 'report') {
     return [
       `解析报告需求并识别数据范围：${question}`,
-      '匹配全局报告模板库，并确认章节结构、指标口径和图表编排',
+      '规划报告分析任务，明确数据、指标、维度和候选章节结构',
       '匹配可访问数据集、指标口径和报告所需分析能力',
       '检索知识文档并筛选可引用口径、规则和合规说明',
       '按模板组合指标卡、图表、口径说明、异常提示和报告章节',
@@ -441,7 +453,7 @@ function buildUnavailableAskProcess({
   };
 }
 
-function buildReportMarkdown(question: string, result: ReportResultData) {
+function buildReportMarkdown(result: ReportResultData) {
   return [
     `# ${result.title}`,
     '',
@@ -464,13 +476,6 @@ function buildReportMarkdown(question: string, result: ReportResultData) {
     '',
     '## 分析依据',
     ...result.embeddedAnalysis.map((item) => `- ${item}`),
-    '',
-    '## 推送配置',
-    `- 频率：${result.pushConfig.frequency}`,
-    `- 渠道：${result.pushConfig.channel}`,
-    `- 接收对象：${result.pushConfig.audience}`,
-    '',
-    `问题：${question}`,
   ].join('\n');
 }
 
@@ -547,11 +552,15 @@ function getConversationDeepAnalysisEnabled(conversation: Conversation | null) {
 export default function AgentWorkspace({
   mode,
   sidebarOpen = true,
+  onSidebarOpen,
+  onSidebarClose,
   onExecutionStart,
   onDeepAnalysisStart,
 }: {
   mode: AgentType;
   sidebarOpen?: boolean;
+  onSidebarOpen?: () => void;
+  onSidebarClose?: () => void;
   onExecutionStart?: () => void;
   onDeepAnalysisStart?: () => void;
 }) {
@@ -589,6 +598,7 @@ export default function AgentWorkspace({
   const [isDeepAnalysisEnabled, setIsDeepAnalysisEnabled] = useState(false);
   const [selectedComposerMode, setSelectedComposerMode] =
     useState<WorkspaceSwitchMode | null>(mode);
+  const [selectedReportTemplateId, setSelectedReportTemplateId] = useState<string | null>(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [deepAnalysisDockTab, setDeepAnalysisDockTab] =
     useState<DeepAnalysisWorkbenchTab>('progress');
@@ -657,9 +667,23 @@ export default function AgentWorkspace({
     [enabledModeAgents],
   );
   const conversations = getConversationsForWorkspace(mode);
+  const historyConversations = mode === 'ask' || mode === 'report'
+    ? [
+        ...getConversationsForWorkspace('ask'),
+        ...getConversationsForWorkspace('report'),
+      ]
+    : conversations;
   const resolvedConversationId = activeConversationIds[mode];
   const currentConversation =
     conversations.find((conversation) => conversation.id === resolvedConversationId) ?? null;
+  const currentReportTemplateUsage = useMemo(() => {
+    if (mode !== 'report' || !currentConversation) return undefined;
+
+    return [...currentConversation.messages]
+      .reverse()
+      .map((message) => message.reportTemplateUsage ?? message.reportResult?.templateUsage)
+      .find((templateUsage): templateUsage is ReportTemplateUsage => Boolean(templateUsage));
+  }, [currentConversation, mode]);
   const questionThreads = useMemo(() => {
     const threads: QuestionThread[] = [];
     const threadMap = new Map<string, QuestionThread>();
@@ -741,10 +765,7 @@ export default function AgentWorkspace({
 
     if (!resultMessage?.reportResult || resultMessage.markdownArtifact) return resultMessage ?? null;
 
-    const markdownContent = buildReportMarkdown(
-      activeQuestionThread.userMessage.content,
-      resultMessage.reportResult,
-    );
+    const markdownContent = buildReportMarkdown(resultMessage.reportResult);
 
     return {
       ...resultMessage,
@@ -958,6 +979,7 @@ export default function AgentWorkspace({
       mode === 'ask' && getConversationDeepAnalysisEnabled(currentConversation),
     );
     setSelectedComposerMode(currentConversation ? mode : null);
+    setSelectedReportTemplateId(null);
     setSelectedQuestionId(null);
     setDeepAnalysisDockTab('progress');
     setDeepAnalysisMobilePane('activity');
@@ -986,15 +1008,12 @@ export default function AgentWorkspace({
   };
 
   const handleNewConversation = () => {
-    if (mode === 'ask') {
-      setActiveConversationForWorkspace('ask', null);
-      setInputValue('');
-      setIsRecording(false);
-      setIsDeepAnalysisEnabled(false);
-      setSelectedComposerMode(null);
-      resetManualSkillState();
+    if (mode === 'ask' || mode === 'report') {
       navigate('/home', {
-        state: { historyOpen: true },
+        state: {
+          historyOpen: true,
+          resetConversationWorkspace: mode,
+        },
       });
       return;
     }
@@ -1005,20 +1024,22 @@ export default function AgentWorkspace({
     setIsRecording(false);
     setIsDeepAnalysisEnabled(false);
     setSelectedComposerMode(mode);
+    setSelectedReportTemplateId(null);
     resetManualSkillState();
   };
 
   const handleDeleteConversation = (conversationId: string) => {
     const isDeletingCurrentConversation = conversationId === resolvedConversationId;
 
-    if (isDeletingCurrentConversation && mode === 'ask') {
+    if (isDeletingCurrentConversation && (mode === 'ask' || mode === 'report')) {
       navigate('/home', {
         state: {
           historyOpen: true,
           deleteConversationId: conversationId,
+          deleteConversationWorkspace: mode,
         },
       });
-      return;
+      return true;
     }
 
     if (isDeletingCurrentConversation) {
@@ -1026,6 +1047,19 @@ export default function AgentWorkspace({
     }
 
     deleteConversation(conversationId);
+    return false;
+  };
+
+  const handleSelectHistoryConversation = (conversationId: string) => {
+    const conversation = historyConversations.find((item) => item.id === conversationId);
+    const targetMode = conversation?.workspaceType ?? conversation?.agentType ?? mode;
+
+    setActiveConversationForWorkspace(targetMode, conversationId);
+    if ((targetMode === 'ask' || targetMode === 'report') && targetMode !== mode) {
+      navigate(targetMode === 'ask' ? '/ask' : '/report', {
+        state: { sidebarOpen },
+      });
+    }
   };
 
   const handleStopGeneration = () => {
@@ -1093,7 +1127,7 @@ export default function AgentWorkspace({
     routingTrace: Message['routingTrace'],
     parentUserMessageId?: string,
     streamMarkdown = false,
-    reportTemplateId?: string,
+    reportTemplateUsage?: ReportTemplateUsage,
   ): Message => {
     const resultScope: ResultScope =
       selectedSkillIds.length === 1 ? 'single-skill' : 'combined';
@@ -1115,10 +1149,10 @@ export default function AgentWorkspace({
         resultScope,
         manualSkillIds: selectedSkillIds,
         primarySkillId,
-        reportTemplateId,
         reportTemplates,
+        reportTemplateUsage,
       });
-      const markdownContent = buildReportMarkdown(question, reportResult);
+      const markdownContent = buildReportMarkdown(reportResult);
 
       return {
         id: `msg-${Date.now()}-report`,
@@ -1482,15 +1516,14 @@ export default function AgentWorkspace({
             primarySkillId,
           })
         : null;
-    const pendingReportTemplateName =
+    const reportTemplateUsage =
       routing.agent.type === 'report'
-        ? buildReportResult(routing.agent, executionQuestion, skillTrace, {
-            resultScope,
-            manualSkillIds: effectiveManualSkillIds,
-            primarySkillId,
+        ? resolveReportTemplateUsage(routing.agent, executionQuestion, {
             reportTemplateId: options?.reportTemplateId,
+            reportTemplateUsage: options?.reportTemplateUsage,
             reportTemplates,
-          }).templateUsage?.name
+            manualSkillIds: effectiveManualSkillIds,
+          })
         : undefined;
     const pendingDeepAnalysisProcess = usingAnalysisWorkspace
       ? {
@@ -1527,7 +1560,8 @@ export default function AgentWorkspace({
               : '正在基于指标口径下钻时间、维度和结构变化，并生成候选根因。'
             : '正在识别数据集、指标口径、维度和 SQL 查询链路。',
       analysisSteps: getAnalysisSteps(routing.agent, executionQuestion),
-      matchedReportTemplateName: pendingReportTemplateName,
+      matchedReportTemplateName: reportTemplateUsage?.name,
+      reportTemplateUsage,
       skillTrace,
       routingTrace: routing.routingTrace,
       manualSkillIds: effectiveManualSkillIds.length ? effectiveManualSkillIds : undefined,
@@ -1624,7 +1658,7 @@ export default function AgentWorkspace({
         routing.routingTrace,
         userMessage.id,
         usingAnalysisWorkspace,
-        options?.reportTemplateId,
+        reportTemplateUsage,
       );
       updateMessage(conversation.id, analysisMessage.id, {
         isAwaitingResult: false,
@@ -1747,6 +1781,9 @@ export default function AgentWorkspace({
         mode: targetMode,
         question: cleanedQuestion,
         nonce: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        reportTemplateId: targetMode === 'report'
+          ? selectedReportTemplateId ?? undefined
+          : undefined,
         forceNewConversation: true,
       };
 
@@ -1754,13 +1791,28 @@ export default function AgentWorkspace({
       setIsRecording(false);
       setIsDeepAnalysisEnabled(false);
       setSelectedComposerMode(targetMode);
+      setSelectedReportTemplateId(null);
       resetManualSkillState();
       navigate(targetMode === 'ask' ? '/ask' : '/report', { state: { autoSubmit } });
       return;
     }
 
     setSelectedComposerMode(targetMode);
-    executeQuestion(cleanedQuestion, { manualSkillIds });
+    const reportTemplateId = targetMode === 'report'
+      ? selectedReportTemplateId ?? undefined
+      : undefined;
+    const reportTemplateUsage = targetMode === 'report'
+      && !reportTemplateId
+      && isReportRevisionRequest(cleanedQuestion)
+      ? currentReportTemplateUsage
+      : undefined;
+
+    executeQuestion(cleanedQuestion, {
+      manualSkillIds,
+      reportTemplateId,
+      reportTemplateUsage,
+    });
+    if (targetMode === 'report') setSelectedReportTemplateId(null);
   };
 
   const handleClarificationSelect = (question: string, agentId: string) => {
@@ -2003,7 +2055,8 @@ export default function AgentWorkspace({
     const forcedAgentId = getAllowedForcedAgentId(targetMessage.routingTrace?.agentId, executionMode);
     const usingDeepAnalysisInAsk = mode === 'ask' && executionMode === 'rca';
     const usingAnalysisWorkspace = usingDeepAnalysisInAsk || mode === 'report';
-    const preservedReportTemplateId = targetMessage.reportResult?.templateUsage?.templateId;
+    const preservedReportTemplateUsage =
+      targetMessage.reportTemplateUsage ?? targetMessage.reportResult?.templateUsage;
     const routing = resolveAgentForQuestion({
       mode: executionMode,
       question: baseQuestion,
@@ -2066,15 +2119,12 @@ export default function AgentWorkspace({
             primarySkillId,
           })
         : null;
-    const pendingReportTemplateName =
+    const reportTemplateUsage =
       routing.agent.type === 'report'
-        ? buildReportResult(routing.agent, baseQuestion, skillTrace, {
-            resultScope,
+        ? preservedReportTemplateUsage ?? resolveReportTemplateUsage(routing.agent, baseQuestion, {
             manualSkillIds: effectiveManualSkillIds,
-            primarySkillId,
-            reportTemplateId: preservedReportTemplateId,
             reportTemplates,
-          }).templateUsage?.name
+          })
         : undefined;
     const pendingDeepAnalysisProcess = usingAnalysisWorkspace
       ? {
@@ -2109,7 +2159,8 @@ export default function AgentWorkspace({
               : '正在重新下钻时间、维度和结构变化，并生成候选根因。'
             : '正在重新识别数据集、指标口径、维度和 SQL 查询链路。',
       analysisSteps: getAnalysisSteps(routing.agent, baseQuestion),
-      matchedReportTemplateName: pendingReportTemplateName,
+      matchedReportTemplateName: reportTemplateUsage?.name,
+      reportTemplateUsage,
       skillTrace,
       routingTrace: routing.routingTrace,
       manualSkillIds: effectiveManualSkillIds.length ? effectiveManualSkillIds : undefined,
@@ -2213,7 +2264,7 @@ export default function AgentWorkspace({
         routing.routingTrace,
         targetMessage.parentUserMessageId ?? previousUserMessage.id,
         usingAnalysisWorkspace,
-        preservedReportTemplateId,
+        reportTemplateUsage,
       );
 
       updateMessage(currentConversation.id, targetMessage.id, {
@@ -2383,6 +2434,7 @@ export default function AgentWorkspace({
 
   const selectComposerMode = (nextMode: WorkspaceSwitchMode) => {
     setSelectedComposerMode(nextMode);
+    if (nextMode !== 'report') setSelectedReportTemplateId(null);
     setIsDeepAnalysisEnabled(
       nextMode === 'ask' && getConversationDeepAnalysisEnabled(currentConversation),
     );
@@ -2396,6 +2448,7 @@ export default function AgentWorkspace({
     setIsRecording(false);
     setIsDeepAnalysisEnabled(false);
     setSelectedComposerMode(null);
+    setSelectedReportTemplateId(null);
     resetManualSkillState();
     window.setTimeout(() => textareaRef.current?.focus(), 0);
   };
@@ -2535,7 +2588,14 @@ export default function AgentWorkspace({
 
       <div className="flex min-h-8 items-center justify-between gap-3">
         <div className="min-w-0 flex-1 text-xs text-gray-400">
-          {selectedManualSkills.length > 0 ? (
+          {selectedComposerMode === 'report' ? (
+            <ReportTemplateSelector
+              templates={reportTemplates}
+              selectedId={selectedReportTemplateId}
+              onSelect={(template) => setSelectedReportTemplateId(template.id)}
+              onClear={() => setSelectedReportTemplateId(null)}
+            />
+          ) : selectedManualSkills.length > 0 ? (
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className="text-gray-600">本次指定分析能力：{manualSkillSummary}</span>
               {hasTemporaryUnboundSkills && (
@@ -2562,8 +2622,6 @@ export default function AgentWorkspace({
                   />
                   深度分析
                 </button>
-              ) : selectedComposerMode === 'report' ? (
-                <span aria-hidden="true" />
               ) : (
                 <span aria-hidden="true" />
               )}
@@ -2629,16 +2687,15 @@ export default function AgentWorkspace({
 
     return (
       <ConversationHistorySidebar
-        conversations={conversations}
+        conversations={historyConversations}
         selectedConversationId={resolvedConversationId}
-        newConversationLabel={mode === 'ask' ? '新对话' : newConversationLabel}
-        historyLabel={mode === 'ask' ? '历史对话' : currentGroupMeta}
+        newConversationLabel={mode === 'ask' || mode === 'report' ? '新对话' : newConversationLabel}
+        historyLabel={mode === 'ask' || mode === 'report' ? '历史对话' : currentGroupMeta}
         onNewConversation={handleNewConversation}
-        onSelectConversation={(conversationId) =>
-          setActiveConversationForWorkspace(mode, conversationId)
-        }
+        onSelectConversation={handleSelectHistoryConversation}
         onRenameConversation={renameConversation}
         onDeleteConversation={handleDeleteConversation}
+        onCollapse={onSidebarClose}
       />
     );
   };
@@ -2663,7 +2720,14 @@ export default function AgentWorkspace({
                     {suggestions.slice(0, 3).map((suggestion) => (
                       <button
                         key={suggestion}
-                        onClick={() => executeQuestion(suggestion)}
+                        onClick={() => {
+                          executeQuestion(suggestion, {
+                            reportTemplateId: mode === 'report'
+                              ? selectedReportTemplateId ?? undefined
+                              : undefined,
+                          });
+                          if (mode === 'report') setSelectedReportTemplateId(null);
+                        }}
                         className="block w-full rounded-lg px-3 py-2 text-left text-sm leading-5 text-gray-500 transition-colors hover:bg-blue-50 hover:text-blue-700"
                       >
                         {suggestion}
@@ -2785,7 +2849,7 @@ export default function AgentWorkspace({
 
           <div className={`relative grid min-h-0 flex-1 grid-cols-1 ${isDeepAnalysisWorkbenchOpen ? 'gap-4 xl:grid-cols-[minmax(480px,1fr)_minmax(480px,1fr)]' : 'xl:grid-cols-1'}`}>
             <section className={`${deepAnalysisMobilePane === 'activity' ? 'flex' : 'hidden'} min-h-0 flex-col overflow-hidden bg-transparent xl:flex ${isDeepAnalysisWorkbenchOpen ? '' : 'xl:mx-auto xl:w-full xl:max-w-[1024px]'}`}>
-              <div className="shrink-0 px-4 py-3 md:px-5">
+              <div className={`shrink-0 py-3 pl-4 pr-4 md:px-5 ${isDeepAnalysisWorkbenchOpen ? '' : 'xl:pr-16'}`}>
                 <div className="flex justify-end">
                   <div className="inline-flex max-w-[720px] flex-wrap items-center justify-end gap-1.5 rounded-[18px] bg-[#f2f4f7] px-3 py-2 text-sm font-normal leading-[22px] text-[#1d2129]">
                     <span className="inline-flex h-[22px] shrink-0 items-center rounded-full bg-[#e8f3ff] px-2 text-xs font-normal leading-[18px] text-[#165dff]">
@@ -2963,12 +3027,9 @@ export default function AgentWorkspace({
 
           <div className={`relative grid min-h-0 flex-1 grid-cols-1 ${isReportWorkbenchOpen ? 'gap-4 xl:grid-cols-[minmax(480px,1fr)_minmax(480px,1fr)]' : 'xl:grid-cols-1'}`}>
             <section className={`${reportMobilePane === 'activity' ? 'flex' : 'hidden'} min-h-0 flex-col overflow-hidden bg-transparent xl:flex ${isReportWorkbenchOpen ? '' : 'xl:mx-auto xl:w-full xl:max-w-[1024px]'}`}>
-              <div className="shrink-0 px-4 py-3 md:px-5">
+              <div className={`shrink-0 py-3 pl-4 pr-4 md:px-5 ${isReportWorkbenchOpen ? '' : 'xl:pr-16'}`}>
                 <div className="flex justify-end">
                   <div className="inline-flex max-w-[720px] flex-wrap items-center justify-end gap-1.5 rounded-[18px] bg-[#f2f4f7] px-3 py-2 text-sm font-normal leading-[22px] text-[#1d2129]">
-                    <span className="inline-flex h-[22px] shrink-0 items-center rounded-full bg-[#e8f3ff] px-2 text-xs font-normal leading-[18px] text-[#165dff]">
-                      报告生成
-                    </span>
                     <span className="whitespace-pre-wrap break-words">{activeQuestionThread.userMessage.content}</span>
                   </div>
                 </div>
@@ -2982,6 +3043,7 @@ export default function AgentWorkspace({
                         <WorkspaceAnalysisProcessContent
                           key={`report-process-${message.id}`}
                           processData={message.analysisProcess}
+                          variant="report"
                           reportState={message.id === activeReportProcessMessage.id && activeReportResultMessage?.markdownArtifact
                             ? activeReportStage === 'completed'
                               ? 'completed'
@@ -3069,11 +3131,20 @@ export default function AgentWorkspace({
   return (
     <div className="relative flex h-full min-h-0 flex-1 overflow-hidden bg-transparent">
       {renderHistorySidebar()}
-      {isDeepAnalysisWorkspace
-        ? renderDeepAnalysisWorkspace()
-        : isReportWorkspace
-          ? renderReportWorkspace()
-          : renderStandardWorkspace()}
+      <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-tl-[20px] rounded-tr-[20px] bg-white">
+        {!sidebarOpen && onSidebarOpen && (
+          <HistorySidebarToggle
+            expanded={false}
+            onClick={onSidebarOpen}
+            className="absolute left-4 top-6 z-20"
+          />
+        )}
+        {isDeepAnalysisWorkspace
+          ? renderDeepAnalysisWorkspace()
+          : isReportWorkspace
+            ? renderReportWorkspace()
+            : renderStandardWorkspace()}
+      </div>
     </div>
   );
 }

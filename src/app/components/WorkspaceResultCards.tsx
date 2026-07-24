@@ -42,8 +42,10 @@ import {
   Wrench,
   X,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { AgentRoutingTrace, AgentRuntimeConfig, AnalysisCandidateOption, AnalysisProcessData, AnalysisProcessStep, DatasetAnalysisResult, DeepAnalysisActivityId, Message, RootCauseResultData, SkillTrace } from '../types';
 import { useWorkspace } from '../context/WorkspaceContext';
+import { summarizeReportTopic } from '../utils/reportTopic';
 import { ReportSubscriptionDialog } from './ReportSubscriptionDialog';
 import {
   Tooltip as AppTooltip,
@@ -758,19 +760,21 @@ function FigmaAnalysisProcessContent({
               {isSqlCopied ? <><CheckCircle2 className="h-4 w-4" /><span>已复制</span></> : <img alt="" src={copyLineIcon} className="h-4 w-4" />}
             </button>
           </TooltipTrigger>
-          <TooltipContent
-            side="top"
-            align="center"
-            sideOffset={8}
-            showArrow={false}
-            className="relative rounded-[4px] bg-[#1d2129] px-3 py-1 text-center font-['PingFang_SC'] text-[14px] font-normal leading-[22px] tracking-normal text-white whitespace-nowrap shadow-none"
-          >
-            {isSqlCopied ? '已复制' : '复制 SQL'}
-            <span
-              aria-hidden="true"
-              className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[5px] border-t-[4px] border-x-transparent border-t-[#1d2129]"
-            />
-          </TooltipContent>
+          {!isSqlCopied ? (
+            <TooltipContent
+              side="top"
+              align="center"
+              sideOffset={8}
+              showArrow={false}
+              className="relative rounded-[4px] bg-[#1d2129] px-3 py-1 text-center font-['PingFang_SC'] text-[14px] font-normal leading-[22px] tracking-normal text-white whitespace-nowrap shadow-none"
+            >
+              复制 SQL
+              <span
+                aria-hidden="true"
+                className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[5px] border-t-[4px] border-x-transparent border-t-[#1d2129]"
+              />
+            </TooltipContent>
+          ) : null}
         </AppTooltip>
         <pre className="max-h-[350px] overflow-auto whitespace-pre px-3 py-2 pr-24 font-mono text-[13px] leading-5 text-[#1d2129]">{processData.sql}</pre>
       </div>
@@ -1483,7 +1487,9 @@ export function WorkspaceAnalysisProcessContent({
     {
       id: 'understand-intent' as const,
       title: '理解用户问题',
-      summary: `明确分析目标：${metrics.join('、') || '核心指标'}分析`,
+      summary: variant === 'report'
+        ? `报告主题：${summarizeReportTopic(processData.question)}`
+        : `明确分析目标：${metrics.join('、') || '核心指标'}分析`,
       icon: <Sparkles className="h-4 w-4" />,
     },
     {
@@ -1629,7 +1635,11 @@ function AnalysisCard({
 
   if (message.analysisProcess) {
     if (processVariant === 'workspace') {
-      return <WorkspaceAnalysisProcessContent processData={message.analysisProcess} />;
+      return (
+        <WorkspaceAnalysisProcessContent
+          processData={message.analysisProcess}
+        />
+      );
     }
 
     const displayStatus = message.analysisProcess.scenarioCode === 'empty-result'
@@ -1737,17 +1747,11 @@ function AnalysisCard({
               {message.analysisSteps.slice(0, visibleMessageStepCount).map((step, index) => {
                 const isActiveStep = message.isGenerating && index === visibleMessageStepCount - 1;
                 const stepState = isActiveStep ? 'active' : 'done';
-                const templateBadge =
-                  message.matchedReportTemplateName && step.includes('匹配全局报告模板库')
-                    ? `模板：${message.matchedReportTemplateName}`
-                    : undefined;
-
                 return (
                   <AnalysisTimelineStep
                     key={step}
                     index={index}
                     title={step === '生成查询语句' ? '执行查询语句' : step}
-                    badge={templateBadge}
                     state={stepState}
                     isLast={index === visibleMessageStepCount - 1}
                   >
@@ -2491,7 +2495,7 @@ function ReportResultCard({
 }) {
   const result = message.reportResult;
   const runtimeConfig = getRuntimeConfig(message);
-  const { reportTemplates } = useWorkspace();
+  const { addReportTemplate, reportTemplates } = useWorkspace();
   const [feedback, setFeedback] = useState<'like' | 'dislike' | null>(null);
   const [isSubscriptionDialogOpen, setIsSubscriptionDialogOpen] = useState(false);
 
@@ -2499,6 +2503,7 @@ function ReportResultCard({
 
   const matchedTemplate =
     reportTemplates.find((template) => template.id === result.templateUsage?.templateId) ?? null;
+  const unsavedGeneratedTemplate = result.templateUsage?.source === 'agent-generated' && !matchedTemplate;
 
   const actionButtonClassName =
     'inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-800';
@@ -2531,6 +2536,25 @@ function ReportResultCard({
     link.download = `${result.title.replace(/[\\/:*?"<>|]/g, '_') || 'report'}.md`;
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleSaveGeneratedTemplate = () => {
+    const templateUsage = result.templateUsage;
+    if (!templateUsage || templateUsage.source !== 'agent-generated' || matchedTemplate) return;
+
+    addReportTemplate({
+      ...templateUsage.templateSnapshot,
+      status: 'published',
+    });
+    toast.success(`已保存模板“${templateUsage.name}”`);
+  };
+
+  const handleOpenSubscription = () => {
+    if (unsavedGeneratedTemplate) {
+      toast.warning('请先保存 Agent 动态生成的模板，再设置报告订阅');
+      return;
+    }
+    setIsSubscriptionDialogOpen(true);
   };
 
   return (
@@ -2637,9 +2661,19 @@ function ReportResultCard({
             <Download className="h-4 w-4" />
           </button>
         )}
+        {unsavedGeneratedTemplate && (
+          <button
+            type="button"
+            onClick={handleSaveGeneratedTemplate}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-2.5 text-sm text-blue-700 hover:bg-blue-100"
+          >
+            <FileText className="h-4 w-4" />
+            保存为模板
+          </button>
+        )}
         <button
           type="button"
-          onClick={() => setIsSubscriptionDialogOpen(true)}
+          onClick={handleOpenSubscription}
           className={actionButtonClassName}
           aria-label="设为订阅"
           title="设为订阅"
@@ -2660,7 +2694,7 @@ function ReportResultCard({
           </div>
           <button
             type="button"
-            onClick={() => setIsSubscriptionDialogOpen(true)}
+            onClick={handleOpenSubscription}
             className="inline-flex h-9 items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 text-sm font-medium text-blue-700 hover:bg-blue-100"
           >
             <CalendarClock className="h-4 w-4" />

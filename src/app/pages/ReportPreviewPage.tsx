@@ -1,10 +1,5 @@
 import { useParams } from 'react-router';
 import {
-  AlertTriangle,
-  CheckCircle2,
-  FileText,
-} from 'lucide-react';
-import {
   Bar,
   BarChart,
   CartesianGrid,
@@ -16,196 +11,114 @@ import {
 } from 'recharts';
 import { sampleReportCards } from '../sampleReports';
 
-const chartColors = ['#2563eb', '#60a5fa', '#93c5fd', '#bfdbfe', '#dbeafe'];
+const chartColors = ['#165dff', '#4080ff', '#6aa1ff', '#94bfff', '#bedaff'];
+const AI_REPORT_DISCLAIMER = '内容由 AI 生成，仅供参考，无法保证完全真实';
+
+function formatMetricValue(label: string, value: string) {
+  return label.endsWith('收入') && !/^[¥￥]/.test(value) ? `¥${value}` : value;
+}
+
+function getTrendLabel(compare: string) {
+  if (/^-|下降|减少|降低/.test(compare)) return '↓ 下降';
+  if (/^\+|提升|增加|增长|上升/.test(compare)) return '↑ 上升';
+  return `— ${compare}`;
+}
+
+function BulletSection({ title, items }: { title: string; items: string[] }) {
+  return (
+    <section>
+      <h2 className="border-b border-[#e5e6eb] pb-1.5 pt-4 text-[18px] font-medium leading-[26px] text-[#1d2129]">{title}</h2>
+      <div className="mt-2 max-w-[760px] space-y-2">
+        {items.map((item) => (
+          <div key={item} className="flex gap-2.5 text-sm font-normal leading-6 text-[#4e5969]">
+            <span className="mt-[9px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#165dff]" aria-hidden="true" />
+            <span className="min-w-0">{item}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 export default function ReportPreviewPage() {
   const { id } = useParams();
   const report = sampleReportCards.find((item) => item.id === id) ?? sampleReportCards[0];
+  const chartDescription = report.chartData
+    .map((item) => `${item.name}${item.value}`)
+    .join('，');
 
   return (
-    <div className="min-h-full overflow-y-auto bg-gray-50">
-      <div className="mx-auto max-w-6xl px-6 py-8">
-        <article className="rounded-lg border border-gray-200 bg-white shadow-[0_1px_4px_rgba(15,23,42,0.06)]">
-          <header className="border-b border-gray-100 px-8 py-7">
-            <div className="flex flex-wrap items-start justify-between gap-5">
-              <div>
-                <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-                  <FileText className="h-3.5 w-3.5" />
-                  {report.period}
-                </div>
-                <h1 className="text-2xl font-semibold text-gray-950">{report.resultTitle}</h1>
-                <p className="mt-3 max-w-3xl text-sm leading-6 text-gray-600">
-                  {report.resultSummary}
-                </p>
-              </div>
-              <div className="grid gap-1 text-right text-xs text-gray-500">
-                <span>报告编号：{report.reportNo}</span>
-                <span>生成时间：{report.generatedAt}</span>
-                <span>责任部门：{report.owner}</span>
-                <span>统计范围：{report.scope}</span>
-              </div>
-            </div>
-          </header>
+    <div className="h-full min-h-0 overflow-y-auto bg-[#f7f8fa] px-6 py-8">
+      <article className="mx-auto max-w-[1080px] overflow-hidden rounded-[12px] border border-[#e5e6eb] bg-white shadow-[0_2px_8px_rgba(29,33,41,0.05)]">
+        <div className="mx-auto max-w-[960px] px-8 py-8 text-sm font-normal leading-6 text-[#4e5969]">
+          <h1 className="pb-1 text-[22px] font-medium leading-8 text-[#1d2129]">{report.resultTitle}</h1>
+          <p className="mt-2">统计周期：{report.period}</p>
 
-          <section className="grid gap-3 px-8 py-5 md:grid-cols-4">
-            {report.tableRows.slice(0, 4).map((row) => (
-              <div key={row.item} className="rounded-lg border border-gray-200 bg-white px-4 py-3">
-                <div className="text-xs text-gray-500">{row.item}</div>
-                <div className="mt-1 text-xl font-semibold text-gray-950">{row.current}</div>
-                <div
-                  className={`mt-2 text-xs ${
-                    row.status === '关注' ? 'text-amber-600' : 'text-emerald-600'
-                  }`}
-                >
-                  {row.compare} / {row.status}
-                </div>
-              </div>
-            ))}
+          <section>
+            <h2 className="border-b border-[#e5e6eb] pb-1.5 pt-4 text-[18px] font-medium leading-[26px] text-[#1d2129]">核心结论</h2>
+            <p className="mt-2 max-w-[760px]">{report.resultSummary}</p>
           </section>
 
-          <section className="grid gap-5 px-8 pb-7 lg:grid-cols-[1.5fr_1fr]">
-            <div className="rounded-lg border border-gray-200 bg-white">
-              <div className="border-b border-gray-100 bg-gray-50/70 px-4 py-3 text-sm font-medium text-gray-900">
-                {report.chartTitle}
-              </div>
-              <div className="h-72 px-4 py-4">
+          <section>
+            <h2 className="border-b border-[#e5e6eb] pb-1.5 pt-4 text-[18px] font-medium leading-[26px] text-[#1d2129]">数据概览</h2>
+            <div className="mt-4 grid grid-cols-2 gap-3" aria-label="关键指标卡片">
+              {report.tableRows.slice(0, 4).map((row) => (
+                <div key={row.item} className="min-w-0 rounded-[10px] border border-[#e5e6eb] bg-[#f7f8fa] px-3.5 py-3">
+                  <div className="truncate text-xs leading-[18px] text-[#86909c]" title={row.item}>{row.item}</div>
+                  <div className="mt-1 truncate text-xl font-semibold leading-7 text-[#1d2129]" title={row.current}>
+                    {formatMetricValue(row.item, row.current)}
+                  </div>
+                  <div className="mt-1 text-xs leading-[18px] text-[#4e5969]">{getTrendLabel(row.compare)}</div>
+                </div>
+              ))}
+            </div>
+
+            <section className="mt-4 overflow-hidden rounded-[10px] border border-[#e5e6eb] bg-white" aria-labelledby="sample-report-chart-title">
+              <h3 id="sample-report-chart-title" className="border-b border-[#f2f3f5] bg-[#f7f8fa] px-4 py-2.5 text-sm font-medium leading-[22px] text-[#1d2129]">{report.chartTitle}</h3>
+              <div className="h-[250px] px-3 pb-2 pt-4" role="img" aria-label={`${report.chartTitle}柱状图：${chartDescription}`}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={report.chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
+                  <BarChart data={report.chartData} margin={{ top: 4, right: 8, bottom: 4, left: -8 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#eef0f3" vertical={false} />
                     <XAxis
                       dataKey="name"
-                      tick={{ fontSize: 12, fill: '#6b7280' }}
-                      tickLine={false}
                       axisLine={false}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 12, fill: '#6b7280' }}
                       tickLine={false}
-                      axisLine={false}
-                    />
-                    <Tooltip
-                      cursor={{ fill: '#f8fafc' }}
-                      contentStyle={{
-                        borderRadius: 8,
-                        border: '1px solid #e5e7eb',
-                        boxShadow: '0 8px 18px rgba(15, 23, 42, 0.08)',
+                      tickMargin={10}
+                      height={38}
+                      tick={{ fontSize: 11, fill: '#86909c' }}
+                      tickFormatter={(value) => {
+                        const label = String(value);
+                        return label.length > 7 ? `${label.slice(0, 7)}…` : label;
                       }}
                     />
-                    <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                    <YAxis axisLine={false} tickLine={false} width={48} tick={{ fontSize: 11, fill: '#86909c' }} />
+                    <Tooltip
+                      cursor={{ fill: '#f7f8fa' }}
+                      contentStyle={{
+                        borderRadius: 8,
+                        border: '1px solid #e5e6eb',
+                        boxShadow: '0 6px 16px rgba(29, 33, 41, 0.10)',
+                      }}
+                    />
+                    <Bar dataKey="value" name="指标值" radius={[5, 5, 0, 0]} maxBarSize={52}>
                       {report.chartData.map((item, index) => (
-                        <Cell
-                          key={`${item.name}-${item.value}`}
-                          fill={chartColors[index % chartColors.length]}
-                        />
+                        <Cell key={`${item.name}-${item.value}-${index}`} fill={chartColors[index % chartColors.length]} />
                       ))}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-            </div>
-
-            <div className="space-y-5">
-              <div className="rounded-lg border border-gray-200 bg-white p-4">
-                <div className="text-sm font-medium text-gray-900">结构拆解</div>
-                <div className="mt-4 space-y-4">
-                  {report.structureData.map((item) => (
-                    <div key={item.label}>
-                      <div className="mb-1 flex items-center justify-between text-sm">
-                        <span className="text-gray-600">{item.label}</span>
-                        <span className="font-medium text-gray-900">{item.value}</span>
-                      </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-gray-100">
-                        <div
-                          className="h-full rounded-full bg-blue-500"
-                          style={{ width: `${item.percent}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-amber-800">
-                  <AlertTriangle className="h-4 w-4" />
-                  异常提示
-                </div>
-                <div className="mt-3 space-y-2 text-sm leading-6 text-amber-900">
-                  {report.alerts.map((alert) => (
-                    <div key={alert}>{alert}</div>
-                  ))}
-                </div>
-              </div>
-            </div>
+            </section>
           </section>
 
-          <section className="grid gap-5 border-t border-gray-100 px-8 py-7 lg:grid-cols-2">
-            <div className="rounded-lg border border-gray-200 bg-white p-5">
-              <div className="text-sm font-medium text-gray-900">关键结论</div>
-              <div className="mt-4 space-y-3">
-                {report.findings.map((finding) => (
-                  <div key={finding} className="flex items-start gap-2 text-sm leading-6 text-gray-700">
-                    <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-emerald-500" />
-                    <span>{finding}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-gray-200 bg-white p-5">
-              <div className="text-sm font-medium text-gray-900">行动建议</div>
-              <div className="mt-4 space-y-3">
-                {report.recommendations.map((recommendation, index) => (
-                  <div key={recommendation} className="flex items-start gap-3 text-sm leading-6 text-gray-700">
-                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs font-medium text-blue-600">
-                      {index + 1}
-                    </span>
-                    <span>{recommendation}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          <section className="border-t border-gray-100 px-8 py-7">
-            <div className="mb-4 text-sm font-medium text-gray-900">指标明细</div>
-            <div className="overflow-hidden rounded-lg border border-gray-200">
-              <table className="w-full border-collapse text-sm">
-                <thead className="bg-gray-50 text-left text-xs font-medium text-gray-500">
-                  <tr>
-                    <th className="px-4 py-3">指标</th>
-                    <th className="px-4 py-3">本期值</th>
-                    <th className="px-4 py-3">对比变化</th>
-                    <th className="px-4 py-3">状态</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  {report.tableRows.map((row) => (
-                    <tr key={row.item}>
-                      <td className="px-4 py-3 text-gray-800">{row.item}</td>
-                      <td className="px-4 py-3 font-medium text-gray-950">{row.current}</td>
-                      <td className="px-4 py-3 text-gray-600">{row.compare}</td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`rounded-full px-2.5 py-1 text-xs ${
-                            row.status === '关注'
-                              ? 'bg-amber-50 text-amber-700'
-                              : row.status === '改善'
-                                ? 'bg-emerald-50 text-emerald-700'
-                                : 'bg-blue-50 text-blue-700'
-                          }`}
-                        >
-                          {row.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </article>
-      </div>
+          <BulletSection title="关键发现" items={report.findings} />
+          <BulletSection title="风险提示" items={report.alerts} />
+          <BulletSection title="分析依据" items={report.analysisBasis} />
+        </div>
+        <div className="bg-white px-4 py-2 text-center text-xs leading-4 text-[#a8abb2]" role="note">
+          {AI_REPORT_DISCLAIMER}
+        </div>
+      </article>
     </div>
   );
 }

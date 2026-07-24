@@ -387,11 +387,17 @@ export interface ReportTemplate {
   complianceNotes: string[];
 }
 
+export type ReportTemplateSource = 'user-selected' | 'library-matched' | 'agent-generated';
+
 export interface ReportTemplateUsage {
   templateId: string;
   name: string;
   category: string;
   version: string;
+  source: ReportTemplateSource;
+  matchScore?: number;
+  isTemporary: boolean;
+  templateSnapshot: ReportTemplate;
   sections: string[];
   datasetNames: string[];
   skillNames: string[];
@@ -553,6 +559,7 @@ export interface Message {
   visibleDeepAnalysisTextLength?: number;
   analysisSteps?: string[];
   matchedReportTemplateName?: string;
+  reportTemplateUsage?: ReportTemplateUsage;
   analysisSummary?: string;
   skillTrace?: SkillTrace[];
   routingTrace?: AgentRoutingTrace;

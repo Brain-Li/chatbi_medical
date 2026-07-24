@@ -13,7 +13,18 @@ import {
   RefreshCw,
   Search,
 } from 'lucide-react';
-import type { AnalysisProcessData, AnalysisReferenceSource, DeepAnalysisActivityId, Message } from '../types';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip as ChartTooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import type { AnalysisProcessData, AnalysisReferenceSource, DeepAnalysisActivityId, Message, ReportResultData } from '../types';
+import { summarizeReportTopic } from '../utils/reportTopic';
 import {
   Tooltip as AppTooltip,
   TooltipContent,
@@ -48,6 +59,7 @@ export type DeepAnalysisWorkbenchTab = 'progress' | 'sources' | 'files';
 export type DeepAnalysisFeedback = 'like' | 'dislike';
 
 const AI_REPORT_DISCLAIMER = '内容由 AI 生成，仅供参考，无法保证完全真实';
+const reportChartColors = ['#165dff', '#4080ff', '#6aa1ff', '#94bfff', '#bedaff'];
 
 const workbenchTabs: Array<{ id: DeepAnalysisWorkbenchTab; label: string }> = [
   { id: 'progress', label: '分析进展' },
@@ -64,7 +76,7 @@ const stageProgress: Record<DeepAnalysisStage, number> = {
   interrupted: 0,
 };
 
-const processStepDefinitions: Array<{ id: DeepAnalysisActivityId; label: string }> = [
+const deepAnalysisProcessStepDefinitions: Array<{ id: DeepAnalysisActivityId; label: string }> = [
   { id: 'understand-intent', label: '理解用户问题' },
   { id: 'plan-analysis', label: '规划分析任务' },
   { id: 'resolve-data-scope', label: '确定数据口径' },
@@ -74,6 +86,21 @@ const processStepDefinitions: Array<{ id: DeepAnalysisActivityId; label: string 
   { id: 'execute-query', label: '执行数据查询' },
   { id: 'draft-report', label: '生成分析报告' },
 ];
+
+const reportProcessStepDefinitions: Array<{ id: DeepAnalysisActivityId; label: string }> = [
+  { id: 'understand-intent', label: '理解用户问题' },
+  { id: 'plan-analysis', label: '规划分析任务' },
+  { id: 'resolve-data-scope', label: '确定数据口径' },
+  { id: 'load-skills', label: '匹配分析能力' },
+  { id: 'execute-skills', label: '调用 Skill 和 MCP' },
+  { id: 'retrieve-knowledge', label: '检索知识依据' },
+  { id: 'execute-query', label: '执行数据查询' },
+  { id: 'draft-report', label: '生成分析报告' },
+];
+
+function getProcessStepDefinitions(variant: 'deep-analysis' | 'report') {
+  return variant === 'report' ? reportProcessStepDefinitions : deepAnalysisProcessStepDefinitions;
+}
 
 export function getCurrentDeepAnalysisActivityId(
   processMessage: Message,
@@ -88,6 +115,7 @@ export function getCurrentDeepAnalysisActivityId(
   const visibleStepCount = processMessage.analysisProcess?.visibleStepCount
     ?? processMessage.analysisProcess?.steps?.length
     ?? 1;
+  const processStepDefinitions = getProcessStepDefinitions(variant);
   const processActivityCount = processStepDefinitions.length - 1;
   const currentIndex = Math.min(Math.max(visibleStepCount - 1, 0), processActivityCount - 1);
   return processStepDefinitions[currentIndex].id;
@@ -99,8 +127,17 @@ export function getWorkbenchTabForActivity(
   return 'progress';
 }
 
-function getVisibleMarkdown(message?: Message | null) {
+function sanitizeGeneratedReportMarkdown(message?: Message | null) {
   const content = message?.markdownArtifact?.content ?? '';
+  if (message?.kind !== 'report-result') return content;
+
+  const pushConfigIndex = content.search(/(?:^|\n)## 推送配置(?:\n|$)/u);
+  const withoutPushConfig = pushConfigIndex >= 0 ? content.slice(0, pushConfigIndex) : content;
+  return withoutPushConfig.replace(/(?:^|\n)问题：[^\n]*\s*$/u, '').trimEnd();
+}
+
+function getVisibleMarkdown(message?: Message | null) {
+  const content = sanitizeGeneratedReportMarkdown(message);
   const lines = content ? content.split('\n') : [];
   const visibleLineCount = lines.length
     ? Math.min(Math.max(message?.visibleMarkdownLineCount ?? lines.length, 1), lines.length)
@@ -233,13 +270,68 @@ function SourceTitle({
   );
 }
 
-function getQuestionIntentSummary(process?: AnalysisProcessData) {
+function getQuestionIntentSummary(
+  process: AnalysisProcessData | undefined,
+  variant: 'deep-analysis' | 'report',
+) {
   const question = process?.question.trim() || '当前问题';
   const primaryMetrics = process?.metrics.slice(0, 3).join('、') || '核心指标';
   const primaryDimensions = process?.dimensions.slice(0, 3).join('、') || '关键业务维度';
   const timeScopeText = process?.timeRange ? `，时间范围锁定为${process.timeRange}` : '';
 
+  if (variant === 'report') {
+    const reportPeriodText = process?.timeRange ? `，统计周期为${process.timeRange}` : '';
+    return `用户希望生成“${summarizeReportTopic(question)}”，内容将围绕${primaryMetrics}，按${primaryDimensions}组织分析${reportPeriodText}，并结合报告模板、知识依据和数据查询结果形成指标概览、趋势与结构分析、重点发现及风险提示。`;
+  }
+
   return `用户想分析“${question}”背后的业务原因，需要围绕${primaryMetrics}，按${primaryDimensions}拆解变化${timeScopeText}，并结合知识依据与取数结果判断主要驱动因素。`;
+}
+
+function getDeepAnalysisPlanItems(process?: AnalysisProcessData) {
+  const question = process?.question.trim() || '当前问题';
+  const normalizedQuestion = question.replace(/\s/g, '').replace(/门急诊/g, '门诊');
+  const matchedMetrics = (process?.metrics ?? []).filter((metric) =>
+    normalizedQuestion.includes(metric.replace(/\s/g, '').replace(/门急诊/g, '门诊')),
+  );
+  const relevantMetrics = matchedMetrics.length ? matchedMetrics : (process?.metrics ?? []).slice(0, 1);
+  const metricText = relevantMetrics.join('、') || '核心指标';
+  const dimensionText = process?.dimensions.slice(0, 3).join('、') || '可用业务维度';
+  const timeRange = process?.timeRange || '目标周期';
+  const hasYearOverYear = /同比/.test(question);
+  const hasPeriodOverPeriod = /环比/.test(question);
+  const isTrendQuestion = /趋势|变化|波动|走势/.test(question);
+  const isAnomalyQuestion = /异常|偏离|突增|突降/.test(question);
+  const isRankingQuestion = /最高|最低|排名|前\s*\d|top\s*\d/i.test(question);
+  const isCauseQuestion = /原因|为什么|贡献|驱动|影响/.test(question);
+
+  const calculationTask = hasYearOverYear && hasPeriodOverPeriod
+    ? `计算${metricText}的同比、环比增减额和增减幅`
+    : hasPeriodOverPeriod
+      ? `计算${metricText}的环比增减额和增减幅`
+      : hasYearOverYear
+        ? `计算${metricText}的同比增减额和增减幅`
+        : isAnomalyQuestion
+          ? `识别${metricText}的异常区间、偏离程度和持续时间`
+          : isRankingQuestion
+            ? `计算${metricText}并形成${dimensionText}排序`
+            : isTrendQuestion
+              ? `分析${metricText}的变化趋势、关键拐点和波动区间`
+              : `计算${metricText}并核对关键结果`;
+  const evidenceTask = isAnomalyQuestion
+    ? '定位异常点、主要影响对象及其数据证据'
+    : isRankingQuestion
+      ? '核查重点对象的排名结果、差距和数据证据'
+      : isCauseQuestion || hasYearOverYear || hasPeriodOverPeriod || isTrendQuestion
+        ? '识别变化最显著的对象及主要贡献项'
+        : '识别值得关注的结构差异和关键发现';
+
+  return [
+    `确认${metricText}在${timeRange}内的统计口径和分析范围`,
+    calculationTask,
+    `按${dimensionText}拆解${metricText}，比较结构差异和变化贡献`,
+    evidenceTask,
+    `汇总数据证据，回答“${question}”并形成分析结论`,
+  ];
 }
 
 function StreamingIntentText({ text, streaming }: { text: string; streaming: boolean }) {
@@ -441,8 +533,80 @@ function StreamingActivityList({
   );
 }
 
-function MarkdownDocument({ content }: { content: string }) {
+function ReportVisualSummary({ report }: { report: ReportResultData }) {
+  const hasMetrics = report.keyMetrics.length > 0;
+  const hasChart = report.chartData.length > 0;
+
+  if (!hasMetrics && !hasChart) return null;
+
+  const chartDescription = report.chartData
+    .map((item) => `${item.name}${item.value}`)
+    .join('，');
+
+  return (
+    <div className="space-y-4 pb-2">
+      <h2 className="border-b border-[#e5e6eb] pb-1.5 text-[18px] font-medium leading-[26px] text-[#1d2129]">数据概览</h2>
+      {hasMetrics ? (
+        <div className="grid grid-cols-2 gap-3" aria-label="关键指标卡片">
+          {report.keyMetrics.map((metric, index) => {
+            const trendLabel = metric.trend === 'up' ? '↑ 上升' : metric.trend === 'down' ? '↓ 下降' : metric.trend === 'flat' ? '— 持平' : null;
+
+            return (
+              <div key={`${metric.label}-${index}`} className="min-w-0 rounded-[10px] border border-[#e5e6eb] bg-[#f7f8fa] px-3.5 py-3">
+                <div className="truncate text-xs leading-[18px] text-[#86909c]" title={metric.label}>{metric.label}</div>
+                <div className="mt-1 truncate text-xl font-semibold leading-7 text-[#1d2129]" title={metric.value}>{metric.value}</div>
+                {trendLabel ? <div className="mt-1 text-xs leading-[18px] text-[#4e5969]">{trendLabel}</div> : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+      {hasChart ? (
+        <section className="overflow-hidden rounded-[10px] border border-[#e5e6eb] bg-white" aria-labelledby="report-chart-title">
+          <h3 id="report-chart-title" className="border-b border-[#f2f3f5] bg-[#f7f8fa] px-4 py-2.5 text-sm font-medium leading-[22px] text-[#1d2129]">{report.chartTitle}</h3>
+          <div className="h-[250px] px-3 pb-2 pt-4" role="img" aria-label={`${report.chartTitle}柱状图：${chartDescription}`}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={report.chartData} margin={{ top: 4, right: 8, bottom: 4, left: -8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#eef0f3" vertical={false} />
+                <XAxis
+                  dataKey="name"
+                  axisLine={false}
+                  tickLine={false}
+                  tickMargin={10}
+                  height={38}
+                  tick={{ fontSize: 11, fill: '#86909c' }}
+                  tickFormatter={(value) => {
+                    const label = String(value);
+                    return label.length > 7 ? `${label.slice(0, 7)}…` : label;
+                  }}
+                />
+                <YAxis axisLine={false} tickLine={false} width={48} tick={{ fontSize: 11, fill: '#86909c' }} />
+                <ChartTooltip
+                  cursor={{ fill: '#f7f8fa' }}
+                  contentStyle={{
+                    borderRadius: 8,
+                    border: '1px solid #e5e6eb',
+                    boxShadow: '0 6px 16px rgba(29, 33, 41, 0.10)',
+                  }}
+                />
+                <Bar dataKey="value" name="指标值" radius={[5, 5, 0, 0]} maxBarSize={52}>
+                  {report.chartData.map((item, index) => (
+                    <Cell key={`${item.name}-${item.value}-${index}`} fill={reportChartColors[index % reportChartColors.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+function MarkdownDocument({ content, reportResult }: { content: string; reportResult?: ReportResultData }) {
   const lines = content.split('\n');
+  let isInVisualizedSection = false;
+  let hasRenderedVisualSummary = false;
 
   return (
     <article className="mx-auto max-w-[760px] space-y-2 text-sm font-normal leading-6 text-[#4e5969]">
@@ -450,7 +614,19 @@ function MarkdownDocument({ content }: { content: string }) {
         const key = `${index}-${line}`;
         const trimmed = line.trim();
 
+        if (trimmed.startsWith('## ') && reportResult) {
+          const sectionTitle = trimmed.slice(3);
+          const isVisualizedSection = sectionTitle === '关键指标' || sectionTitle === reportResult.chartTitle;
+          isInVisualizedSection = isVisualizedSection;
+          if (isVisualizedSection) {
+            if (hasRenderedVisualSummary) return null;
+            hasRenderedVisualSummary = true;
+            return <ReportVisualSummary key={key} report={reportResult} />;
+          }
+        }
+
         if (!trimmed) return null;
+        if (isInVisualizedSection) return null;
         if (trimmed.startsWith('# ')) {
           return <h1 key={key} className="pb-1 text-[22px] font-medium leading-8 text-[#1d2129]">{trimmed.slice(2)}</h1>;
         }
@@ -474,9 +650,9 @@ function MarkdownDocument({ content }: { content: string }) {
   );
 }
 
-function getStepStatus(processMessage: Message, stage: DeepAnalysisStage, index: number) {
+function getStepStatus(processMessage: Message, stage: DeepAnalysisStage, index: number, stepCount: number) {
   const process = processMessage.analysisProcess;
-  if (index === processStepDefinitions.length - 1) {
+  if (index === stepCount - 1) {
     if (stage === 'completed') return 'completed';
     if (stage === 'drafting') return 'running';
     if (stage === 'interrupted' && process?.status === 'completed') return 'interrupted';
@@ -515,10 +691,11 @@ function ActivityDetailPanel({
   const hits = process?.knowledgeHits ?? [];
   const skills = process?.skillMatches ?? [];
   const mcpTools = process?.mcpMatches ?? [];
+  const processStepDefinitions = getProcessStepDefinitions(variant);
   const isWebTask = hits.some((hit) => /网页|官网|外部|http|政策法规/i.test(`${hit.documentSource} ${hit.documentType}`))
     || mcpTools.some((mcp) => /网页|搜索|浏览|web|browser/i.test(`${mcp.name} ${mcp.serverName}`));
   const activityIndex = Math.max(0, processStepDefinitions.findIndex((step) => step.id === activityId));
-  const status = getStepStatus(processMessage, stage, activityIndex);
+  const status = getStepStatus(processMessage, stage, activityIndex, processStepDefinitions.length);
   const statusLabel = status === 'completed' ? '已完成' : status === 'running' ? '进行中' : status === 'interrupted' ? '已中断' : '等待中';
   const capabilityExecutionTitle = skills.length && mcpTools.length
     ? '调用 Skill 和 MCP'
@@ -534,15 +711,27 @@ function ActivityDetailPanel({
       : activityId === 'draft-report' && variant === 'report'
         ? '生成分析报告'
         : processStepDefinitions[activityIndex]?.label ?? '步骤详情';
-  const planItems = [
-    '确认数据集、指标、维度和时间范围',
-    '调用本次分析所需的 Skill 和 MCP 工具',
-    '检索分析依据，查阅内部知识文档，无结果再联网查询',
-    ...(variant === 'report'
-      ? ['执行数据查询和维度下钻', '整理证据并生成分析报告']
-      : ['执行数据查询、生成图表并整理分析结论']),
-  ];
-  const questionIntentSummary = getQuestionIntentSummary(process);
+  const reportTemplateUsage = processMessage.reportTemplateUsage;
+  const templatePlanItem = reportTemplateUsage?.source === 'user-selected'
+    ? `使用你选择的“${reportTemplateUsage.name}”模板`
+    : reportTemplateUsage?.source === 'library-matched'
+      ? `已匹配“${reportTemplateUsage.name}”模板`
+      : reportTemplateUsage
+        ? `已为“${reportTemplateUsage.name}”定制分析结构`
+        : '';
+  const planItems = variant === 'report' && reportTemplateUsage
+    ? [
+        templatePlanItem,
+        ...reportTemplateUsage.templateSnapshot.analysisSteps,
+      ]
+    : variant === 'deep-analysis'
+      ? getDeepAnalysisPlanItems(process)
+      : [
+          '确认数据集、指标、维度和时间范围',
+          '执行数据查询和维度下钻',
+          '整理证据并生成分析报告',
+        ];
+  const questionIntentSummary = getQuestionIntentSummary(process, variant);
 
   useEffect(() => () => {
     if (sqlCopyFeedbackTimerRef.current) {
@@ -733,16 +922,18 @@ function ActivityDetailPanel({
                   {isSqlCopied ? <><CheckCircle2 className="h-4 w-4" /><span>已复制</span></> : <img alt="" src={copyLineIcon} className="h-4 w-4" />}
                 </button>
               </TooltipTrigger>
-              <TooltipContent
-                side="top"
-                align="center"
-                sideOffset={8}
-                showArrow={false}
-                className="relative rounded-[4px] bg-[#1d2129] px-3 py-1 text-center text-sm font-normal leading-[22px] text-white whitespace-nowrap shadow-none"
-              >
-                {isSqlCopied ? '已复制' : '复制 SQL'}
-                <span aria-hidden="true" className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[5px] border-t-[4px] border-x-transparent border-t-[#1d2129]" />
-              </TooltipContent>
+              {!isSqlCopied ? (
+                <TooltipContent
+                  side="top"
+                  align="center"
+                  sideOffset={8}
+                  showArrow={false}
+                  className="relative rounded-[4px] bg-[#1d2129] px-3 py-1 text-center text-sm font-normal leading-[22px] text-white whitespace-nowrap shadow-none"
+                >
+                  复制 SQL
+                  <span aria-hidden="true" className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[5px] border-t-[4px] border-x-transparent border-t-[#1d2129]" />
+                </TooltipContent>
+              ) : null}
             </AppTooltip>
             <pre className="max-h-80 overflow-auto whitespace-pre p-3 pr-20 font-mono text-[13px] leading-5 text-[#4e5969]">{process.sql}</pre>
           </div>
@@ -927,7 +1118,7 @@ function SourcesPanel({ processMessage, stage }: { processMessage: Message; stag
 
 export function downloadMarkdownArtifact(message?: Message | null) {
   if (!message?.markdownArtifact) return;
-  const reportContent = message.markdownArtifact.content.trimEnd();
+  const reportContent = sanitizeGeneratedReportMarkdown(message);
   const downloadContent = reportContent.includes(AI_REPORT_DISCLAIMER)
     ? reportContent
     : `${reportContent}\n\n---\n\n> ${AI_REPORT_DISCLAIMER}\n`;
@@ -1068,7 +1259,7 @@ function ReportPanel({ resultMessage, onBack }: {
         </div>
       </div>
       <div ref={contentScrollRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto px-5 py-6 md:px-8 md:py-8">
-        <MarkdownDocument content={markdown.content} />
+        <MarkdownDocument content={markdown.content} reportResult={resultMessage.reportResult} />
         {isInterrupted ? <div className="mx-auto mt-5 flex max-w-[760px] items-center gap-2 rounded-[8px] bg-[#fff2f0] px-3 py-2 text-sm text-[#f53f3f]" role="status"><AlertTriangle className="h-4 w-4" />报告生成已中断，可重新发起分析。</div> : null}
       </div>
       <div className="shrink-0 bg-white px-4 py-1 text-center text-xs leading-4 text-[#a8abb2]" role="note">

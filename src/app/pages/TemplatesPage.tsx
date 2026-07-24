@@ -1,38 +1,38 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router';
-import {
-  ChevronLeft,
-  ChevronRight,
-  CalendarClock,
-  Edit3,
-  FileText,
-  Plus,
-  Save,
-  Search,
-  Trash2,
-} from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
-import { HomePrefillPayload, ReportTemplate, ReportTemplateSection, ReportTemplateStatus } from '../types';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '../components/ui/alert-dialog';
+import { ReportTemplate, ReportTemplateSection, ReportTemplateStatus } from '../types';
+import templateModalChevronDown from '../../assets/figma-report-template/template-modal-chevron-down.svg';
+import templateModalClose from '../../assets/figma-report-template/template-modal-close.svg';
+import templateModalResizer from '../../assets/figma-report-template/template-modal-resizer.svg';
+import templateDeleteIcon from '../../assets/figma-report-template/template-delete.svg';
+import templateEditIcon from '../../assets/figma-report-template/template-edit.svg';
+import templatePageLeftIcon from '../../assets/figma-report-template/template-page-left.svg';
+import templatePageRightIcon from '../../assets/figma-report-template/template-page-right.svg';
+import templatePlusIcon from '../../assets/figma-report-template/template-plus.svg';
+import templatePageSizeChevronIcon from '../../assets/figma-report-template/report-template-chevron-down.svg';
+import templateSearchIcon from '../../assets/figma-report-template/report-template-search.svg';
+import templateViewIcon from '../../assets/figma-report-template/template-subscribe.svg';
 import {
   Dialog,
+  DialogClose,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '../components/ui/dialog';
-import { ConfigActionIconButton } from '../components/ConfigActionIconButton';
-import { ReportSubscriptionDialog } from '../components/ReportSubscriptionDialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 
-const templatePageSize = 10;
+const templatePageSizeOptions = [10, 20, 50] as const;
+const triggerPhraseMaxCount = 10;
+const triggerPhraseMaxLength = 10;
 
 type TemplateFormState = {
   name: string;
@@ -60,9 +60,41 @@ const emptyTemplateForm: TemplateFormState = {
 
 function splitList(value: string) {
   return value
-    .split(/[,，、\n]/)
+    .split(/[,，、/\n]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function splitTriggerPhrases(value: string) {
+  return value
+    .split(/[,，]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeTriggerPhrases(value: string) {
+  return Array.from(new Set(splitTriggerPhrases(value)));
+}
+
+function validateTriggerPhrases(value: string) {
+  const items = splitTriggerPhrases(value);
+  const overlong = items.find((item) => [...item].length > triggerPhraseMaxLength);
+
+  if (items.length > triggerPhraseMaxCount) {
+    return {
+      count: items.length,
+      error: `最多支持 ${triggerPhraseMaxCount} 个触发词，请删减 ${items.length - triggerPhraseMaxCount} 个后保存`,
+    };
+  }
+
+  if (overlong) {
+    return {
+      count: items.length,
+      error: `单个触发词最多 ${triggerPhraseMaxLength} 个字符，请删减后保存`,
+    };
+  }
+
+  return { count: items.length, error: '' };
 }
 
 function formatTemplateCreatedAt(date: Date) {
@@ -169,7 +201,7 @@ function createTemplateFromForm(form: TemplateFormState, existing?: ReportTempla
     version: existing?.version ?? 'v1.0',
     createdAt: existing?.createdAt ?? formatTemplateCreatedAt(createdAt),
     status: form.status,
-    triggerPhrases: splitList(form.triggerPhrases),
+    triggerPhrases: normalizeTriggerPhrases(form.triggerPhrases),
     templatePrompt: form.templatePrompt.trim(),
     applicableAgentIds: existing?.applicableAgentIds ?? [],
     datasetIds: existing?.datasetIds ?? [],
@@ -189,7 +221,6 @@ function createTemplateFromForm(form: TemplateFormState, existing?: ReportTempla
 }
 
 export default function TemplatesPage() {
-  const navigate = useNavigate();
   const {
     reportTemplates,
     addReportTemplate,
@@ -199,12 +230,13 @@ export default function TemplatesPage() {
   const [query, setQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [templatePage, setTemplatePage] = useState(1);
+  const [templatePageSize, setTemplatePageSize] = useState<number>(templatePageSizeOptions[0]);
   const [editingTemplate, setEditingTemplate] = useState<ReportTemplate | null>(null);
+  const [viewingTemplate, setViewingTemplate] = useState<ReportTemplate | null>(null);
   const [pendingDeleteTemplate, setPendingDeleteTemplate] = useState<ReportTemplate | null>(null);
-  const [subscriptionTemplate, setSubscriptionTemplate] = useState<ReportTemplate | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
-  const [isSubscriptionDialogOpen, setIsSubscriptionDialogOpen] = useState(false);
   const [form, setForm] = useState<TemplateFormState>(emptyTemplateForm);
+  const triggerPhraseValidation = validateTriggerPhrases(form.triggerPhrases);
 
   const filteredTemplates = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -248,10 +280,30 @@ export default function TemplatesPage() {
   }, [form.category, reportTemplates]);
 
   const templateTotalPages = Math.max(1, Math.ceil(filteredTemplates.length / templatePageSize));
+  const templatePageItems = useMemo<Array<number | string>>(() => {
+    if (templateTotalPages <= 5) {
+      return Array.from({ length: templateTotalPages }, (_, index) => index + 1);
+    }
+
+    if (templatePage <= 3) return [1, 2, 3, 'ellipsis-right', templateTotalPages];
+    if (templatePage >= templateTotalPages - 2) {
+      return [1, 'ellipsis-left', templateTotalPages - 2, templateTotalPages - 1, templateTotalPages];
+    }
+
+    return [
+      1,
+      'ellipsis-left',
+      templatePage - 1,
+      templatePage,
+      templatePage + 1,
+      'ellipsis-right',
+      templateTotalPages,
+    ];
+  }, [templatePage, templateTotalPages]);
   const paginatedTemplates = useMemo(() => {
     const start = (templatePage - 1) * templatePageSize;
     return filteredTemplates.slice(start, start + templatePageSize);
-  }, [filteredTemplates, templatePage]);
+  }, [filteredTemplates, templatePage, templatePageSize]);
 
   useEffect(() => {
     setTemplatePage((current) => Math.min(current, templateTotalPages));
@@ -269,22 +321,9 @@ export default function TemplatesPage() {
     setIsEditorOpen(true);
   };
 
-  const useTemplate = (template: ReportTemplate) => {
-    const prefill: HomePrefillPayload = {
-      mode: 'report',
-      templateId: template.id,
-      draft: `使用「${template.name}」生成报告。请补充报告主题、时间范围、分析对象和关注重点。`,
-    };
-
-    navigate('/', { state: { prefill } });
-  };
-
-  const openSubscriptionDialog = (template: ReportTemplate) => {
-    setSubscriptionTemplate(template);
-    setIsSubscriptionDialogOpen(true);
-  };
-
   const handleSaveTemplate = () => {
+    if (triggerPhraseValidation.error) return;
+
     const nextTemplate = createTemplateFromForm(form, editingTemplate ?? undefined);
 
     if (editingTemplate) {
@@ -299,104 +338,152 @@ export default function TemplatesPage() {
   };
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto bg-transparent px-6 py-6">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 text-lg font-semibold text-gray-950">
-                <FileText className="h-5 w-5 text-blue-600" />
-                模板库
-              </div>
-              <p className="mt-2 text-sm leading-6 text-gray-500">
-                维护报告模板的分类、触发词和生成提示词，并在操作列为模板创建订阅任务。
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={openNewTemplateEditor}
-                className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700"
-              >
-                <Plus className="h-4 w-4" />
-                新建模板
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-5 flex flex-col gap-3 md:flex-row">
-            <select
-              value={selectedCategory}
-              onChange={(event) => setSelectedCategory(event.target.value)}
-              className="h-11 rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-700 focus:border-blue-500 focus:outline-none md:w-40"
-            >
-              <option value="all">全部分类</option>
-              {categoryOptions.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
-            <div className="flex flex-1 items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-              <Search className="h-4 w-4 text-gray-400" />
+    <div className="h-full min-h-0 flex-1 overflow-hidden bg-white px-4 pb-0 pt-4 font-['PingFang_SC','Microsoft_YaHei',sans-serif] md:px-[22px] md:pt-[22px]">
+      <div className="flex h-full min-h-0 w-full flex-col">
+        <div className="flex shrink-0 flex-col items-stretch justify-between gap-4 sm:h-10 sm:flex-row sm:items-center sm:gap-5 md:-translate-y-[6px]">
+          <h1 className="text-[20px] font-semibold leading-7 text-[#1d2129]">模板库</h1>
+          <div className="flex w-full shrink-0 items-center gap-3 sm:w-auto">
+            <label className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-[10px] border border-[#e5e6eb] bg-white px-3 transition-colors focus-within:border-[#165dff] focus-within:ring-2 focus-within:ring-[#165dff]/10 sm:w-[240px] sm:flex-none">
+              <img aria-hidden="true" className="h-4 w-4 shrink-0" src={templateSearchIcon} alt="" />
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="搜索模板名称或触发词"
-                className="w-full bg-transparent text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none"
+                className="min-w-0 flex-1 bg-transparent text-[14px] font-normal leading-[22px] text-[#1d2129] placeholder:text-[#c9cdd4] focus:outline-none"
               />
-            </div>
+            </label>
+            <button
+              type="button"
+              onClick={openNewTemplateEditor}
+              className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-[#e5e6eb] bg-white px-3.5 text-[14px] font-normal leading-[22px] text-[#1d2129] transition-colors hover:bg-[#f7f8fa] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
+            >
+              <img aria-hidden="true" className="h-4 w-4" src={templatePlusIcon} alt="" />
+              新建模板
+            </button>
           </div>
-        </section>
+        </div>
 
-        <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1180px] table-fixed">
+        <div className="mt-4 flex h-7 shrink-0 items-center gap-3 overflow-x-auto" aria-label="模板分类">
+          <button
+            type="button"
+            aria-pressed={selectedCategory === 'all'}
+            onClick={() => setSelectedCategory('all')}
+            className={`h-7 rounded-[14px] px-3 text-[14px] font-normal leading-7 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
+              selectedCategory === 'all'
+                ? 'bg-[#1d2129] text-white'
+                : 'bg-[#f2f3f5] text-[#4e5969] hover:bg-[#e5e6eb]'
+            }`}
+          >
+            全部
+          </button>
+          {categoryOptions.map((category) => (
+            <button
+              key={category}
+              type="button"
+              aria-pressed={selectedCategory === category}
+              onClick={() => setSelectedCategory(category)}
+              className={`h-7 rounded-[14px] px-3 text-[14px] font-normal leading-7 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
+                selectedCategory === category
+                  ? 'bg-[#1d2129] text-white'
+                  : 'bg-[#f2f3f5] text-[#4e5969] hover:bg-[#e5e6eb]'
+              }`}
+            >
+              {category}
+            </button>
+          ))}
+        </div>
+
+        <section className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden" aria-label="报告模板列表">
+          <div className="min-h-0 flex-1 overflow-auto">
+            <table className="w-full min-w-[1080px] table-fixed border-collapse">
               <colgroup>
-                <col className="w-[23%]" />
-                <col className="w-[9%]" />
-                <col className="w-[27%]" />
-                <col className="w-[16%]" />
-                <col className="w-[10%]" />
-                <col className="w-[15%]" />
+                <col className="w-[260px] min-[1600px]:w-[16%]" />
+                <col className="w-[90px] min-[1600px]:w-[7%]" />
+                <col className="min-[1600px]:w-[44%]" />
+                <col className="w-[165px] min-[1600px]:w-[15%]" />
+                <col className="w-[90px] min-[1600px]:w-[10%]" />
+                <col className="w-[136px] min-[1600px]:w-[8%]" />
               </colgroup>
-              <thead className="bg-gray-50">
-                <tr className="border-b border-gray-200 text-left text-sm text-gray-600">
-                  <th className="px-6 py-3">模板名称</th>
-                  <th className="px-6 py-3">分类</th>
-                  <th className="px-6 py-3">触发词</th>
-                  <th className="px-6 py-3">创建时间</th>
-                  <th className="px-6 py-3">状态</th>
-                  <th className="px-6 py-3">操作</th>
+              <thead className="sticky top-0 z-10 bg-[#f7f8fa]">
+                <tr className="h-12 border-b border-[#e5e6eb] text-left text-[14px] font-normal leading-[22px] text-[#4e5969]">
+                  <th className="px-4 font-normal">模板名称</th>
+                  <th className="px-3 font-normal">分类</th>
+                  <th className="px-3 font-normal">触发词</th>
+                  <th className="px-3 font-normal">创建时间</th>
+                  <th className="px-3 font-normal">状态</th>
+                  <th className="px-2 font-normal">操作</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody>
                 {paginatedTemplates.length ? (
                   paginatedTemplates.map((template) => {
                     const enabled = template.status !== 'disabled';
+                    const triggerPhrasesLabel = template.triggerPhrases.join(', ');
 
                     return (
-                      <tr key={template.id} className="text-sm text-gray-700 hover:bg-gray-50">
-                        <td className="min-w-0 px-6 py-4">
-                          <div className="truncate font-medium text-gray-900">{template.name}</div>
-                          <div className="mt-1 truncate text-xs text-gray-400">
-                            {getTemplatePrompt(template) || template.description}
-                          </div>
+                      <tr
+                        key={template.id}
+                        className="h-16 border-b border-[#e5e6eb] text-[14px] font-normal leading-[22px] text-[#4e5969] transition-colors hover:bg-[#f7f8fa] [&>td]:align-middle"
+                      >
+                        <td className="min-w-0 px-4 py-2.5">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span
+                                tabIndex={0}
+                                aria-label={`${template.name}，查看完整模板名称`}
+                                className="inline-block max-w-full truncate align-middle font-medium text-[#1d2129] outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
+                              >
+                                {template.name}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="top"
+                              align="start"
+                              sideOffset={8}
+                              collisionPadding={12}
+                              arrowClassName="bg-[#1d2129] fill-[#1d2129]"
+                              className="relative max-w-[420px] rounded-[4px] border-0 bg-[#1d2129] px-3 py-2.5 text-left font-['PingFang_SC'] text-[14px] font-normal leading-[22px] tracking-normal text-white shadow-none"
+                            >
+                              <div className="break-words font-medium text-white">{template.name}</div>
+                            </TooltipContent>
+                          </Tooltip>
                         </td>
-                        <td className="px-6 py-4">
-                          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
+                        <td className="px-3 py-2.5">
+                          <span className="inline-flex h-7 items-center rounded-[4px] bg-[#e8f3ff] px-2.5 text-[14px] leading-[22px] text-[#165dff]">
                             {template.category}
                           </span>
                         </td>
-                        <td className="max-w-xs px-6 py-4">
-                          <div className="line-clamp-2">
-                            {template.triggerPhrases.length ? template.triggerPhrases.join(' / ') : '-'}
-                          </div>
+                        <td className="min-w-0 px-3 py-2.5">
+                          {triggerPhrasesLabel ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span
+                                  tabIndex={0}
+                                  aria-label={`${template.name}完整触发词：${triggerPhrasesLabel}`}
+                                  className="block max-w-full truncate outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
+                                >
+                                  {triggerPhrasesLabel}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent
+                                side="top"
+                                align="start"
+                                sideOffset={8}
+                                collisionPadding={12}
+                                arrowClassName="bg-[#1d2129] fill-[#1d2129]"
+                                className="max-w-[420px] whitespace-pre-wrap break-words rounded-[4px] border-0 bg-[#1d2129] px-3 py-2.5 text-left font-['PingFang_SC'] text-[14px] font-normal leading-[22px] tracking-normal text-white shadow-none"
+                              >
+                                {triggerPhrasesLabel}
+                              </TooltipContent>
+                            </Tooltip>
+                          ) : (
+                            '-'
+                          )}
                         </td>
-                        <td className="whitespace-nowrap px-6 py-4 text-gray-500">
+                        <td className="whitespace-nowrap px-3 py-2.5 text-[#4e5969]">
                           {getTemplateCreatedAtLabel(template)}
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-3 py-2.5">
                           <button
                             type="button"
                             role="switch"
@@ -406,8 +493,8 @@ export default function TemplatesPage() {
                                 status: enabled ? 'disabled' : 'published',
                               })
                             }
-                            className={`inline-flex h-6 w-11 items-center rounded-full p-0.5 transition-colors ${
-                              enabled ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-300 hover:bg-gray-400'
+                            className={`inline-flex h-5 w-10 items-center rounded-full p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
+                              enabled ? 'bg-[#1d2129]' : 'bg-[#c9cdd4]'
                             }`}
                             title={enabled ? '点击停用' : '点击启用'}
                             aria-label={`${template.name}当前${enabled ? '已启用' : '已停用'}，点击${
@@ -415,42 +502,45 @@ export default function TemplatesPage() {
                             }`}
                           >
                             <span
-                              className={`h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+                              className={`h-4 w-4 rounded-full bg-white shadow-[0_1px_2px_rgba(29,33,41,0.12)] transition-transform ${
                                 enabled ? 'translate-x-5' : 'translate-x-0'
                               }`}
                             />
                           </button>
                         </td>
-                        <td className="px-6 py-4">
+                        <td className="px-2 py-2.5">
                           <div className="flex items-center gap-1 whitespace-nowrap">
-                            <ConfigActionIconButton
-                              onClick={() => useTemplate(template)}
-                              icon={FileText}
-                              label="使用"
-                              variant="view"
-                            />
-                            <ConfigActionIconButton
-                              onClick={() => openEditTemplateEditor(template)}
-                              icon={Edit3}
-                              label="编辑"
-                              variant="edit"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => openSubscriptionDialog(template)}
-                              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-medium text-emerald-700 transition-colors hover:border-emerald-300 hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-100"
-                              aria-label={`订阅${template.name}`}
-                              title="订阅"
-                            >
-                              <CalendarClock className="h-4 w-4" />
-                              订阅
-                            </button>
-                            <ConfigActionIconButton
-                              onClick={() => setPendingDeleteTemplate(template)}
-                              icon={Trash2}
-                              label="删除"
-                              variant="delete"
-                            />
+                            {[
+                              { tooltipLabel: '编辑', ariaLabel: `编辑${template.name}`, icon: templateEditIcon, onClick: () => openEditTemplateEditor(template) },
+                              { tooltipLabel: '查看', ariaLabel: `查看${template.name}`, icon: templateViewIcon, onClick: () => setViewingTemplate(template) },
+                              { tooltipLabel: '删除', ariaLabel: `删除${template.name}`, icon: templateDeleteIcon, onClick: () => setPendingDeleteTemplate(template) },
+                            ].map((action) => (
+                              <Tooltip key={action.ariaLabel} delayDuration={240}>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    onClick={action.onClick}
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-[4px] transition-colors hover:bg-[#f2f3f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
+                                    aria-label={action.ariaLabel}
+                                  >
+                                    <img aria-hidden="true" className="h-4 w-4" src={action.icon} alt="" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent
+                                  side="top"
+                                  align="center"
+                                  sideOffset={8}
+                                  showArrow={false}
+                                  className="relative rounded-[4px] bg-[#1d2129] px-3 py-1 text-center font-['PingFang_SC'] text-[14px] font-normal leading-[22px] tracking-normal text-white whitespace-nowrap shadow-none"
+                                >
+                                  {action.tooltipLabel}
+                                  <span
+                                    aria-hidden="true"
+                                    className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[5px] border-t-[4px] border-x-transparent border-t-[#1d2129]"
+                                  />
+                                </TooltipContent>
+                              </Tooltip>
+                            ))}
                           </div>
                         </td>
                       </tr>
@@ -458,7 +548,7 @@ export default function TemplatesPage() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={6} className="px-6 py-14 text-center text-sm text-gray-500">
+                    <td colSpan={6} className="h-40 px-4 text-center text-[14px] text-[#86909c]">
                       未找到匹配的报告模板
                     </td>
                   </tr>
@@ -466,174 +556,406 @@ export default function TemplatesPage() {
               </tbody>
             </table>
           </div>
-        </section>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 px-1 pt-3 text-sm text-gray-500">
-          <div>
-            共 {filteredTemplates.length} 条，每页 {templatePageSize} 条
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setTemplatePage((page) => Math.max(1, page - 1))}
-              disabled={templatePage === 1}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 transition-colors hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:border-gray-100 disabled:text-gray-300"
-              aria-label="上一页"
-              title="上一页"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            {Array.from({ length: templateTotalPages }, (_, index) => index + 1).map((page) => (
-              <button
-                key={page}
-                type="button"
-                onClick={() => setTemplatePage(page)}
-                className={`h-8 min-w-8 rounded-md border px-2 text-sm transition-colors ${
-                  templatePage === page
-                    ? 'border-blue-600 bg-blue-600 text-white'
-                    : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:text-blue-600'
-                }`}
-              >
-                {page}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => setTemplatePage((page) => Math.min(templateTotalPages, page + 1))}
-              disabled={templatePage === templateTotalPages}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 transition-colors hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:border-gray-100 disabled:text-gray-300"
-              aria-label="下一页"
-              title="下一页"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
 
+          <div className="-mx-[22px] flex h-14 w-[calc(100%+44px)] shrink-0 items-center justify-between border-t border-[#e5e6eb] bg-[#f7f8fa] py-3 pl-[38px] pr-6 text-[14px] font-normal text-[#4e5969]">
+            <div className="flex items-center gap-4">
+              <span className="leading-[22px] text-[#1d2129]">共 {filteredTemplates.length} 条</span>
+              <Select
+                value={String(templatePageSize)}
+                onValueChange={(value) => {
+                  setTemplatePageSize(Number(value));
+                  setTemplatePage(1);
+                }}
+              >
+                <SelectTrigger
+                  aria-label="每页条数"
+                  size="sm"
+                  className="group h-8 w-auto gap-2.5 rounded-[8px] border-[#e5e6eb] bg-transparent p-2 text-[14px] font-normal leading-5 text-[#4e5969] shadow-none focus-visible:border-[#165dff] focus-visible:ring-2 focus-visible:ring-[#165dff]/10"
+                  icon={
+                    <span className="relative h-4 w-4 shrink-0 overflow-hidden transition-transform duration-150 group-data-[state=open]:rotate-180">
+                      <img aria-hidden="true" className="absolute left-[3.76px] top-[5.48px] h-[5.19px] w-[8.49px]" src={templatePageSizeChevronIcon} alt="" />
+                    </span>
+                  }
+                >
+                  <SelectValue>{templatePageSize} 条/页</SelectValue>
+                </SelectTrigger>
+                <SelectContent
+                  position="popper"
+                  sideOffset={4}
+                  align="start"
+                  viewportClassName="h-auto min-h-0 w-full !min-w-0 p-0"
+                  className="w-[112px] min-w-[112px] rounded-[8px] border-[#e5e6eb] bg-white p-1 text-[#1d2129] shadow-[0_4px_12px_rgba(29,33,41,0.08)] data-[side=bottom]:!translate-y-0 data-[side=top]:!translate-y-0"
+                >
+                  {templatePageSizeOptions.map((pageSize) => (
+                    <SelectItem
+                      key={pageSize}
+                      value={String(pageSize)}
+                      className="h-8 whitespace-nowrap rounded-[6px] py-0 pl-2 pr-7 text-[14px] leading-5 text-[#4e5969] focus:bg-[#f7f8fa] focus:text-[#1d2129] data-[state=checked]:bg-[#f2f3f5]"
+                    >
+                      {pageSize} 条/页
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTemplatePage((page) => Math.max(1, page - 1))}
+                  disabled={templatePage === 1}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] border border-[#f2f3f5] bg-[#f7f8fa] transition-colors hover:bg-[#f2f3f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 disabled:opacity-40"
+                  aria-label="上一页"
+                  title="上一页"
+                >
+                  <img aria-hidden="true" className="h-6 w-6" src={templatePageLeftIcon} alt="" />
+                </button>
+                {templatePageItems.map((item) =>
+                  typeof item === 'number' ? (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => setTemplatePage(item)}
+                      aria-current={templatePage === item ? 'page' : undefined}
+                      className={`h-8 min-w-8 rounded-[8px] border px-2 text-center text-[14px] leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
+                        templatePage === item
+                          ? 'border-[#1d2129] bg-[#1d2129] font-medium text-white'
+                          : 'border-[#f2f3f5] text-[#4e5969] hover:bg-[#f2f3f5]'
+                      }`}
+                    >
+                      {item}
+                    </button>
+                  ) : (
+                    <span key={item} className="inline-flex h-8 w-8 items-center justify-center text-[14px] leading-5 text-[#4e5969]">
+                      ...
+                    </span>
+                  ),
+                )}
+                <button
+                  type="button"
+                  onClick={() => setTemplatePage((page) => Math.min(templateTotalPages, page + 1))}
+                  disabled={templatePage === templateTotalPages}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-[8px] border border-[#f2f3f5] bg-[#f7f8fa] transition-colors hover:bg-[#f2f3f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 disabled:opacity-40"
+                  aria-label="下一页"
+                  title="下一页"
+                >
+                  <img aria-hidden="true" className="h-6 w-6" src={templatePageRightIcon} alt="" />
+                </button>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <label htmlFor="template-page-jump" className="leading-[22px] text-[#1d2129]">跳至</label>
+                <input
+                  id="template-page-jump"
+                  aria-label="跳转页码"
+                  key={`${templatePage}-${templatePageSize}`}
+                  inputMode="numeric"
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter') return;
+                    const page = Number(event.currentTarget.value);
+                    if (Number.isFinite(page) && event.currentTarget.value.trim()) {
+                      setTemplatePage(Math.min(templateTotalPages, Math.max(1, page)));
+                      event.currentTarget.value = '';
+                    }
+                  }}
+                  className="h-8 w-11 rounded-[8px] border border-[#e5e6eb] bg-transparent p-2 text-center text-[14px] leading-5 text-[#4e5969] outline-none focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10"
+                />
+                <span className="leading-5">页</span>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
 
       <Dialog open={isEditorOpen} onOpenChange={setIsEditorOpen}>
-        <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>{editingTemplate ? '编辑报告模板' : '新建报告模板'}</DialogTitle>
-          </DialogHeader>
+        <DialogContent
+          aria-describedby={undefined}
+          showCloseButton={false}
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            event.currentTarget.focus();
+          }}
+          className="!flex h-[610px] w-[580px] max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] flex-col gap-0 overflow-hidden rounded-[20px] border-0 bg-white p-0 font-['PingFang_SC','Microsoft_YaHei',sans-serif] shadow-[-2px_0_22.1px_rgba(0,0,0,0.01)] sm:max-w-[580px]"
+        >
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-4">
+            <DialogHeader className="flex-row items-center justify-between gap-0 text-left">
+              <DialogTitle className="font-['Login_Figma_Sans','PingFang_SC','Microsoft_YaHei',sans-serif] text-[20px] font-medium leading-7 text-[#1d2129]">
+                {editingTemplate ? '编辑模板' : '新建模板'}
+              </DialogTitle>
+              <DialogClose className="relative h-4 w-4 shrink-0 overflow-hidden rounded-[4px] border-0 bg-transparent p-0 transition-colors hover:bg-[#f2f3f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20">
+                <img aria-hidden="true" className="absolute inset-[1.862px] h-[12.276px] w-[12.276px]" src={templateModalClose} alt="" />
+                <span className="sr-only">关闭</span>
+              </DialogClose>
+            </DialogHeader>
 
-          <div className="space-y-5">
-            <div className="grid gap-4 md:grid-cols-3">
-              <div>
-                <label className="block text-sm text-gray-700">模板名称</label>
+            <div className="flex flex-col gap-2">
+              <label htmlFor="template-name" className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">
+                模板名称
+              </label>
+              <div className="relative h-10">
                 <input
+                  id="template-name"
+                  maxLength={20}
                   value={form.name}
                   onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                  className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  placeholder="请输入模板名称"
+                  className="h-full w-full rounded-[12px] border border-[#e5e6eb] bg-white px-3 pr-14 text-[14px] leading-[22px] tracking-[0.15px] text-[#1d2129] outline-none placeholder:text-[#86909c] focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10"
                 />
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[12px] leading-[22px] text-[#86909c]">
+                  {form.name.length}/20
+                </span>
               </div>
-              <div>
-                <label className="block text-sm text-gray-700">分类</label>
-                <select
-                  value={form.category}
-                  onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
-                  className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label htmlFor="template-category" className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">
+                分类
+              </label>
+              <Select
+                value={form.category}
+                onValueChange={(value) => setForm((current) => ({ ...current, category: value }))}
+              >
+                <SelectTrigger
+                  id="template-category"
+                  className="group h-10 w-full rounded-[12px] border-[#e5e6eb] bg-white px-3 text-[14px] leading-[22px] tracking-[0.15px] text-[#1d2129] shadow-none outline-none focus-visible:border-[#165dff] focus-visible:ring-2 focus-visible:ring-[#165dff]/10"
+                  icon={
+                    <span className="relative h-4 w-4 shrink-0 overflow-hidden transition-transform duration-150 group-data-[state=open]:rotate-180">
+                      <img className="absolute left-[3.757px] top-[5.482px] h-[5.186px] w-[8.486px]" src={templateModalChevronDown} alt="" />
+                    </span>
+                  }
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent
+                  position="popper"
+                  sideOffset={4}
+                  viewportClassName="h-auto min-h-0 w-full !min-w-0 p-0"
+                  className="z-[70] w-[var(--radix-select-trigger-width)] !min-w-0 rounded-[12px] border-[#e5e6eb] bg-white p-1 text-[#1d2129] shadow-[0_4px_12px_rgba(29,33,41,0.08)] data-[side=bottom]:!translate-y-0 data-[side=top]:!translate-y-0"
                 >
                   {categoryOptions.map((category) => (
-                    <option key={category} value={category}>
+                    <SelectItem
+                      key={category}
+                      value={category}
+                      className="h-10 rounded-[8px] py-0 pl-3 pr-9 text-[14px] leading-[22px] text-[#1d2129] focus:bg-[#f7f8fa] focus:text-[#1d2129] data-[state=checked]:bg-[#f2f3f5] data-[state=checked]:font-medium"
+                    >
                       {category}
-                    </option>
+                    </SelectItem>
                   ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-700">状态</label>
-                <select
-                  value={form.status}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      status: event.target.value as ReportTemplateStatus,
-                    }))
-                  }
-                  className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label htmlFor="template-trigger-phrases" className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">
+                触发词
+              </label>
+              <div className="relative h-10">
+                <input
+                  id="template-trigger-phrases"
+                  value={form.triggerPhrases}
+                  onChange={(event) => setForm((current) => ({ ...current, triggerPhrases: event.target.value }))}
+                  placeholder="多个触发词请使用逗号分隔，支持中英文逗号"
+                  aria-invalid={Boolean(triggerPhraseValidation.error)}
+                  aria-describedby={triggerPhraseValidation.error ? 'template-trigger-phrases-error' : undefined}
+                  className={`h-10 w-full rounded-[12px] border bg-white py-0 pl-3 pr-[76px] text-[14px] leading-[22px] tracking-[0.15px] text-[#1d2129] outline-none placeholder:text-[#86909c] focus:ring-2 ${
+                    triggerPhraseValidation.error
+                      ? 'border-[#f53f3f] focus:border-[#f53f3f] focus:ring-[#f53f3f]/10'
+                      : 'border-[#e5e6eb] focus:border-[#165dff] focus:ring-[#165dff]/10'
+                  }`}
+                />
+                <span
+                  className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[12px] leading-[22px] ${
+                    triggerPhraseValidation.count > triggerPhraseMaxCount ? 'text-[#f53f3f]' : 'text-[#86909c]'
+                  }`}
                 >
-                  <option value="published">已启用</option>
-                  <option value="disabled">已停用</option>
-                </select>
+                  {triggerPhraseValidation.count}/{triggerPhraseMaxCount} 个
+                </span>
+              </div>
+              {triggerPhraseValidation.error && (
+                <p id="template-trigger-phrases-error" role="alert" className="text-[12px] leading-[18px] text-[#f53f3f]">
+                  {triggerPhraseValidation.error}
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label htmlFor="template-prompt" className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">
+                模板提示词
+              </label>
+              <div className="relative h-24">
+                <textarea
+                  id="template-prompt"
+                  maxLength={500}
+                  value={form.templatePrompt}
+                  onChange={(event) => setForm((current) => ({ ...current, templatePrompt: event.target.value }))}
+                  placeholder="描述这类报告的分析思路、章节顺序、关注指标和输出语气。"
+                  className="h-full w-full resize-none rounded-[12px] border border-[#e5e6eb] bg-white p-3 pb-8 text-[14px] leading-[22px] text-[#1d2129] outline-none placeholder:text-[#86909c] focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10"
+                />
+                <span className="pointer-events-none absolute bottom-[9px] right-3 text-[12px] leading-[22px] text-[#86909c]">
+                  {form.templatePrompt.length}/500
+                </span>
+                <img aria-hidden="true" className="pointer-events-none absolute bottom-[7px] right-[7px] h-2 w-2" src={templateModalResizer} alt="" />
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm text-gray-700">触发词</label>
-              <input
-                value={form.triggerPhrases}
-                onChange={(event) => setForm((current) => ({ ...current, triggerPhrases: event.target.value }))}
-                placeholder="多个触发词请用逗号或顿号隔开"
-                className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm text-gray-700">模板提示词</label>
-              <textarea
-                value={form.templatePrompt}
-                onChange={(event) => setForm((current) => ({ ...current, templatePrompt: event.target.value }))}
-                rows={7}
-                placeholder="描述这类报告的分析思路、章节顺序、重点关注指标和输出语气。"
-                className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-3 text-sm leading-6 focus:border-blue-500 focus:outline-none"
-              />
-            </div>
-
-            <div className="flex justify-end gap-3 border-t border-gray-100 pt-4">
-              <button
-                type="button"
-                onClick={() => setIsEditorOpen(false)}
-                className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            <div className="flex flex-col gap-2">
+              <label htmlFor="template-status" className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">
+                状态
+              </label>
+              <Select
+                value={form.status}
+                onValueChange={(value) =>
+                  setForm((current) => ({
+                    ...current,
+                    status: value as ReportTemplateStatus,
+                  }))
+                }
               >
-                取消
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveTemplate}
-                className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-              >
-                <Save className="h-4 w-4" />
-                保存模板
-              </button>
+                <SelectTrigger
+                  id="template-status"
+                  className="group h-10 w-full rounded-[12px] border-[#e5e6eb] bg-white px-3 text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969] shadow-none outline-none focus-visible:border-[#165dff] focus-visible:ring-2 focus-visible:ring-[#165dff]/10"
+                  icon={
+                    <span className="relative h-4 w-4 shrink-0 overflow-hidden transition-transform duration-150 group-data-[state=open]:rotate-180">
+                      <img className="absolute left-[3.757px] top-[5.482px] h-[5.186px] w-[8.486px]" src={templateModalChevronDown} alt="" />
+                    </span>
+                  }
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent
+                  position="popper"
+                  sideOffset={4}
+                  viewportClassName="h-auto min-h-0 w-full !min-w-0 p-0"
+                  className="z-[70] w-[var(--radix-select-trigger-width)] !min-w-0 rounded-[12px] border-[#e5e6eb] bg-white p-1 text-[#1d2129] shadow-[0_4px_12px_rgba(29,33,41,0.08)] data-[side=bottom]:!translate-y-0 data-[side=top]:!translate-y-0"
+                >
+                  <SelectItem
+                    value="published"
+                    className="h-10 rounded-[8px] py-0 pl-3 pr-9 text-[14px] leading-[22px] text-[#1d2129] focus:bg-[#f7f8fa] focus:text-[#1d2129] data-[state=checked]:bg-[#f2f3f5] data-[state=checked]:font-medium"
+                  >
+                    已启用
+                  </SelectItem>
+                  <SelectItem
+                    value="disabled"
+                    className="h-10 rounded-[8px] py-0 pl-3 pr-9 text-[14px] leading-[22px] text-[#1d2129] focus:bg-[#f7f8fa] focus:text-[#1d2129] data-[state=checked]:bg-[#f2f3f5] data-[state=checked]:font-medium"
+                  >
+                    已停用
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+          </div>
+
+          <div className="flex h-16 shrink-0 items-center justify-end gap-4 border-t border-[#e5e6eb] bg-[#f7f8fa] px-6 py-3">
+            <button
+              type="button"
+              onClick={() => setIsEditorOpen(false)}
+              className="inline-flex h-10 items-center justify-center rounded-[12px] border border-[#e5e6eb] bg-transparent px-6 text-[14px] leading-[22px] text-[rgba(0,0,0,0.9)] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveTemplate}
+              disabled={Boolean(triggerPhraseValidation.error)}
+              className="inline-flex h-10 items-center justify-center rounded-[12px] border border-[#1d2129] bg-[#1d2129] px-6 text-[14px] leading-[22px] tracking-[0.15px] text-white transition-colors hover:bg-[#2f3339] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 disabled:cursor-not-allowed disabled:border-[#c9cdd4] disabled:bg-[#c9cdd4] disabled:hover:bg-[#c9cdd4]"
+            >
+              保存
+            </button>
           </div>
         </DialogContent>
       </Dialog>
 
-      <ReportSubscriptionDialog
-        open={isSubscriptionDialogOpen}
-        onOpenChange={setIsSubscriptionDialogOpen}
-        template={subscriptionTemplate}
-      />
+      <Dialog
+        open={Boolean(viewingTemplate)}
+        onOpenChange={(open) => {
+          if (!open) setViewingTemplate(null);
+        }}
+      >
+        <DialogContent
+          aria-describedby={undefined}
+          showCloseButton={false}
+          className="!flex h-[610px] w-[580px] max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] flex-col gap-0 overflow-hidden rounded-[20px] border-0 bg-white p-0 font-['PingFang_SC','Microsoft_YaHei',sans-serif] shadow-[-2px_0_22.1px_rgba(0,0,0,0.01)] sm:max-w-[580px]"
+        >
+          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-4">
+            <DialogHeader className="flex-row items-center justify-between gap-0 text-left">
+              <DialogTitle className="font-['Login_Figma_Sans','PingFang_SC','Microsoft_YaHei',sans-serif] text-[20px] font-medium leading-7 text-[#1d2129]">
+                查看模板
+              </DialogTitle>
+              <DialogClose className="relative h-4 w-4 shrink-0 overflow-hidden rounded-[4px] border-0 bg-transparent p-0 transition-colors hover:bg-[#f2f3f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20">
+                <img aria-hidden="true" className="absolute inset-[1.862px] h-[12.276px] w-[12.276px]" src={templateModalClose} alt="" />
+                <span className="sr-only">关闭</span>
+              </DialogClose>
+            </DialogHeader>
 
-      <AlertDialog
+            {viewingTemplate && (
+              <dl className="flex min-h-0 flex-1 flex-col gap-4">
+                <div className="flex items-start border-b border-[#e5e6eb] pb-4 pt-1">
+                  <dt className="w-20 shrink-0 text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">模板名称</dt>
+                  <dd className="min-w-0 flex-1 break-words text-[14px] font-medium leading-[22px] text-[#1d2129]">
+                    {viewingTemplate.name}
+                  </dd>
+                </div>
+
+                <div className="flex min-h-0 flex-1 flex-col gap-2">
+                  <dt className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">模板提示词</dt>
+                  <dd className="min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words rounded-[12px] border border-[#e5e6eb] bg-[#f7f8fa] px-3 py-2.5 text-[14px] leading-[22px] text-[#1d2129]">
+                    {viewingTemplate.templatePrompt.trim() || '未配置'}
+                  </dd>
+                </div>
+              </dl>
+            )}
+          </div>
+
+          <div className="flex h-16 shrink-0 items-center justify-end gap-4 border-t border-[#e5e6eb] bg-[#f7f8fa] px-6 py-3">
+            <button
+              type="button"
+              onClick={() => setViewingTemplate(null)}
+              className="inline-flex h-10 items-center justify-center rounded-[12px] border border-[#1d2129] bg-[#1d2129] px-6 text-[14px] leading-[22px] tracking-[0.15px] text-white transition-colors hover:bg-[#2f3339] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
+            >
+              关闭
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={Boolean(pendingDeleteTemplate)}
         onOpenChange={(open) => {
           if (!open) setPendingDeleteTemplate(null);
         }}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>删除模板</AlertDialogTitle>
-            <AlertDialogDescription>
+        <DialogContent
+          onPointerDownOutside={() => setPendingDeleteTemplate(null)}
+          className="max-w-[360px] gap-5 rounded-[8px] border-[#e5e6eb] p-5 shadow-[0_12px_32px_rgba(29,33,41,0.16)]"
+        >
+          <DialogHeader className="gap-2">
+            <DialogTitle className="text-[18px] leading-[26px]">删除模板</DialogTitle>
+            <DialogDescription className="leading-[22px] text-[#4e5969]">
               确认删除「{pendingDeleteTemplate?.name}」？删除后不可恢复。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <button
+              type="button"
+              onClick={() => setPendingDeleteTemplate(null)}
+              className="h-9 rounded-[6px] border border-[#d9dce3] px-4 text-[#4e5969] transition-colors hover:bg-[#f7f8fa] hover:text-[#1d2129]"
+            >
+              取消
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 if (pendingDeleteTemplate) deleteReportTemplate(pendingDeleteTemplate.id);
                 setPendingDeleteTemplate(null);
               }}
-              className="bg-red-600 text-white hover:bg-red-700"
+              className="h-9 rounded-[6px] bg-[#f53f3f] px-4 text-white transition-colors hover:bg-[#d9363e]"
             >
               删除
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -21,6 +21,7 @@ export type SampleReportCard = {
   structureData: Array<{ label: string; value: string; percent: number }>;
   findings: string[];
   alerts: string[];
+  analysisBasis: string[];
   recommendations: string[];
   tableRows: Array<{
     item: string;
@@ -73,6 +74,11 @@ export const sampleReportCards: SampleReportCard[] = [
     alerts: [
       '高值耗材门诊组连续两日超过提醒阈值。',
       '检查收入增速高于门诊量增速，需要复核项目结构变化。',
+    ],
+    analysisBasis: [
+      '门诊经营数据集，用于汇总门诊量、收入、药占比和检查收入。',
+      '近 7 日门诊经营基线，用于校验昨日指标变化。',
+      '科室收入结构分析，用于定位眼科、骨科及检查项目贡献。',
     ],
     recommendations: [
       '复核眼科检查项目增长来源，区分真实需求和套餐结构变化。',
@@ -129,6 +135,11 @@ export const sampleReportCards: SampleReportCard[] = [
       '急诊夜间候诊时长较上周增加 9 分钟。',
       '儿科夜间接诊压力持续偏高，需要关注排班弹性。',
     ],
+    analysisBasis: [
+      '门急诊运营数据集，用于汇总本周流量、收入和资源使用情况。',
+      '门急诊量周趋势分析，用于识别工作日流量变化。',
+      '夜间接诊与候诊数据，用于校验急诊资源压力。',
+    ],
     recommendations: [
       '补充急诊夜间导诊和检验窗口资源。',
       '对儿科夜间高峰进行分时预约和预检分流。',
@@ -182,6 +193,11 @@ export const sampleReportCards: SampleReportCard[] = [
     alerts: [
       '5 项异常指标中，3 项集中在耗材和检查项目。',
       '儿科收入达成率 91.6%，低于全院平均水平。',
+    ],
+    analysisBasis: [
+      '全院月度经营数据集，用于计算收入、结构和目标达成情况。',
+      '科室收入结构分析，用于拆解主要增量和未达目标科室。',
+      '耗材与检查项目监测规则，用于识别费用结构异常。',
     ],
     recommendations: [
       '对耗材占比抬升科室发起专项复核。',
@@ -237,6 +253,11 @@ export const sampleReportCards: SampleReportCard[] = [
     alerts: [
       '节后首日上午窗口候诊压力高于平日 22%。',
       '儿科候诊时长和投诉风险同步上升。',
+    ],
+    analysisBasis: [
+      '节假日前后门急诊数据集，用于比较就诊峰谷和收入变化。',
+      '科室承压分析，用于识别内科、儿科和急诊资源压力。',
+      '分时段候诊数据，用于校验节后首日高峰风险。',
     ],
     recommendations: [
       '节后首日增加导诊、挂号和检验窗口人员。',

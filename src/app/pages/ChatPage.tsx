@@ -14,6 +14,8 @@ export default function ChatPage() {
     <AgentWorkspace
       mode="ask"
       sidebarOpen={sidebarOpen}
+      onSidebarOpen={openSidebar}
+      onSidebarClose={closeSidebar}
       onExecutionStart={openSidebar}
       onDeepAnalysisStart={closeSidebar}
     />

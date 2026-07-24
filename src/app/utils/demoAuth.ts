@@ -1,3 +1,5 @@
+import { clearHistoryVisibleCount } from './conversationHistoryStorage';
+
 export const AUTH_STORAGE_KEY = 'chatbi-medical-authenticated';
 export const PERSISTENT_AUTH_STORAGE_KEY = 'chatbi-medical-persistent-authenticated';
 export const PERSISTENT_AUTH_EXPIRES_AT_STORAGE_KEY = 'chatbi-medical-persistent-auth-expires-at';
@@ -30,6 +32,7 @@ export function clearDemoAuthSession() {
   window.localStorage.removeItem(PERSISTENT_AUTH_STORAGE_KEY);
   window.localStorage.removeItem(PERSISTENT_AUTH_EXPIRES_AT_STORAGE_KEY);
   window.localStorage.removeItem(AUTH_USERNAME_STORAGE_KEY);
+  clearHistoryVisibleCount();
 }
 
 export function getDemoAuthUsername() {
@@ -64,6 +67,7 @@ export function hasDemoAuthSession() {
     window.localStorage.removeItem(PERSISTENT_AUTH_STORAGE_KEY);
     window.localStorage.removeItem(PERSISTENT_AUTH_EXPIRES_AT_STORAGE_KEY);
     window.localStorage.removeItem(AUTH_USERNAME_STORAGE_KEY);
+    clearHistoryVisibleCount();
   }
 
   return isPersistentSessionValid;

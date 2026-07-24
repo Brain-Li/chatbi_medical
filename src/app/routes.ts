@@ -50,6 +50,7 @@ export const router = createBrowserRouter([
       { path: 'home', Component: HomePage, loader: requireLogin },
       { path: 'ask', Component: ChatPage, loader: requireLogin },
       { path: 'report', Component: ReportPage, loader: requireLogin },
+      { path: 'report/case/:id', Component: ReportPreviewPage },
       { path: 'report/preview/:id', Component: ReportPreviewPage, loader: requireLogin },
       { path: 'report-subscriptions', Component: ReportSubscriptionsPage, loader: requireLogin },
       { path: 'templates', Component: TemplatesPage, loader: requireLogin },

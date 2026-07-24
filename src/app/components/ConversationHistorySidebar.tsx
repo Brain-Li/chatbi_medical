@@ -1,5 +1,5 @@
 import { type UIEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Ellipsis, PanelLeftClose, Pencil, Trash2 } from 'lucide-react';
+import { Ellipsis, Pencil, Trash2 } from 'lucide-react';
 import historyCorner from '../../assets/figma-home/history-corner.png';
 import newQaIcon from '../../assets/figma-home/new-qa-icon.svg';
 import askIcon from '../../assets/figma-home/chat-bubble-line.svg';
@@ -7,6 +7,13 @@ import askMutedIcon from '../../assets/figma-home/chat-bubble-line-muted.svg';
 import reportIcon from '../../assets/figma-home/pie-chart-box-line.svg';
 import reportSelectedIcon from '../../assets/figma-home/pie-chart-box-line-selected.svg';
 import { Conversation } from '../types';
+import {
+  HISTORY_BATCH_SIZE,
+  HISTORY_VISIBLE_COUNT_STORAGE_KEY,
+  persistHistoryVisibleCount,
+  readHistoryVisibleCount,
+} from '../utils/conversationHistoryStorage';
+import { HistorySidebarToggle } from './HistorySidebarToggle';
 import {
   Dialog,
   DialogContent,
@@ -36,9 +43,12 @@ type ConversationHistorySidebarProps = {
   onNewConversation: () => void;
   onSelectConversation: (conversationId: string) => void;
   onRenameConversation: (conversationId: string, title: string) => void;
-  onDeleteConversation: (conversationId: string) => void;
+  onDeleteConversation: (conversationId: string) => boolean | void;
   onCollapse?: () => void;
 };
+
+let preservedHistoryScrollTop = 0;
+const HISTORY_LOAD_MORE_THRESHOLD = 80;
 
 function startOfDay(value: Date) {
   const next = new Date(value);
@@ -84,20 +94,23 @@ function formatConversationDetailTimestamp(lastQuestionAt: Date) {
   return `${month}-${day} ${hours}:${minutes}`;
 }
 
+function sortConversationsForHistory(conversations: Conversation[]) {
+  return [...conversations].sort((first, second) => {
+    if (first.isDemo && second.isDemo) {
+      return (first.demoOrder ?? 0) - (second.demoOrder ?? 0);
+    }
+    if (first.isDemo) return -1;
+    if (second.isDemo) return 1;
+    return getConversationLastQuestionAt(second).getTime()
+      - getConversationLastQuestionAt(first).getTime();
+  });
+}
+
 function groupConversationsByDate(conversations: Conversation[]): ConversationGroup[] {
   const order = ['异常演示', '今天', '更早'];
   const groups = new Map<string, Conversation[]>();
 
-  [...conversations]
-    .sort((first, second) => {
-      if (first.isDemo && second.isDemo) {
-        return (first.demoOrder ?? 0) - (second.demoOrder ?? 0);
-      }
-      if (first.isDemo) return -1;
-      if (second.isDemo) return 1;
-      return getConversationLastQuestionAt(second).getTime()
-        - getConversationLastQuestionAt(first).getTime();
-    })
+  sortConversationsForHistory(conversations)
     .forEach((conversation) => {
       const label = getConversationGroupLabel(
         conversation,
@@ -131,6 +144,7 @@ export function ConversationHistorySidebar({
     useState<Conversation | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
   const [isScrolling, setIsScrolling] = useState(false);
+  const [visibleConversationCount, setVisibleConversationCount] = useState(readHistoryVisibleCount);
   const [scrollbarThumb, setScrollbarThumb] = useState({
     height: 0,
     top: 0,
@@ -139,10 +153,51 @@ export function ConversationHistorySidebar({
   const scrollTimerRef = useRef<number | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const selectedConversationRef = useRef<HTMLDivElement>(null);
-  const conversationGroups = useMemo(
-    () => groupConversationsByDate(conversations),
+  const orderedConversations = useMemo(
+    () => sortConversationsForHistory(conversations),
     [conversations],
   );
+  const visibleConversations = useMemo(
+    () => orderedConversations.slice(0, visibleConversationCount),
+    [orderedConversations, visibleConversationCount],
+  );
+  const conversationGroups = useMemo(
+    () => groupConversationsByDate(visibleConversations),
+    [visibleConversations],
+  );
+
+  useEffect(() => {
+    const selectedIndex = orderedConversations.findIndex(
+      (conversation) => conversation.id === selectedConversationId,
+    );
+    if (selectedIndex < visibleConversationCount) return;
+
+    setVisibleConversationCount(
+      Math.ceil((selectedIndex + 1) / HISTORY_BATCH_SIZE) * HISTORY_BATCH_SIZE,
+    );
+  }, [orderedConversations, selectedConversationId, visibleConversationCount]);
+
+  useEffect(() => {
+    persistHistoryVisibleCount(visibleConversationCount);
+  }, [visibleConversationCount]);
+
+  useEffect(() => {
+    const syncVisibleConversationCount = (event: StorageEvent) => {
+      if (event.key !== HISTORY_VISIBLE_COUNT_STORAGE_KEY) return;
+      setVisibleConversationCount(readHistoryVisibleCount());
+    };
+
+    window.addEventListener('storage', syncVisibleConversationCount);
+    return () => window.removeEventListener('storage', syncVisibleConversationCount);
+  }, []);
+
+  useLayoutEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) return;
+
+    const maxScrollTop = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight);
+    scrollContainer.scrollTop = Math.min(preservedHistoryScrollTop, maxScrollTop);
+  }, []);
 
   useLayoutEffect(() => {
     const scrollContainer = scrollContainerRef.current;
@@ -170,6 +225,17 @@ export function ConversationHistorySidebar({
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
     const { clientHeight, scrollHeight, scrollTop } = event.currentTarget;
     const maxScrollTop = scrollHeight - clientHeight;
+
+    preservedHistoryScrollTop = scrollTop;
+
+    if (
+      scrollHeight - clientHeight - scrollTop <= HISTORY_LOAD_MORE_THRESHOLD
+      && visibleConversationCount < orderedConversations.length
+    ) {
+      setVisibleConversationCount((current) =>
+        Math.min(current + HISTORY_BATCH_SIZE, orderedConversations.length),
+      );
+    }
 
     if (maxScrollTop <= 0) {
       setScrollbarThumb({ height: 0, top: 0, visible: false });
@@ -221,7 +287,7 @@ export function ConversationHistorySidebar({
         style={{ fontFamily: '"PingFang SC", "PingFang_SC", "Microsoft YaHei", Arial, sans-serif' }}
       >
         <div className="flex shrink-0 flex-col gap-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-4">
             <button
               type="button"
               onClick={onNewConversation}
@@ -231,15 +297,7 @@ export function ConversationHistorySidebar({
               <span className="min-w-0 flex-1 truncate">{newConversationLabel}</span>
             </button>
             {onCollapse && (
-              <button
-                type="button"
-                onClick={onCollapse}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] bg-white text-[#4e5969] transition-colors hover:bg-[#f7f8fa]"
-                aria-label="收起历史对话"
-                title="收起历史对话"
-              >
-                <PanelLeftClose className="h-4 w-4" />
-              </button>
+              <HistorySidebarToggle expanded onClick={onCollapse} />
             )}
           </div>
 
@@ -400,7 +458,7 @@ export function ConversationHistorySidebar({
           if (!open) setPendingRenameConversation(null);
         }}
       >
-        <DialogContent className="max-w-[360px] gap-5 rounded-[8px] border-[#e5e6eb] p-5 shadow-[0_12px_32px_rgba(29,33,41,0.16)] [&>[data-slot=dialog-close]]:hidden">
+        <DialogContent className="max-w-[360px] gap-5 rounded-[8px] border-[#e5e6eb] p-5 shadow-[0_12px_32px_rgba(29,33,41,0.16)]">
           <DialogHeader className="gap-2">
             <DialogTitle className="text-[18px] leading-[26px]">编辑对话名称</DialogTitle>
           </DialogHeader>
@@ -447,7 +505,10 @@ export function ConversationHistorySidebar({
           if (!open) setPendingDeleteConversation(null);
         }}
       >
-        <DialogContent className="max-w-[360px] gap-5 rounded-[8px] border-[#e5e6eb] p-5 shadow-[0_12px_32px_rgba(29,33,41,0.16)] [&>[data-slot=dialog-close]]:hidden">
+        <DialogContent
+          onPointerDownOutside={() => setPendingDeleteConversation(null)}
+          className="max-w-[360px] gap-5 rounded-[8px] border-[#e5e6eb] p-5 shadow-[0_12px_32px_rgba(29,33,41,0.16)]"
+        >
           <DialogHeader className="gap-2">
             <DialogTitle className="text-[18px] leading-[26px]">删除历史对话</DialogTitle>
             <DialogDescription className="leading-[22px] text-[#4e5969]">
@@ -466,7 +527,8 @@ export function ConversationHistorySidebar({
               type="button"
               onClick={() => {
                 if (pendingDeleteConversation) {
-                  onDeleteConversation(pendingDeleteConversation.id);
+                  const isNavigatingAway = onDeleteConversation(pendingDeleteConversation.id);
+                  if (isNavigatingAway) return;
                 }
                 setPendingDeleteConversation(null);
               }}

@@ -8,3 +8,7 @@ dist/
 .env.*
 !.env.example
 artifacts/
+# 内部设计资料
+CODEX_智能问数高保真原型生成提示词.md
+guidelines/report-template-source-copy.md
+guidelines/report-template-trigger-phrases.md

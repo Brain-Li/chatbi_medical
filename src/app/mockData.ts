@@ -39,6 +39,7 @@
   TimeGrain,
 } from './types';
 import { buildAnalysisReportFileName } from './utils/reportFileName';
+import { summarizeReportTopic } from './utils/reportTopic';
 
 export const skills: Skill[] = [
   {
@@ -509,6 +510,7 @@ export const reportTemplates: ReportTemplate[] = [
     triggerPhrases: ['经营日报', '日报', '昨天', '今日经营', '门诊经营日报', '住院经营日报'],
     templatePrompt: `你是医院经营分析负责人，请按“日报”方式生成报告。
 报告先输出 3 条以内的管理层摘要，再展开关键指标、趋势对比、异常提示和行动建议。
+报告正文前部使用 4 个指标卡展示收入、门诊量/住院量、药占比/耗占比等核心结果，并至少提供 1 张趋势或对比图表。
 分析时重点关注收入、门诊量/住院量、药占比、耗占比、检查收入和重点科室贡献变化。
 结论必须先说业务影响，再说明可能原因；如果缺少口径或周期，请在报告开头标注默认假设。`,
     applicableAgentIds: ['agent-report-daily'],
@@ -551,6 +553,7 @@ export const reportTemplates: ReportTemplate[] = [
     triggerPhrases: ['科室运营月报', '运营月报', '月报', '本月', '上月', '科室经营'],
     templatePrompt: `你是科室运营分析专家，请按“月报”方式生成结构化报告。
 报告结构包含：科室总览、同比环比趋势、收入/流量/费用结构拆解、异常科室或病种提示、下月管理建议。
+报告正文前部使用 3-4 个指标卡展示本月核心结果，并用折线图呈现同比环比趋势，必要时增加结构占比图。
 分析时优先解释趋势背后的结构变化，不只罗列数字；需要突出对科室负责人的可执行动作。
 输出语气面向经营管理场景，结论清晰、证据充分、建议具体。`,
     applicableAgentIds: ['agent-report-daily'],
@@ -593,6 +596,7 @@ export const reportTemplates: ReportTemplate[] = [
     triggerPhrases: ['药耗结构', '药占比', '耗占比', '费用结构', '药耗专题'],
     templatePrompt: `你是药耗结构专题分析专家，请围绕药占比、耗占比和费用结构变化生成专题报告。
 报告先判断总体是否异常，再拆解到费用组、科室、病种或项目，并说明主要贡献项。
+报告正文前部使用指标卡展示药占比、耗占比和异常费用规模，并使用饼图或柱状图呈现费用结构与主要贡献项。
 对异常项要给出可复核线索，例如变化幅度、连续期数、贡献排名和建议复核方向。
 最后输出控费、结构优化或进一步核查建议，避免直接给出临床诊断结论。`,
     applicableAgentIds: ['agent-report-special'],
@@ -635,6 +639,7 @@ export const reportTemplates: ReportTemplate[] = [
     triggerPhrases: ['异常费用', '费用异常', '异常费用专题', '费用波动', '异常组'],
     templatePrompt: `你是异常费用复核分析专家，请按“异常概览 -> 异常聚类 -> 证据链 -> 复核建议”的结构生成报告。
 先界定观察期、影响范围和异常等级，再列出主要异常费用组及其贡献。
+报告正文前部使用指标卡展示异常数量、异常金额和影响范围，并使用柱状图呈现异常费用组贡献排名。
 分析中要区分经营异常、结构变化和可能的数据口径问题；每个结论都要附带可复核的数据线索。
 报告末尾给出下一步人工复核路径和优先级。`,
     applicableAgentIds: ['agent-report-special'],
@@ -665,6 +670,119 @@ export const reportTemplates: ReportTemplate[] = [
     pushChannels: ['站内消息'],
     complianceNotes: ['异常费用结果需要人工复核后再进入治理流程。', '病例级明细受权限控制，默认只展示汇总证据。'],
   },
+  ...([
+    {
+      id: 'template-outpatient-volume-daily',
+      name: '门诊量趋势日报模板',
+      category: '日报',
+      createdAt: '2026-06-14 09:20',
+      status: 'published',
+      triggerPhrases: ['门诊量日报', '门诊趋势', '今日门诊', '门诊波动'],
+    },
+    {
+      id: 'template-bed-operation-daily',
+      name: '住院床位运营日报模板',
+      category: '日报',
+      createdAt: '2026-06-13 08:45',
+      status: 'published',
+      triggerPhrases: ['床位日报', '床位使用率', '住院运营', '空床情况'],
+    },
+    {
+      id: 'template-medical-tech-monthly',
+      name: '医技科室效率月报模板',
+      category: '月报',
+      createdAt: '2026-06-12 15:10',
+      status: 'published',
+      triggerPhrases: ['医技月报', '检查效率', '医技科室', '设备利用率'],
+    },
+    {
+      id: 'template-surgery-operation-monthly',
+      name: '手术运营月报模板',
+      category: '月报',
+      createdAt: '2026-06-11 11:35',
+      status: 'published',
+      triggerPhrases: ['手术月报', '手术运营', '手术量', '手术效率'],
+    },
+    {
+      id: 'template-drg-operation-monthly',
+      name: 'DRG运营分析月报模板',
+      category: '月报',
+      createdAt: '2026-06-10 10:05',
+      status: 'disabled',
+      triggerPhrases: ['DRG月报', 'DRG运营', '病组分析', '病例组合'],
+    },
+    {
+      id: 'template-patient-flow-special',
+      name: '患者流量专题模板',
+      category: '专题',
+      createdAt: '2026-06-09 16:30',
+      status: 'published',
+      triggerPhrases: ['患者流量', '就诊流量', '流量专题', '患者来源'],
+    },
+    {
+      id: 'template-average-los-special',
+      name: '平均住院日专题模板',
+      category: '专题',
+      createdAt: '2026-06-08 14:15',
+      status: 'published',
+      triggerPhrases: ['平均住院日', '住院日专题', '住院效率', '出院周期'],
+    },
+    {
+      id: 'template-high-value-consumable-special',
+      name: '高值耗材专题模板',
+      category: '专题',
+      createdAt: '2026-06-07 13:40',
+      status: 'published',
+      triggerPhrases: ['高值耗材', '耗材专题', '耗材费用', '重点耗材'],
+    },
+    {
+      id: 'template-medical-revenue-structure-special',
+      name: '医疗收入结构专题模板',
+      category: '专题',
+      createdAt: '2026-06-06 10:50',
+      status: 'published',
+      triggerPhrases: ['收入结构', '医疗收入', '收入专题', '收入构成'],
+    },
+    {
+      id: 'template-outpatient-peak-special',
+      name: '门急诊高峰专题模板',
+      category: '专题',
+      createdAt: '2026-06-05 09:35',
+      status: 'disabled',
+      triggerPhrases: ['门急诊高峰', '高峰时段', '门诊排队', '急诊流量'],
+    },
+    {
+      id: 'template-department-performance-monthly',
+      name: '科室绩效趋势月报模板',
+      category: '月报',
+      createdAt: '2026-06-04 17:20',
+      status: 'published',
+      triggerPhrases: ['科室绩效', '绩效月报', '绩效趋势', '科室对比'],
+    },
+  ] satisfies Array<Pick<ReportTemplate, 'id' | 'name' | 'category' | 'createdAt' | 'status' | 'triggerPhrases'>>).map<ReportTemplate>((template) => ({
+    ...template,
+    description: `${template.name}演示数据，用于查看模板列表和分页效果。`,
+    version: 'v1.0',
+    templatePrompt: `请围绕“${template.name.replace('模板', '')}”生成结构化经营分析报告，包含核心摘要、趋势分析、异常提示和管理建议。报告正文前部使用 3-4 个指标卡展示核心结果，并根据主题至少生成 1 张趋势、对比或结构图表，图表标题和统计口径需清晰。`,
+    applicableAgentIds: [template.category === '专题' ? 'agent-report-special' : 'agent-report-daily'],
+    datasetIds: ['semantic-outpatient', 'semantic-inpatient'],
+    skillIds: ['skill-department-revenue', 'skill-patient-flow'],
+    parameters: [],
+    analysisSteps: ['汇总核心指标', '对比趋势变化', '识别异常项目', '生成管理建议'],
+    comparisonMethods: ['同比', '环比'],
+    anomalyRules: ['指标变化超过预警阈值', '连续两期趋势异常'],
+    attributionPath: ['全院', '科室', '指标'],
+    sections: [
+      { id: `${template.id}-summary`, title: '核心摘要', required: true, description: '概括主要经营结论。' },
+      { id: `${template.id}-trend`, title: '趋势分析', required: true, description: '展示关键指标变化。' },
+      { id: `${template.id}-actions`, title: '管理建议', required: false, description: '给出后续管理动作。' },
+    ],
+    metricBlocks: [],
+    chartBlocks: [],
+    outputFormats: ['PDF', 'PNG'],
+    pushChannels: ['站内消息'],
+    complianceNotes: ['演示模板仅用于界面与分页效果验证。'],
+  })),
 ];
 
 export const reportSubscriptions: ReportSubscription[] = [
@@ -2872,7 +2990,7 @@ function resolveTimeDimension(question: string, dataset: SemanticDataset, indica
   return { timeDimension, range: dateRange.label, dateRange, grain, matchedTerm, timeField, timeBinding };
 }
 
-function resolveMetricSemantic(question: string, agent: Agent) {
+function resolveMetricSemantics(question: string, agent: Agent) {
   const agentDatasetIds = agent.datasetIds ?? semanticDatasets.map((dataset) => dataset.id);
   const candidateSemantics = metricSemantics.filter((semantic) =>
     getMetricSemanticDatasetIds(semantic).some((datasetId) => agentDatasetIds.includes(datasetId)),
@@ -2912,11 +3030,9 @@ function resolveMetricSemantic(question: string, agent: Agent) {
     .map(scoreMetric)
     .sort((left, right) => right.confidence - left.confidence);
 
-  return (
-    scoredSemantics.find((item) => item.confidence >= 0.55)?.semantic ??
-    candidateSemantics[0] ??
-    metricSemantics[0]
-  );
+  return scoredSemantics
+    .filter((item) => item.confidence >= 0.55)
+    .map((item) => item.semantic);
 }
 
 function resolveDimensionMatches(question: string, dataset: SemanticDataset, metricSemantic?: MetricSemantic) {
@@ -3012,18 +3128,22 @@ function buildResultEvidence(
   metricIds: string[] = [],
   skillIds: string[] = [],
 ) {
-  const metricSemantic = resolveMetricSemantic(question, agent);
+  const matchedMetricSemantics = resolveMetricSemantics(question, agent);
+  const metricSemantic = matchedMetricSemantics[0];
   const preliminaryDimensionMatches = resolveDimensionMatches(question, getDatasetForAgent(agent), metricSemantic);
   const dataset = selectDatasetForQuery(agent, metricSemantic, preliminaryDimensionMatches, question);
   const dimensionMatches = resolveDimensionMatches(question, dataset, metricSemantic);
   const metricsFromOptions = indicatorAssets.filter((indicator) => metricIds.includes(indicator.id));
-  const mappedIndicators = (metricSemantic?.indicatorIds ?? [])
+  const mappedIndicators = matchedMetricSemantics
+    .flatMap((semantic) => semantic.indicatorIds)
     .map((indicatorId) => indicatorAssets.find((indicator) => indicator.id === indicatorId))
-    .filter((indicator): indicator is IndicatorAsset => Boolean(indicator));
-  const candidateMetrics = metricsFromOptions.length
-    ? metricsFromOptions
-    : mappedIndicators.length
-      ? mappedIndicators
+    .filter((indicator, index, indicators): indicator is IndicatorAsset =>
+      Boolean(indicator) && indicators.findIndex((item) => item?.id === indicator?.id) === index,
+    );
+  const candidateMetrics = mappedIndicators.length
+    ? mappedIndicators
+    : metricsFromOptions.length
+      ? metricsFromOptions
       : getIndicatorsForAgent(agent);
   const indicators = candidateMetrics
     .filter((indicator) => Boolean(getEnabledMetricBinding(indicator, dataset.id)))
@@ -3189,6 +3309,7 @@ type ResultBuildOptions = {
   manualSkillIds?: string[];
   reportTemplateId?: string;
   reportTemplates?: ReportTemplate[];
+  reportTemplateUsage?: ReportTemplateUsage;
 };
 
 function includesLoose(source: string, target: string) {
@@ -3201,27 +3322,137 @@ function getReportTemplatePrompt(template: ReportTemplate) {
   return template.templatePrompt || template.description || template.sections.map((section) => section.description).join(' ');
 }
 
+function createStableTemplateSuffix(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash.toString(36);
+}
+
+function generateReportTemplate(agent: Agent, question: string, options: ResultBuildOptions): ReportTemplate {
+  const datasetIds = (agent.datasetIds ?? [])
+    .filter((datasetId) => semanticDatasets.some((dataset) => dataset.id === datasetId));
+  const availableIndicators = indicatorAssets.filter(
+    (indicator) => indicator.status === '已发布' && datasetIds.includes(indicator.datasetId),
+  );
+  const scoredIndicators = availableIndicators
+    .map((indicator) => {
+      let score = includesLoose(question, indicator.name) ? 10 : 0;
+      score += indicator.synonyms.filter((synonym) => includesLoose(question, synonym)).length * 6;
+      score += indicator.sampleQuestions.filter((sample) =>
+        sample.split(/[，。；、？?\s]+/).some((term) => term.length >= 2 && includesLoose(question, term)),
+      ).length;
+      return { indicator, score };
+    })
+    .sort((left, right) => right.score - left.score);
+  const selectedIndicators = (
+    scoredIndicators.some((item) => item.score > 0)
+      ? scoredIndicators.filter((item) => item.score > 0)
+      : scoredIndicators
+  ).slice(0, 3).map((item) => item.indicator);
+  const selectedSkillIds = (options.manualSkillIds?.length ? options.manualSkillIds : agent.skills)
+    .filter((skillId) => skills.some((skill) => skill.id === skillId));
+  const metricNames = selectedIndicators.map((indicator) => indicator.name);
+  const metricSummary = metricNames.join('、') || '核心经营指标';
+  const dimensionIds = Array.from(new Set(selectedIndicators.flatMap((indicator) =>
+    indicator.metricBindings.flatMap((binding) => binding.allowedDimensionIds ?? []),
+  ))).slice(0, 3);
+  const reportTopic = summarizeReportTopic(question);
+  const category = /日报|昨日|昨天/.test(question)
+    ? '日报'
+    : /月报|本月|上月/.test(question)
+      ? '月报'
+      : '专题报告';
+  const templateName = /(?:报告|周报|日报|月报|季报|年报)$/.test(reportTopic)
+    ? reportTopic
+    : `${reportTopic}报告`;
+  const generatedId = `template-agent-${agent.id}-${createStableTemplateSuffix(question)}`;
+  const primaryDimensionId = dimensionIds[0];
+
+  return {
+    id: generatedId,
+    name: templateName,
+    description: `Agent 根据“${question}”动态生成的临时报告模板。`,
+    category,
+    version: 'AI 临时版',
+    createdAt: new Date().toLocaleString('zh-CN', { hour12: false }),
+    status: 'draft',
+    triggerPhrases: [],
+    templatePrompt: `围绕“${question}”生成结构化分析报告，重点分析${metricSummary}，结论必须基于可访问的数据与指标。`,
+    applicableAgentIds: [agent.id],
+    datasetIds,
+    skillIds: selectedSkillIds,
+    parameters: [{
+      id: `${generatedId}-period`,
+      name: 'period',
+      label: '统计周期',
+      required: true,
+      defaultValue: category === '日报' ? '昨日' : category === '月报' ? '本月' : '最近30天',
+    }],
+    analysisSteps: [
+      `确认${metricSummary}的统计周期和数据范围`,
+      `计算${metricSummary}并校验指标口径`,
+      dimensionIds.length ? '按可用维度拆解趋势和结构变化' : '对比关键指标的趋势和变化幅度',
+      '识别异常变化并整理数据证据',
+      '形成报告结论、风险提示和行动建议',
+    ],
+    comparisonMethods: ['趋势对比', '环比'],
+    anomalyRules: ['指标变化超出历史波动范围时提示关注'],
+    attributionPath: dimensionIds,
+    sections: [
+      { id: `${generatedId}-summary`, title: '分析摘要', required: true, description: '概括核心结论和业务影响。' },
+      { id: `${generatedId}-metrics`, title: '核心指标', required: true, description: `展示${metricSummary}。` },
+      { id: `${generatedId}-trend`, title: '趋势与结构', required: true, description: '呈现趋势、对比和维度拆解结果。' },
+      { id: `${generatedId}-alerts`, title: '异常与风险', required: true, description: '整理异常变化及其数据证据。' },
+      { id: `${generatedId}-actions`, title: '结论与建议', required: true, description: '给出可执行的管理建议。' },
+      { id: `${generatedId}-method`, title: '口径与说明', required: true, description: '说明统计口径、数据范围和合规约束。' },
+    ],
+    metricBlocks: selectedIndicators.map((indicator) => ({
+      id: `${generatedId}-${indicator.id}`,
+      metricId: indicator.id,
+      label: indicator.name,
+      dimensionIds: indicator.metricBindings[0]?.allowedDimensionIds?.slice(0, 3) ?? [],
+      comparison: ['趋势对比', '环比'],
+    })),
+    chartBlocks: selectedIndicators.length ? [{
+      id: `${generatedId}-chart`,
+      title: `${metricSummary}趋势`,
+      type: selectedIndicators.length > 1 ? 'bar' : 'line',
+      metricIds: selectedIndicators.map((indicator) => indicator.id),
+      dimensionIds: primaryDimensionId ? [primaryDimensionId] : [],
+      sortBy: primaryDimensionId,
+    }] : [],
+    outputFormats: ['PDF', 'PNG'],
+    pushChannels: ['站内消息'],
+    complianceNotes: ['报告仅基于当前用户有权限的数据生成。', '涉及患者级数据时默认使用聚合或脱敏结果。'],
+  };
+}
+
 function resolveReportTemplate(agent: Agent, question: string, options: ResultBuildOptions = {}) {
   const templatePool = options.reportTemplates ?? reportTemplates;
-  const candidateTemplates = templatePool.filter((template) => {
-    if (options.reportTemplateId) return template.id === options.reportTemplateId;
-    return template.status === 'published';
-  });
+  const selectedTemplate = options.reportTemplateId
+    ? templatePool.find((template) =>
+        template.id === options.reportTemplateId
+        && template.status === 'published',
+      )
+    : undefined;
 
-  const fallbackTemplate =
-    candidateTemplates.find((template) => template.id === agent.reportConfig?.defaultTemplateId) ??
-    candidateTemplates[0] ??
-    templatePool.find((template) => template.status === 'published') ??
-    templatePool[0];
-
-  if (!agent.reportConfig?.autoMatchTemplate && !options.reportTemplateId) {
+  if (selectedTemplate) {
     return {
-      template: fallbackTemplate,
-      matchReason: fallbackTemplate ? '使用 Agent 默认报告模板' : '未配置报告模板',
+      template: selectedTemplate,
+      source: 'user-selected' as const,
+      matchScore: 100,
+      matchReason: '使用用户选择的报告模板',
     };
   }
 
-  const scoredTemplates = candidateTemplates.map((template) => {
+  const candidateTemplates = templatePool.filter((template) =>
+    template.status === 'published'
+    && (!template.applicableAgentIds.length || template.applicableAgentIds.includes(agent.id)),
+  );
+
+  const scoredTemplates = agent.reportConfig?.autoMatchTemplate === false ? [] : candidateTemplates.map((template) => {
     let score = 0;
     const reasons: string[] = [];
 
@@ -3248,45 +3479,64 @@ function resolveReportTemplate(agent: Agent, question: string, options: ResultBu
       .split(/[，。；、\s]+/)
       .map((term) => term.trim())
       .filter((term) => term.length >= 2);
-    promptTerms.forEach((term) => {
-      if (includesLoose(question, term)) {
-        score += 1;
-        reasons.push(`命中模板提示词：${term}`);
-      }
+    promptTerms.filter((term) => includesLoose(question, term)).slice(0, 3).forEach((term) => {
+      score += 1;
+      reasons.push(`命中模板提示词：${term}`);
     });
 
     return { template, score, reasons };
   });
 
-  const bestMatch = scoredTemplates.sort((left, right) => right.score - left.score)[0];
+  const sortedTemplates = scoredTemplates.sort((left, right) => right.score - left.score);
+  const bestMatch = sortedTemplates[0];
+  const runnerUp = sortedTemplates[1];
+  const hasConfidentMatch = Boolean(
+    bestMatch
+    && bestMatch.score >= 6
+    && (!runnerUp || bestMatch.score - runnerUp.score >= 2),
+  );
 
-  if (!bestMatch || bestMatch.score <= 0) {
+  if (hasConfidentMatch && bestMatch) {
     return {
-      template: fallbackTemplate,
-      matchReason: fallbackTemplate ? '未命中明确模板，使用 Agent 默认报告模板' : '未配置报告模板',
+      template: bestMatch.template,
+      source: 'library-matched' as const,
+      matchScore: bestMatch.score,
+      matchReason: bestMatch.reasons[0] ?? '根据问题自动匹配报告模板',
     };
   }
 
+  const generationReason = options.reportTemplateId
+    ? '用户选择的模板不可用，已由 Agent 动态生成临时模板'
+    : agent.reportConfig?.autoMatchTemplate === false
+      ? '当前 Agent 已关闭模板自动匹配，已动态生成临时模板'
+      : candidateTemplates.length
+        ? '已检索启用模板但未达到可信匹配阈值，已动态生成临时模板'
+        : '当前没有适用的启用模板，已动态生成临时模板';
+
   return {
-    template: bestMatch.template,
-    matchReason: bestMatch.reasons[0] ?? '根据问题自动匹配报告模板',
+    template: generateReportTemplate(agent, question, options),
+    source: 'agent-generated' as const,
+    matchReason: generationReason,
   };
 }
 
-function buildReportTemplateUsage(
+export function resolveReportTemplateUsage(
   agent: Agent,
   question: string,
   options: ResultBuildOptions = {},
-): ReportTemplateUsage | undefined {
-  const { template, matchReason } = resolveReportTemplate(agent, question, options);
-
-  if (!template) return undefined;
+): ReportTemplateUsage {
+  if (options.reportTemplateUsage) return options.reportTemplateUsage;
+  const { template, source, matchScore, matchReason } = resolveReportTemplate(agent, question, options);
 
   return {
     templateId: template.id,
     name: template.name,
     category: template.category,
     version: template.version,
+    source,
+    matchScore,
+    isTemporary: source === 'agent-generated',
+    templateSnapshot: template,
     sections: template.sections.map((section) => section.title),
     datasetNames: template.datasetIds
       .map((datasetId) => semanticDatasets.find((dataset) => dataset.id === datasetId)?.name)
@@ -3298,6 +3548,14 @@ function buildReportTemplateUsage(
     complianceNotes: template.complianceNotes,
     matchReason,
   };
+}
+
+function buildReportTemplateUsage(
+  agent: Agent,
+  question: string,
+  options: ResultBuildOptions = {},
+): ReportTemplateUsage {
+  return resolveReportTemplateUsage(agent, question, options);
 }
 
 function buildSingleSkillAskResult(primarySkillId: string, question: string): AnalysisResultData {
