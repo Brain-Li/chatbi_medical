@@ -1,9 +1,9 @@
-import { type UIEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, type UIEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Ellipsis, Pencil, Trash2 } from 'lucide-react';
 import historyCorner from '../../assets/figma-home/history-corner.png';
 import newQaIcon from '../../assets/figma-home/new-qa-icon.svg';
-import askIcon from '../../assets/figma-home/chat-bubble-line.svg';
-import askMutedIcon from '../../assets/figma-home/chat-bubble-line-muted.svg';
+import askIcon from '../../assets/figma-home/bar-chart-box-line-selected.svg';
+import askMutedIcon from '../../assets/figma-home/bar-chart-box-line.svg';
 import reportIcon from '../../assets/figma-home/pie-chart-box-line.svg';
 import reportSelectedIcon from '../../assets/figma-home/pie-chart-box-line-selected.svg';
 import { Conversation } from '../types';
@@ -127,7 +127,7 @@ function groupConversationsByDate(conversations: Conversation[]): ConversationGr
     .filter((group) => group.items.length > 0);
 }
 
-export function ConversationHistorySidebar({
+function ConversationHistorySidebarComponent({
   conversations,
   selectedConversationId,
   newConversationLabel,
@@ -542,3 +542,50 @@ export function ConversationHistorySidebar({
     </aside>
   );
 }
+
+function haveSameHistoryConversations(
+  previousConversations: Conversation[],
+  nextConversations: Conversation[],
+) {
+  if (previousConversations.length !== nextConversations.length) return false;
+
+  const previousOrdered = sortConversationsForHistory(previousConversations);
+  const nextOrdered = sortConversationsForHistory(nextConversations);
+
+  return previousOrdered.every((previousConversation, index) => {
+    const nextConversation = nextOrdered[index];
+    if (!nextConversation) return false;
+
+    const previousFirstQuestion = previousConversation.messages.find(
+      (message) => message.role === 'user',
+    );
+    const nextFirstQuestion = nextConversation.messages.find(
+      (message) => message.role === 'user',
+    );
+
+    return previousConversation.id === nextConversation.id
+      && previousConversation.title === nextConversation.title
+      && previousConversation.workspaceType === nextConversation.workspaceType
+      && previousConversation.isDemo === nextConversation.isDemo
+      && previousConversation.demoOrder === nextConversation.demoOrder
+      && previousFirstQuestion?.content === nextFirstQuestion?.content
+      && getConversationLastQuestionAt(previousConversation).getTime()
+        === getConversationLastQuestionAt(nextConversation).getTime();
+  });
+}
+
+export const ConversationHistorySidebar = memo(
+  ConversationHistorySidebarComponent,
+  (previousProps, nextProps) =>
+    previousProps.selectedConversationId === nextProps.selectedConversationId
+    && previousProps.newConversationLabel === nextProps.newConversationLabel
+    && previousProps.historyLabel === nextProps.historyLabel
+    && previousProps.onNewConversation === nextProps.onNewConversation
+    && previousProps.onSelectConversation === nextProps.onSelectConversation
+    && previousProps.onRenameConversation === nextProps.onRenameConversation
+    && previousProps.onDeleteConversation === nextProps.onDeleteConversation
+    && previousProps.onCollapse === nextProps.onCollapse
+    && haveSameHistoryConversations(previousProps.conversations, nextProps.conversations),
+);
+
+ConversationHistorySidebar.displayName = 'ConversationHistorySidebar';

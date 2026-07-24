@@ -5,6 +5,7 @@ export type AgentGroup = 'ask' | 'report' | 'rca';
 export interface WorkspaceAutoSubmitPayload {
   mode: Extract<AgentType, 'ask' | 'report'>;
   question: string;
+  conversationId?: string;
   nonce?: string;
   deepAnalysisEnabled?: boolean;
   reportTemplateId?: string;

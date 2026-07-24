@@ -1,33 +1,33 @@
-import { X } from 'lucide-react';
-import askIcon from '../../assets/figma-home/chat-bubble-line.svg';
-import askMutedIcon from '../../assets/figma-home/chat-bubble-line-muted.svg';
+import barChartBoxIcon from '../../assets/figma-home/bar-chart-box-line.svg';
+import barChartBoxSelectedIcon from '../../assets/figma-home/bar-chart-box-line-selected.svg';
 import reportIcon from '../../assets/figma-home/pie-chart-box-line.svg';
 import reportSelectedIcon from '../../assets/figma-home/pie-chart-box-line-selected.svg';
 import type { PromptMode } from '../utils/promptMode';
-import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 const modeMeta: Record<
   PromptMode,
-  { label: string; icon: string; selectedIcon: string }
+  { label: string; icon: string; selectedButtonIcon: string }
 > = {
   ask: {
     label: '问数',
-    icon: askMutedIcon,
-    selectedIcon: askIcon,
+    icon: barChartBoxIcon,
+    selectedButtonIcon: barChartBoxSelectedIcon,
   },
   report: {
     label: '报告',
     icon: reportIcon,
-    selectedIcon: reportSelectedIcon,
+    selectedButtonIcon: reportSelectedIcon,
   },
 };
 
 export function PromptModeBar({
   onSelect,
+  selectedMode = null,
   disabled = false,
   className = '',
 }: {
   onSelect: (mode: PromptMode) => void;
+  selectedMode?: PromptMode | null;
   disabled?: boolean;
   className?: string;
 }) {
@@ -39,6 +39,7 @@ export function PromptModeBar({
     >
       {(Object.keys(modeMeta) as PromptMode[]).map((mode) => {
         const item = modeMeta[mode];
+        const isSelected = selectedMode === mode;
 
         return (
           <button
@@ -46,68 +47,23 @@ export function PromptModeBar({
             type="button"
             onClick={() => onSelect(mode)}
             disabled={disabled}
-            className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-[#d4d6dc] bg-white px-3 py-[5px] text-[14px] font-normal leading-[22px] text-[#1d2129] transition-colors hover:border-[#bcd4ff] hover:bg-[#f9fbff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25 disabled:cursor-not-allowed disabled:opacity-50"
-            aria-label={`切换到${item.label}模式`}
+            className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-[#d4d6dc] px-3 py-[5px] text-[14px] font-normal leading-[22px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25 disabled:cursor-not-allowed disabled:opacity-50 ${
+              isSelected
+                ? 'bg-[#e8f3ff] text-[#165dff]'
+                : 'bg-white text-[#1d2129] hover:border-[#bcd4ff] hover:bg-[#f9fbff]'
+            }`}
+            aria-label={isSelected ? `取消${item.label}模式` : `切换到${item.label}模式`}
+            aria-pressed={isSelected}
           >
-            <img src={item.icon} alt="" className="h-4 w-4" />
+            <img
+              src={isSelected ? item.selectedButtonIcon : item.icon}
+              alt=""
+              className="h-4 w-4"
+            />
             {item.label}
           </button>
         );
       })}
-    </div>
-  );
-}
-
-export function PromptModeTag({
-  mode,
-  onRemove,
-  disabled = false,
-  className = '',
-}: {
-  mode: PromptMode;
-  onRemove: () => void;
-  disabled?: boolean;
-  className?: string;
-}) {
-  const item = modeMeta[mode];
-  const removeLabel = disabled ? `生成中暂不可退出${item.label}模式` : `退出${item.label}模式`;
-
-  return (
-    <div
-      className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-[7px] border pl-2.5 pr-1 text-[14px] font-normal leading-[22px] ${
-        mode === 'ask'
-          ? 'border-[#d8e7ff] bg-[#e8f3ff] text-[#165dff]'
-          : 'border-[#d8e7ff] bg-[#e8f3ff] text-[#165dff]'
-      } ${className}`}
-    >
-      <img src={item.selectedIcon} alt="" className="h-3.5 w-3.5" />
-      <span className="whitespace-nowrap">{item.label}</span>
-      <Tooltip delayDuration={240}>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            onClick={onRemove}
-            disabled={disabled}
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] transition-colors hover:bg-[#dfeaff] active:bg-[#d4e3ff] focus-visible:bg-[#dfeaff] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[#165dff]/30 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent"
-            aria-label={removeLabel}
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent
-          side="top"
-          align="center"
-          sideOffset={8}
-          showArrow={false}
-          className="relative rounded-[4px] bg-[#1d2129] px-3 py-1 text-center font-['PingFang_SC'] text-[14px] font-normal leading-[22px] tracking-normal text-white whitespace-nowrap shadow-none"
-        >
-          {removeLabel}
-          <span
-            aria-hidden="true"
-            className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[5px] border-t-[4px] border-x-transparent border-t-[#1d2129]"
-          />
-        </TooltipContent>
-      </Tooltip>
     </div>
   );
 }

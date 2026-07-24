@@ -1,5 +1,5 @@
 import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router';
+import { useLocation, useNavigate, useOutletContext } from 'react-router';
 import { ArrowUp, Eye, EyeOff } from 'lucide-react';
 import { HomePrefillPayload, WorkspaceAutoSubmitPayload } from '../types';
 
@@ -8,23 +8,25 @@ import closeLargeFill from '../../assets/figma-login/close-large-fill.svg';
 import loginIllustration from '../../assets/figma-login/login-illustration.png';
 import arrowRightUpLine from '../../assets/figma-home/arrow-right-up-line.svg';
 import assistantImage from '../../assets/figma-home/assistant.png';
+import caseArrowRightUp from '../../assets/figma-home/case-arrow-right-up.svg';
 import caseTemplateIcon from '../../assets/figma-home/case-template-icon.svg';
 import homeContainerBackground from '../../assets/figma-home/container.png';
 import globalLine from '../../assets/figma-home/global-line.svg';
 import globalLineSelected from '../../assets/figma-home/global-line-selected.svg';
 import micLine from '../../assets/figma-home/mic-line.svg';
-import { AppHeader } from '../components/AppHeader';
-import { AppShellBackground } from '../components/AppShellBackground';
-import { ConversationHistorySidebar } from '../components/ConversationHistorySidebar';
 import { HistorySidebarToggle } from '../components/HistorySidebarToggle';
-import { PrimaryIconNav } from '../components/PrimaryIconNav';
-import { PromptModeBar, PromptModeTag } from '../components/PromptModeBar';
+import { PromptModeBar } from '../components/PromptModeBar';
 import { PromptComposerFrame } from '../components/PromptComposerFrame';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { inferPromptMode, type PromptMode } from '../utils/promptMode';
 import { ReportTemplateSelector } from '../components/ReportTemplateSelector';
 
 type HomeMode = PromptMode;
+type AppShellOutletContext = {
+  sidebarOpen?: boolean;
+  sidebarUserAdjusted?: boolean;
+  openSidebar?: () => void;
+};
 type HomeLocationState = {
   historyOpen?: boolean;
   prefill?: HomePrefillPayload;
@@ -94,21 +96,22 @@ export default function HomePage() {
   const location = useLocation();
   const navigate = useNavigate();
   const {
-    activeConversationIds,
+    sidebarOpen = false,
+    sidebarUserAdjusted = false,
+    openSidebar,
+  } = useOutletContext<AppShellOutletContext>();
+  const {
+    createConversation,
     deleteConversation,
-    getConversationsForWorkspace,
     reportTemplates,
-    renameConversation,
     setActiveConversationForWorkspace,
+    updateConversation,
   } = useWorkspace();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [selectedMode, setSelectedMode] = useState<HomeMode | null>(null);
   const [selectedReportTemplateId, setSelectedReportTemplateId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [deepAnalysisEnabled, setDeepAnalysisEnabled] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(
-    () => Boolean((location.state as { historyOpen?: boolean } | null)?.historyOpen),
-  );
   const [loginOpen, setLoginOpen] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [passwordVisible, setPasswordVisible] = useState(false);
@@ -120,10 +123,6 @@ export default function HomePage() {
   const hasPasswordError = Boolean(loginErrors.password || loginErrors.general);
   const canSubmit = Boolean(draft.trim());
   const visibleSuggestions = selectedMode === 'ask' ? askSuggestions : initialSuggestions;
-  const historyConversations = [
-    ...getConversationsForWorkspace('ask'),
-    ...getConversationsForWorkspace('report'),
-  ];
   const inputPlaceholder =
     selectedMode === 'ask'
       ? '查询指标、走势、异常等各类数据问题...'
@@ -142,12 +141,6 @@ export default function HomePage() {
       setLoginOpen(true);
     }
   }, []);
-
-  useEffect(() => {
-    if ((location.state as { historyOpen?: boolean } | null)?.historyOpen) {
-      setHistoryOpen(true);
-    }
-  }, [location.state]);
 
   useLayoutEffect(() => {
     const state = location.state as HomeLocationState | null;
@@ -172,6 +165,10 @@ export default function HomePage() {
     if (!state?.resetConversationWorkspace) return;
 
     setActiveConversationForWorkspace(state.resetConversationWorkspace, null);
+    setDraft('');
+    setSelectedMode(null);
+    setSelectedReportTemplateId(null);
+    setDeepAnalysisEnabled(false);
 
     const { resetConversationWorkspace: _consumedResetWorkspace, ...remainingState } = state;
     navigate('.', {
@@ -200,6 +197,11 @@ export default function HomePage() {
   }, [location.state, navigate]);
 
   const selectMode = (nextMode: HomeMode) => {
+    if (selectedMode === nextMode) {
+      exitMode();
+      return;
+    }
+
     setSelectedMode(nextMode);
     if (nextMode !== 'ask') setDeepAnalysisEnabled(false);
     window.setTimeout(() => textareaRef.current?.focus(), 0);
@@ -222,18 +224,33 @@ export default function HomePage() {
       resolvedMode === 'ask'
         ? options?.deepAnalysisEnabled ?? deepAnalysisEnabled
         : undefined;
+    const conversationTitle = question.length > 18 ? `${question.slice(0, 18)}...` : question;
+    const conversation = createConversation(resolvedMode, conversationTitle);
+
+    if (resolvedMode === 'ask') {
+      updateConversation(conversation.id, {
+        deepAnalysisEnabled: Boolean(shouldUseDeepAnalysis),
+      });
+    }
 
     const autoSubmit: WorkspaceAutoSubmitPayload = {
       mode: resolvedMode,
       question,
+      conversationId: conversation.id,
       nonce: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       deepAnalysisEnabled: shouldUseDeepAnalysis,
       reportTemplateId: resolvedMode === 'report' ? selectedReportTemplateId ?? undefined : undefined,
-      forceNewConversation: true,
+      forceNewConversation: false,
     };
 
+    const defaultTargetSidebarOpen = resolvedMode === 'ask' && !shouldUseDeepAnalysis;
+
     navigate(resolvedMode === 'ask' ? '/ask' : '/report', {
-      state: { autoSubmit, sidebarOpen: !shouldUseDeepAnalysis },
+      state: {
+        autoSubmit,
+        sidebarOpen: sidebarUserAdjusted ? sidebarOpen : defaultTargetSidebarOpen,
+        sidebarUserAdjusted,
+      },
     });
   };
 
@@ -274,51 +291,15 @@ export default function HomePage() {
   };
 
   return (
-    <div className="relative h-full min-h-[754px] overflow-hidden bg-white font-['Login_Figma_Sans','PingFang_SC','Microsoft_YaHei',sans-serif] text-[#1d2129]">
-      <AppShellBackground />
-
-      <div className="relative z-10 flex h-full min-w-0 flex-col overflow-hidden">
-        <AppHeader />
-
-        <div className="flex min-h-0 flex-1 items-stretch">
-          <PrimaryIconNav />
-
-          {historyOpen && (
-            <ConversationHistorySidebar
-              conversations={historyConversations}
-              selectedConversationId={activeConversationIds.ask}
-              newConversationLabel="新对话"
-              historyLabel="历史对话"
-              onNewConversation={() => {
-                setActiveConversationForWorkspace('ask', null);
-                setDraft('');
-                setSelectedMode(null);
-                setDeepAnalysisEnabled(false);
-                window.setTimeout(() => textareaRef.current?.focus(), 0);
-              }}
-              onSelectConversation={(conversationId) => {
-                const conversation = historyConversations.find((item) => item.id === conversationId);
-                const targetMode = conversation?.workspaceType === 'report' ? 'report' : 'ask';
-                setActiveConversationForWorkspace(targetMode, conversationId);
-                navigate(targetMode === 'report' ? '/report' : '/ask', {
-                  state: { sidebarOpen: historyOpen },
-                });
-              }}
-              onRenameConversation={renameConversation}
-              onDeleteConversation={deleteConversation}
-              onCollapse={() => setHistoryOpen(false)}
-            />
-          )}
-
-          <main className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-tl-[20px] rounded-tr-[20px] bg-white pb-[34px]">
-            <div
-              className="relative h-full overflow-hidden rounded-[inherit]"
-              style={historyOpen ? homeHistoryOpenVerticalOffsetStyle : homeVerticalOffsetStyle}
-            >
-              {!historyOpen && (
+    <div className="relative h-full min-h-0 overflow-hidden rounded-[inherit] bg-white font-['Login_Figma_Sans','PingFang_SC','Microsoft_YaHei',sans-serif] text-[#1d2129]">
+      <div
+        className="relative h-full overflow-hidden rounded-[inherit]"
+        style={sidebarOpen ? homeHistoryOpenVerticalOffsetStyle : homeVerticalOffsetStyle}
+      >
+              {!sidebarOpen && openSidebar && (
                 <HistorySidebarToggle
                   expanded={false}
-                  onClick={() => setHistoryOpen(true)}
+                  onClick={openSidebar}
                   className="absolute left-4 top-6 z-20"
                 />
               )}
@@ -362,20 +343,14 @@ export default function HomePage() {
                   </div>
 
                   <div
-                    className={`relative w-full pt-11 transition-transform duration-[180ms] ease-out motion-reduce:transition-none ${
+                    className={`relative w-full pt-11 ${
                       selectedMode === 'report' ? 'z-30' : 'z-0'
-                    } ${selectedMode ? '-translate-y-[12px]' : 'translate-y-0'
                     }`}
                   >
-                    <div
-                      aria-hidden={selectedMode ? true : undefined}
-                      className={`absolute left-0 top-0 w-full transition-opacity duration-150 motion-reduce:transition-none ${
-                        selectedMode ? 'pointer-events-none opacity-0' : 'opacity-100'
-                      }`}
-                    >
+                    <div className="absolute left-0 top-0 w-full">
                       <PromptModeBar
                         onSelect={selectMode}
-                        disabled={Boolean(selectedMode)}
+                        selectedMode={selectedMode}
                         className="w-full"
                       />
                     </div>
@@ -387,12 +362,6 @@ export default function HomePage() {
                     >
                     <div className="flex min-h-[100px] w-full flex-col justify-between gap-3">
                       <div className="flex min-h-[52px] w-full items-start gap-2">
-                        {selectedMode && (
-                          <PromptModeTag
-                            mode={selectedMode}
-                            onRemove={exitMode}
-                          />
-                        )}
                         <textarea
                           ref={textareaRef}
                           value={draft}
@@ -466,9 +435,7 @@ export default function HomePage() {
                 </div>
 
                 <div
-                  className={`mx-auto mt-[50px] w-full max-w-[960px] transition-transform duration-[180ms] ease-out motion-reduce:transition-none ${
-                    selectedMode ? '-translate-y-[12px]' : 'translate-y-0'
-                  }`}
+                  className="mx-auto mt-[50px] w-full max-w-[960px]"
                 >
                   {selectedMode === 'report' ? (
                     <div className="flex flex-col">
@@ -486,10 +453,15 @@ export default function HomePage() {
                                 key={`${suggestion.title}-${index}`}
                                 type="button"
                                 onClick={() => handleSuggestionClick(suggestion)}
-                                className="flex h-[38px] min-w-0 flex-1 items-center justify-between gap-2 rounded-[8px] border border-[#e5e6eb] bg-white px-4 py-[7px] text-left text-[14px] font-normal leading-[22px] text-[#1d2129] transition-colors hover:border-[#bcd4ff] hover:bg-[#f9fbff]"
+                                className="group flex h-[38px] min-w-0 flex-1 items-center justify-between gap-2 rounded-[8px] border border-[#e5e6eb] bg-white px-4 py-[7px] text-left text-[14px] font-normal leading-[22px] text-[#1d2129] transition-colors hover:border-[#bcd4ff] hover:bg-[#f9fbff]"
                               >
                                 <span className="min-w-0 truncate">{suggestion.title}</span>
-                                <img className="h-4 w-4 shrink-0" src={arrowRightUpLine} alt="" />
+                                <img
+                                  aria-hidden="true"
+                                  className="h-4 w-4 shrink-0 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-active:opacity-100"
+                                  src={arrowRightUpLine}
+                                  alt=""
+                                />
                               </button>
                             ))}
                           </div>
@@ -511,8 +483,14 @@ export default function HomePage() {
                                 href={`/report/case/${reportCase.previewId}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex h-[130px] min-w-0 flex-1 flex-col items-start rounded-[12px] border border-[#e5e6eb] bg-white p-4 text-left transition-colors hover:bg-[#f7f8fa]"
+                                className="group relative flex h-[130px] min-w-0 flex-1 flex-col items-start rounded-[12px] border border-[#e5e6eb] bg-white p-4 text-left transition-colors hover:bg-[#f7f8fa]"
                               >
+                                <img
+                                  aria-hidden="true"
+                                  className="absolute right-4 top-5 h-4 w-4 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-active:opacity-100"
+                                  src={caseArrowRightUp}
+                                  alt=""
+                                />
                                 <div className="flex w-full flex-col gap-2">
                                   <div className="flex w-full items-center">
                                     <div className="flex min-w-0 items-center gap-2">
@@ -546,10 +524,15 @@ export default function HomePage() {
                             key={`${suggestion.title}-${index}`}
                             type="button"
                             onClick={() => handleSuggestionClick(suggestion)}
-                            className="flex h-[38px] w-full items-center justify-between rounded-lg border border-[#e5e6eb] bg-white px-4 py-[7px] text-left text-[14px] font-normal leading-[22px] text-[#1d2129] transition-colors hover:border-[#bcd4ff] hover:bg-[#f9fbff]"
+                            className="group flex h-[38px] w-full items-center justify-between rounded-lg border border-[#e5e6eb] bg-white px-4 py-[7px] text-left text-[14px] font-normal leading-[22px] text-[#1d2129] transition-colors hover:border-[#bcd4ff] hover:bg-[#f9fbff]"
                           >
                             <span>{suggestion.title}</span>
-                            <img className="h-4 w-4" src={arrowRightUpLine} alt="" />
+                            <img
+                              aria-hidden="true"
+                              className="h-4 w-4 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-active:opacity-100"
+                              src={arrowRightUpLine}
+                              alt=""
+                            />
                           </button>
                         ))}
                       </div>
@@ -557,12 +540,10 @@ export default function HomePage() {
                   )}
                 </div>
               </section>
-            </div>
-          </main>
-        </div>
+      </div>
 
         {loginOpen && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#1e1f27]/45">
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#1e1f27]/45">
             <div className="flex h-[414px] w-[792px] origin-center overflow-hidden rounded-[20px] bg-white shadow-[0_24px_80px_rgba(15,23,42,0.18)]">
               <div className="relative h-full w-[414px] shrink-0 overflow-hidden bg-[#e7f0ff]">
                 <img
@@ -692,7 +673,6 @@ export default function HomePage() {
             </div>
           </div>
         )}
-      </div>
     </div>
   );
 }

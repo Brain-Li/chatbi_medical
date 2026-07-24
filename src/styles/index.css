@@ -51,6 +51,42 @@ button:disabled,
   background-color: transparent;
 }
 
+.workspace-responsive {
+  container: workspace / inline-size;
+}
+
+@container workspace (min-width: 1040px) {
+  .workspace-compact-only {
+    display: none;
+  }
+
+  .workspace-wide-only {
+    display: block;
+  }
+
+  .workspace-wide-flex {
+    display: flex;
+  }
+
+  .workspace-wide-workbench.workspace-wide-workbench-open {
+    display: block;
+  }
+
+  .workspace-analysis-grid.workspace-analysis-grid-split {
+    grid-template-columns: minmax(480px, 1fr) minmax(480px, 1fr);
+  }
+
+  .workspace-single-activity {
+    margin-inline: auto;
+    width: 100%;
+    max-width: 1024px;
+  }
+
+  .workspace-single-activity-header {
+    padding-right: 4rem;
+  }
+}
+
 .login-input:-webkit-autofill,
 .login-input:-webkit-autofill:hover,
 .login-input:-webkit-autofill:focus {

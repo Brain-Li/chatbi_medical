@@ -11,6 +11,7 @@ import templatePageRightIcon from '../../assets/figma-report-template/template-p
 import templatePlusIcon from '../../assets/figma-report-template/template-plus.svg';
 import templatePageSizeChevronIcon from '../../assets/figma-report-template/report-template-chevron-down.svg';
 import templateSearchIcon from '../../assets/figma-report-template/report-template-search.svg';
+import templateSubscriptionIcon from '../../assets/figma-report-template/template-subscription.svg';
 import templateViewIcon from '../../assets/figma-report-template/template-subscribe.svg';
 import {
   Dialog,
@@ -31,14 +32,13 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 
 const templatePageSizeOptions = [10, 20, 50] as const;
-const triggerPhraseMaxCount = 10;
-const triggerPhraseMaxLength = 10;
+const templateDescriptionMaxLength = 50;
 
 type TemplateFormState = {
   name: string;
   category: string;
   status: ReportTemplateStatus;
-  triggerPhrases: string;
+  description: string;
   templatePrompt: string;
   sections: Array<Pick<ReportTemplateSection, 'title' | 'description' | 'required'>>;
   outputFormats: string;
@@ -48,7 +48,7 @@ const emptyTemplateForm: TemplateFormState = {
   name: '',
   category: '专题',
   status: 'published',
-  triggerPhrases: '',
+  description: '',
   templatePrompt: '',
   sections: [
     { title: '核心摘要', description: '概括报告核心结论。', required: true },
@@ -63,38 +63,6 @@ function splitList(value: string) {
     .split(/[,，、/\n]/)
     .map((item) => item.trim())
     .filter(Boolean);
-}
-
-function splitTriggerPhrases(value: string) {
-  return value
-    .split(/[,，]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function normalizeTriggerPhrases(value: string) {
-  return Array.from(new Set(splitTriggerPhrases(value)));
-}
-
-function validateTriggerPhrases(value: string) {
-  const items = splitTriggerPhrases(value);
-  const overlong = items.find((item) => [...item].length > triggerPhraseMaxLength);
-
-  if (items.length > triggerPhraseMaxCount) {
-    return {
-      count: items.length,
-      error: `最多支持 ${triggerPhraseMaxCount} 个触发词，请删减 ${items.length - triggerPhraseMaxCount} 个后保存`,
-    };
-  }
-
-  if (overlong) {
-    return {
-      count: items.length,
-      error: `单个触发词最多 ${triggerPhraseMaxLength} 个字符，请删减后保存`,
-    };
-  }
-
-  return { count: items.length, error: '' };
 }
 
 function formatTemplateCreatedAt(date: Date) {
@@ -163,12 +131,42 @@ function getTemplatePrompt(template: ReportTemplate) {
   ].join('\n');
 }
 
+function TemplateDescription({ description }: { description: string }) {
+  return (
+    <Tooltip delayDuration={240}>
+      <TooltipTrigger asChild>
+        <span
+          tabIndex={0}
+          aria-label={`${description}，查看完整模板描述`}
+          className="block max-w-full truncate text-[14px] leading-5 text-[#86909c] outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
+        >
+          {description}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent
+        side="top"
+        align="start"
+        sideOffset={8}
+        collisionPadding={12}
+        showArrow={false}
+        className="relative max-w-[280px] rounded-[4px] border-0 bg-[#1d2129] px-3 py-2.5 text-left font-['PingFang_SC'] text-[14px] font-normal leading-[22px] tracking-normal text-white shadow-none"
+      >
+        <div className="break-words text-balance text-white">{description}</div>
+        <span
+          aria-hidden="true"
+          className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[5px] border-t-[4px] border-x-transparent border-t-[#1d2129]"
+        />
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 function toTemplateForm(template: ReportTemplate): TemplateFormState {
   return {
     name: template.name,
     category: template.category,
     status: template.status === 'disabled' ? 'disabled' : 'published',
-    triggerPhrases: template.triggerPhrases.join(', '),
+    description: template.description.slice(0, templateDescriptionMaxLength),
     templatePrompt: getTemplatePrompt(template),
     sections: template.sections.length
       ? template.sections.map((section) => ({
@@ -196,12 +194,12 @@ function createTemplateFromForm(form: TemplateFormState, existing?: ReportTempla
   return {
     id: existing?.id ?? `template-${timestamp}`,
     name: form.name.trim() || '未命名报告模板',
-    description: form.templatePrompt.trim().slice(0, 80) || '通过提示词配置的报告模板。',
+    description: (form.description ?? '').trim().slice(0, templateDescriptionMaxLength),
     category: form.category.trim() || '专题',
     version: existing?.version ?? 'v1.0',
     createdAt: existing?.createdAt ?? formatTemplateCreatedAt(createdAt),
     status: form.status,
-    triggerPhrases: normalizeTriggerPhrases(form.triggerPhrases),
+    triggerPhrases: existing?.triggerPhrases ?? [],
     templatePrompt: form.templatePrompt.trim(),
     applicableAgentIds: existing?.applicableAgentIds ?? [],
     datasetIds: existing?.datasetIds ?? [],
@@ -236,7 +234,6 @@ export default function TemplatesPage() {
   const [pendingDeleteTemplate, setPendingDeleteTemplate] = useState<ReportTemplate | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [form, setForm] = useState<TemplateFormState>(emptyTemplateForm);
-  const triggerPhraseValidation = validateTriggerPhrases(form.triggerPhrases);
 
   const filteredTemplates = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -248,6 +245,7 @@ export default function TemplatesPage() {
           !normalizedQuery ||
           [
             template.name,
+            template.description,
             template.templatePrompt,
             ...template.triggerPhrases,
             ...template.sections.map((section) => section.title),
@@ -322,8 +320,6 @@ export default function TemplatesPage() {
   };
 
   const handleSaveTemplate = () => {
-    if (triggerPhraseValidation.error) return;
-
     const nextTemplate = createTemplateFromForm(form, editingTemplate ?? undefined);
 
     if (editingTemplate) {
@@ -348,7 +344,7 @@ export default function TemplatesPage() {
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜索模板名称或触发词"
+                placeholder="搜索模板名称或模板描述"
                 className="min-w-0 flex-1 bg-transparent text-[14px] font-normal leading-[22px] text-[#1d2129] placeholder:text-[#c9cdd4] focus:outline-none"
               />
             </label>
@@ -395,95 +391,51 @@ export default function TemplatesPage() {
 
         <section className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden" aria-label="报告模板列表">
           <div className="min-h-0 flex-1 overflow-auto">
-            <table className="w-full min-w-[1080px] table-fixed border-collapse">
+            <table className="-mt-2 w-full min-w-[1080px] table-fixed border-separate border-spacing-x-0 border-spacing-y-2">
               <colgroup>
-                <col className="w-[260px] min-[1600px]:w-[16%]" />
-                <col className="w-[90px] min-[1600px]:w-[7%]" />
-                <col className="min-[1600px]:w-[44%]" />
-                <col className="w-[165px] min-[1600px]:w-[15%]" />
-                <col className="w-[90px] min-[1600px]:w-[10%]" />
-                <col className="w-[136px] min-[1600px]:w-[8%]" />
+                <col />
+                <col className="w-[92px]" />
+                <col className="w-[184px]" />
+                <col className="w-[104px]" />
+                <col className="w-[216px]" />
               </colgroup>
               <thead className="sticky top-0 z-10 bg-[#f7f8fa]">
-                <tr className="h-12 border-b border-[#e5e6eb] text-left text-[14px] font-normal leading-[22px] text-[#4e5969]">
-                  <th className="px-4 font-normal">模板名称</th>
-                  <th className="px-3 font-normal">分类</th>
-                  <th className="px-3 font-normal">触发词</th>
-                  <th className="px-3 font-normal">创建时间</th>
-                  <th className="px-3 font-normal">状态</th>
-                  <th className="px-2 font-normal">操作</th>
+                <tr className="h-12 text-left text-[14px] font-medium leading-6 text-[#4e5969]">
+                  <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">模板名称</th>
+                  <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">分类</th>
+                  <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">创建时间</th>
+                  <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">状态</th>
+                  <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">操作</th>
                 </tr>
               </thead>
               <tbody>
                 {paginatedTemplates.length ? (
                   paginatedTemplates.map((template) => {
                     const enabled = template.status !== 'disabled';
-                    const triggerPhrasesLabel = template.triggerPhrases.join(', ');
+                    const templateSummary = template.description.trim();
 
                     return (
                       <tr
                         key={template.id}
-                        className="h-16 border-b border-[#e5e6eb] text-[14px] font-normal leading-[22px] text-[#4e5969] transition-colors hover:bg-[#f7f8fa] [&>td]:align-middle"
+                        className="h-[72px] bg-white text-[14px] font-normal leading-[22px] text-[#1d2129] transition-colors hover:bg-[#f7f8fa] [&>td]:align-middle"
                       >
-                        <td className="min-w-0 px-4 py-2.5">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span
-                                tabIndex={0}
-                                aria-label={`${template.name}，查看完整模板名称`}
-                                className="inline-block max-w-full truncate align-middle font-medium text-[#1d2129] outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
-                              >
-                                {template.name}
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent
-                              side="top"
-                              align="start"
-                              sideOffset={8}
-                              collisionPadding={12}
-                              arrowClassName="bg-[#1d2129] fill-[#1d2129]"
-                              className="relative max-w-[420px] rounded-[4px] border-0 bg-[#1d2129] px-3 py-2.5 text-left font-['PingFang_SC'] text-[14px] font-normal leading-[22px] tracking-normal text-white shadow-none"
-                            >
-                              <div className="break-words font-medium text-white">{template.name}</div>
-                            </TooltipContent>
-                          </Tooltip>
+                        <td className="min-w-0 border-b border-[#e5e6eb] px-4 py-3">
+                          <div className="flex h-12 min-w-0 flex-col items-start gap-1 overflow-hidden">
+                            <span className="block max-w-full truncate text-[16px] font-medium leading-6 text-[#1d2129]">
+                              {template.name}
+                            </span>
+                            <TemplateDescription description={templateSummary || '-'} />
+                          </div>
                         </td>
-                        <td className="px-3 py-2.5">
-                          <span className="inline-flex h-7 items-center rounded-[4px] bg-[#e8f3ff] px-2.5 text-[14px] leading-[22px] text-[#165dff]">
+                        <td className="border-b border-[#e5e6eb] p-4">
+                          <span className="inline-flex items-center justify-center rounded-[8px] bg-[#e8f3ff] px-2 py-1 text-[14px] leading-[22px] text-[#165dff]">
                             {template.category}
                           </span>
                         </td>
-                        <td className="min-w-0 px-3 py-2.5">
-                          {triggerPhrasesLabel ? (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span
-                                  tabIndex={0}
-                                  aria-label={`${template.name}完整触发词：${triggerPhrasesLabel}`}
-                                  className="block max-w-full truncate outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
-                                >
-                                  {triggerPhrasesLabel}
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent
-                                side="top"
-                                align="start"
-                                sideOffset={8}
-                                collisionPadding={12}
-                                arrowClassName="bg-[#1d2129] fill-[#1d2129]"
-                                className="max-w-[420px] whitespace-pre-wrap break-words rounded-[4px] border-0 bg-[#1d2129] px-3 py-2.5 text-left font-['PingFang_SC'] text-[14px] font-normal leading-[22px] tracking-normal text-white shadow-none"
-                              >
-                                {triggerPhrasesLabel}
-                              </TooltipContent>
-                            </Tooltip>
-                          ) : (
-                            '-'
-                          )}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2.5 text-[#4e5969]">
+                        <td className="whitespace-nowrap border-b border-[#e5e6eb] p-4 text-[#1d2129]">
                           {getTemplateCreatedAtLabel(template)}
                         </td>
-                        <td className="px-3 py-2.5">
+                        <td className="border-b border-[#e5e6eb] p-4">
                           <button
                             type="button"
                             role="switch"
@@ -493,7 +445,7 @@ export default function TemplatesPage() {
                                 status: enabled ? 'disabled' : 'published',
                               })
                             }
-                            className={`inline-flex h-5 w-10 items-center rounded-full p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
+                            className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
                               enabled ? 'bg-[#1d2129]' : 'bg-[#c9cdd4]'
                             }`}
                             title={enabled ? '点击停用' : '点击启用'}
@@ -502,25 +454,39 @@ export default function TemplatesPage() {
                             }`}
                           >
                             <span
-                              className={`h-4 w-4 rounded-full bg-white shadow-[0_1px_2px_rgba(29,33,41,0.12)] transition-transform ${
-                                enabled ? 'translate-x-5' : 'translate-x-0'
+                              className={`absolute rounded-full bg-white shadow-[0_1px_2px_rgba(29,33,41,0.12)] transition-all ${
+                                enabled
+                                  ? 'right-[2.5px] top-[2.5px] h-[15px] w-[15px]'
+                                  : 'left-1 top-1 h-3 w-3'
                               }`}
                             />
                           </button>
                         </td>
-                        <td className="px-2 py-2.5">
-                          <div className="flex items-center gap-1 whitespace-nowrap">
+                        <td className="border-b border-[#e5e6eb] p-4">
+                          <div className="flex items-center justify-start gap-2 whitespace-nowrap">
                             {[
-                              { tooltipLabel: '编辑', ariaLabel: `编辑${template.name}`, icon: templateEditIcon, onClick: () => openEditTemplateEditor(template) },
-                              { tooltipLabel: '查看', ariaLabel: `查看${template.name}`, icon: templateViewIcon, onClick: () => setViewingTemplate(template) },
-                              { tooltipLabel: '删除', ariaLabel: `删除${template.name}`, icon: templateDeleteIcon, onClick: () => setPendingDeleteTemplate(template) },
+                              {
+                                tooltipLabel: '订阅功能开发中，敬请期待',
+                                ariaLabel: `订阅${template.name}，功能开发中`,
+                                icon: templateSubscriptionIcon,
+                                onClick: undefined,
+                                unavailable: true,
+                              },
+                              { tooltipLabel: '编辑', ariaLabel: `编辑${template.name}`, icon: templateEditIcon, onClick: () => openEditTemplateEditor(template), unavailable: false },
+                              { tooltipLabel: '查看', ariaLabel: `查看${template.name}`, icon: templateViewIcon, onClick: () => setViewingTemplate(template), unavailable: false },
+                              { tooltipLabel: '删除', ariaLabel: `删除${template.name}`, icon: templateDeleteIcon, onClick: () => setPendingDeleteTemplate(template), unavailable: false },
                             ].map((action) => (
                               <Tooltip key={action.ariaLabel} delayDuration={240}>
                                 <TooltipTrigger asChild>
                                   <button
                                     type="button"
-                                    onClick={action.onClick}
-                                    className="inline-flex h-8 w-8 items-center justify-center rounded-[4px] transition-colors hover:bg-[#f2f3f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
+                                    onClick={action.unavailable ? undefined : action.onClick}
+                                    aria-disabled={action.unavailable || undefined}
+                                    className={`inline-flex h-8 w-8 items-center justify-center rounded-[8px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
+                                      action.unavailable
+                                        ? '!cursor-not-allowed'
+                                        : 'hover:bg-[#f2f3f5]'
+                                    }`}
                                     aria-label={action.ariaLabel}
                                   >
                                     <img aria-hidden="true" className="h-4 w-4" src={action.icon} alt="" />
@@ -548,7 +514,7 @@ export default function TemplatesPage() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={6} className="h-40 px-4 text-center text-[14px] text-[#86909c]">
+                    <td colSpan={5} className="h-40 px-4 text-center text-[14px] text-[#86909c]">
                       未找到匹配的报告模板
                     </td>
                   </tr>
@@ -557,7 +523,7 @@ export default function TemplatesPage() {
             </table>
           </div>
 
-          <div className="-mx-[22px] flex h-14 w-[calc(100%+44px)] shrink-0 items-center justify-between border-t border-[#e5e6eb] bg-[#f7f8fa] py-3 pl-[38px] pr-6 text-[14px] font-normal text-[#4e5969]">
+          <div className="-mx-[22px] flex h-14 w-[calc(100%+44px)] shrink-0 items-center justify-between border-t border-[#e5e6eb] bg-[#f7f8fa] py-3 pl-[38px] pr-[38px] text-[14px] font-normal text-[#4e5969]">
             <div className="flex items-center gap-4">
               <span className="leading-[22px] text-[#1d2129]">共 {filteredTemplates.length} 条</span>
               <Select
@@ -590,7 +556,7 @@ export default function TemplatesPage() {
                     <SelectItem
                       key={pageSize}
                       value={String(pageSize)}
-                      className="h-8 whitespace-nowrap rounded-[6px] py-0 pl-2 pr-7 text-[14px] leading-5 text-[#4e5969] focus:bg-[#f7f8fa] focus:text-[#1d2129] data-[state=checked]:bg-[#f2f3f5]"
+                      className="h-8 whitespace-nowrap rounded-[6px] py-0 pl-2 pr-2 text-[14px] leading-5 text-[#4e5969] focus:bg-[#f7f8fa] focus:text-[#1d2129] data-[state=checked]:bg-[#f2f3f5] [&>span:first-child]:hidden"
                     >
                       {pageSize} 条/页
                     </SelectItem>
@@ -747,36 +713,25 @@ export default function TemplatesPage() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <label htmlFor="template-trigger-phrases" className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">
-                触发词
+              <label htmlFor="template-description" className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">
+                模板描述
               </label>
               <div className="relative h-10">
                 <input
-                  id="template-trigger-phrases"
-                  value={form.triggerPhrases}
-                  onChange={(event) => setForm((current) => ({ ...current, triggerPhrases: event.target.value }))}
-                  placeholder="多个触发词请使用逗号分隔，支持中英文逗号"
-                  aria-invalid={Boolean(triggerPhraseValidation.error)}
-                  aria-describedby={triggerPhraseValidation.error ? 'template-trigger-phrases-error' : undefined}
-                  className={`h-10 w-full rounded-[12px] border bg-white py-0 pl-3 pr-[76px] text-[14px] leading-[22px] tracking-[0.15px] text-[#1d2129] outline-none placeholder:text-[#86909c] focus:ring-2 ${
-                    triggerPhraseValidation.error
-                      ? 'border-[#f53f3f] focus:border-[#f53f3f] focus:ring-[#f53f3f]/10'
-                      : 'border-[#e5e6eb] focus:border-[#165dff] focus:ring-[#165dff]/10'
-                  }`}
+                  id="template-description"
+                  value={form.description ?? ''}
+                  onChange={(event) => {
+                    const description = event.currentTarget.value.slice(0, templateDescriptionMaxLength);
+                    setForm((current) => ({ ...current, description }));
+                  }}
+                  placeholder="请输入模板描述"
+                  maxLength={templateDescriptionMaxLength}
+                  className="h-10 w-full rounded-[12px] border border-[#e5e6eb] bg-white py-0 pl-3 pr-14 text-[14px] leading-[22px] tracking-[0.15px] text-[#1d2129] outline-none placeholder:text-[#86909c] focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10"
                 />
-                <span
-                  className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[12px] leading-[22px] ${
-                    triggerPhraseValidation.count > triggerPhraseMaxCount ? 'text-[#f53f3f]' : 'text-[#86909c]'
-                  }`}
-                >
-                  {triggerPhraseValidation.count}/{triggerPhraseMaxCount} 个
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[12px] leading-[22px] text-[#86909c]">
+                  {(form.description ?? '').length}/{templateDescriptionMaxLength}
                 </span>
               </div>
-              {triggerPhraseValidation.error && (
-                <p id="template-trigger-phrases-error" role="alert" className="text-[12px] leading-[18px] text-[#f53f3f]">
-                  {triggerPhraseValidation.error}
-                </p>
-              )}
             </div>
 
             <div className="flex flex-col gap-2">
@@ -857,8 +812,7 @@ export default function TemplatesPage() {
             <button
               type="button"
               onClick={handleSaveTemplate}
-              disabled={Boolean(triggerPhraseValidation.error)}
-              className="inline-flex h-10 items-center justify-center rounded-[12px] border border-[#1d2129] bg-[#1d2129] px-6 text-[14px] leading-[22px] tracking-[0.15px] text-white transition-colors hover:bg-[#2f3339] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 disabled:cursor-not-allowed disabled:border-[#c9cdd4] disabled:bg-[#c9cdd4] disabled:hover:bg-[#c9cdd4]"
+              className="inline-flex h-10 items-center justify-center rounded-[12px] border border-[#1d2129] bg-[#1d2129] px-6 text-[14px] leading-[22px] tracking-[0.15px] text-white transition-colors hover:bg-[#2f3339] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
             >
               保存
             </button>

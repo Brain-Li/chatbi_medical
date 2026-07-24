@@ -4696,6 +4696,7 @@ type ExceptionDemoDefinition = {
   title: string;
   question: string;
   finalReply: string;
+  workspaceType?: Extract<AgentType, 'ask' | 'report'>;
   introExchange?: { question: string; finalReply: string };
   steps?: AnalysisProcessStep[];
   directReplyOnly?: boolean;
@@ -4874,6 +4875,14 @@ const exceptionDemoDefinitions: ExceptionDemoDefinition[] = [
       demoStep('match-capability', 'failed', '分析过程中发生异常，未继续执行后续步骤。'),
     ],
   },
+  {
+    scenarioCode: 'missing-information',
+    title: '【异常演示】需求信息不足',
+    question: '帮我生成一份报告。',
+    finalReply: '请补充报告主题、统计周期和分析重点，以便生成准确可用的报告。',
+    workspaceType: 'report',
+    directReplyOnly: true,
+  },
 ];
 
 const completedExceptionScenarios = new Set<AnalysisScenarioCode>([
@@ -4907,13 +4916,16 @@ function buildExceptionDemoConversation(
   definition: ExceptionDemoDefinition,
   demoOrder: number,
 ): Conversation {
-  const agent = agents.find((item) => item.id === 'agent-ask-outpatient');
+  const workspaceType = definition.workspaceType ?? 'ask';
+  const agent = agents.find((item) =>
+    item.id === (workspaceType === 'report' ? 'agent-report-daily' : 'agent-ask-outpatient'),
+  );
   const timestamp = new Date(
     new Date('2026-07-17T12:30:00').getTime() - demoOrder * 60 * 60 * 1000,
   );
 
   if (!agent) {
-    throw new Error('Missing outpatient agent for mock boundary conversation');
+    throw new Error(`Missing ${workspaceType} agent for mock boundary conversation`);
   }
 
   const userMessage: Message = {
@@ -4927,8 +4939,8 @@ function buildExceptionDemoConversation(
     id: `conv-exception-demo-${demoOrder}`,
     title: definition.title,
     agentId: agent.id,
-    agentType: 'ask',
-    workspaceType: 'ask',
+    agentType: workspaceType,
+    workspaceType,
     messages,
     createdAt: new Date(timestamp.getTime() - 10 * 60 * 1000),
     updatedAt: timestamp,
