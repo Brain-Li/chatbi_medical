@@ -138,7 +138,7 @@ export const skills: Skill[] = [
 2. 输出趋势判断、峰谷时段和资源匹配建议。`,
     applicableAgentTypes: ['ask', 'report', 'rca'],
     builtin: true,
-    status: '已启用',
+    status: '已停用',
     version: 'v1.0',
     debugState: '待调试',
     tags: ['患者', '流量', '趋势'],
@@ -207,7 +207,7 @@ export const knowledgeDocuments: KnowledgeDocument[] = [
     title: '门诊收入统计口径',
     source: '经营分析部 / 门诊经营指标手册 v2026.05',
     type: '统计口径',
-    updatedAt: '2026-05-20',
+    updatedAt: '2026-06-16 21:30',
     applicableScenes: ['门诊收入查询', '门诊经营日报', '科室收入拆分'],
     tags: ['门诊收入', '结算口径', '收入归属'],
   },
@@ -217,7 +217,7 @@ export const knowledgeDocuments: KnowledgeDocument[] = [
     title: '药占比/耗占比管理规则',
     source: '运营管理部 / 药耗结构治理规则 v2026.04',
     type: '业务规则',
-    updatedAt: '2026-04-28',
+    updatedAt: '2026-06-15 11:20',
     applicableScenes: ['药占比分析', '耗占比分析', '费用结构异常识别'],
     tags: ['药占比', '耗占比', '异常阈值'],
   },
@@ -227,7 +227,7 @@ export const knowledgeDocuments: KnowledgeDocument[] = [
     title: '科室收入归属说明',
     source: '财务处 / 科室经营归属规则 v2026.03',
     type: '指标口径',
-    updatedAt: '2026-03-31',
+    updatedAt: '2026-06-10 11:12',
     applicableScenes: ['科室收入排行', '住院经营分析', '收入结构拆分'],
     tags: ['科室收入', '归属规则', '住院收入'],
   },
@@ -237,7 +237,7 @@ export const knowledgeDocuments: KnowledgeDocument[] = [
     title: '患者隐私与明细展示规则',
     source: '数据治理委员会 / 医疗数据安全规范 v2026.05',
     type: '权限规则',
-    updatedAt: '2026-05-18',
+    updatedAt: '2026-06-07 13:20',
     applicableScenes: ['患者明细查询', '敏感字段展示', '报告导出'],
     tags: ['患者明细', '隐私', '脱敏', '权限'],
   },
@@ -247,7 +247,7 @@ export const knowledgeDocuments: KnowledgeDocument[] = [
     title: '经营日报口径说明',
     source: '经营分析部 / 经营日报模板说明 v2026.05',
     type: '统计口径',
-    updatedAt: '2026-05-22',
+    updatedAt: '2026-06-05 13:20',
     applicableScenes: ['经营日报', '日报推送', '管理层摘要'],
     tags: ['经营日报', '日报', '异常提示'],
   },
@@ -445,7 +445,7 @@ export const agents: Agent[] = [
     description: '面向费用波动、结构异常和维度贡献归因。',
     creator: 'admin',
     updatedAt: new Date('2026-05-18 11:30:00'),
-    status: '已启用',
+    status: '已停用',
     skills: ['skill-abnormal-fee', 'skill-pharmacy-structure', 'skill-department-revenue'],
     datasetIds: ['semantic-outpatient', 'semantic-inpatient'],
     isDefault: true,
@@ -503,6 +503,7 @@ export const reportTemplates: ReportTemplate[] = [
     id: 'template-operation-daily',
     name: '经营日报模板',
     description: '面向院级管理层的门急诊与住院经营日报，突出关键指标、异常项和推送摘要。',
+    industry: '医疗',
     category: '日报',
     version: 'v1.0',
     createdAt: '2026-06-18 09:00',
@@ -546,6 +547,7 @@ export const reportTemplates: ReportTemplate[] = [
     id: 'template-dept-monthly',
     name: '科室运营月报模板',
     description: '面向科室负责人的月度运营报告，强调趋势、同比环比、结构拆解和管理建议。',
+    industry: '医疗',
     category: '月报',
     version: 'v1.0',
     createdAt: '2026-06-17 10:30',
@@ -589,6 +591,7 @@ export const reportTemplates: ReportTemplate[] = [
     id: 'template-pharmacy-structure',
     name: '药耗结构专题模板',
     description: '围绕药占比、耗占比和费用结构变化生成专题报告。',
+    industry: '医疗',
     category: '专题',
     version: 'v1.1',
     createdAt: '2026-06-16 14:20',
@@ -632,6 +635,7 @@ export const reportTemplates: ReportTemplate[] = [
     id: 'template-abnormal-fee',
     name: '异常费用专题模板',
     description: '聚焦异常费用组、异常记录和候选原因的专题复核报告。',
+    industry: '医疗',
     category: '专题',
     version: 'v1.0',
     createdAt: '2026-06-15 16:45',
@@ -762,6 +766,7 @@ export const reportTemplates: ReportTemplate[] = [
   ] satisfies Array<Pick<ReportTemplate, 'id' | 'name' | 'category' | 'createdAt' | 'status' | 'triggerPhrases'>>).map<ReportTemplate>((template) => ({
     ...template,
     description: `${template.name}演示数据，用于查看模板列表和分页效果。`,
+    industry: '医疗',
     version: 'v1.0',
     templatePrompt: `请围绕“${template.name.replace('模板', '')}”生成结构化经营分析报告，包含核心摘要、趋势分析、异常提示和管理建议。报告正文前部使用 3-4 个指标卡展示核心结果，并根据主题至少生成 1 张趋势、对比或结构图表，图表标题和统计口径需清晰。`,
     applicableAgentIds: [template.category === '专题' ? 'agent-report-special' : 'agent-report-daily'],
@@ -995,8 +1000,8 @@ export const mcpServers: McpServer[] = [
     environment: '生产',
     status: '已启用',
     healthStatus: '正常',
-    lastSyncedAt: '2026-06-15 18:05',
-    updatedAt: '2026-06-15 18:05',
+    lastSyncedAt: '2026-06-15 11:20',
+    updatedAt: '2026-06-15 11:20',
     capabilities: [
       {
         id: 'cap-knowledge-search-policy',
@@ -1043,7 +1048,7 @@ export const mcpServers: McpServer[] = [
     owner: '医保办',
     environment: '测试',
     status: '已停用',
-    healthStatus: '异常',
+    healthStatus: '正常',
     lastSyncedAt: '2026-06-10 11:12',
     updatedAt: '2026-06-10 11:12',
     capabilities: [
@@ -1076,9 +1081,9 @@ export const mcpServers: McpServer[] = [
     owner: '超声医学科',
     environment: '测试',
     status: '已启用',
-    healthStatus: '正常',
-    lastSyncedAt: '2026-06-17 13:20',
-    updatedAt: '2026-06-17 13:20',
+    healthStatus: '异常',
+    lastSyncedAt: '2026-06-07 13:20',
+    updatedAt: '2026-06-07 13:20',
     capabilities: [
       {
         id: 'cap-ultrasound-positive-rate',
@@ -1095,6 +1100,39 @@ export const mcpServers: McpServer[] = [
         enabled: true,
         agentIds: ['agent-ask-outpatient', 'agent-report-special', 'agent-rca-diagnosis'],
         skillIds: ['skill-department-revenue', 'skill-patient-flow'],
+      },
+    ],
+  },
+  {
+    id: 'mcp-patient-analysis',
+    name: '患者分析 MCP',
+    businessDomain: '患者分析',
+    endpoint: '基于时间和人群层级，动态监测患者流量变化趋势。',
+    transport: 'Streamable HTTP',
+    authType: 'OAuth 2.1',
+    authConfigName: 'patient-analysis-oauth-prod',
+    owner: '经营分析部',
+    environment: '生产',
+    status: '已启用',
+    healthStatus: '正常',
+    lastSyncedAt: '2026-06-05 13:20',
+    updatedAt: '2026-06-05 13:20',
+    capabilities: [
+      {
+        id: 'cap-patient-flow-analysis',
+        serverId: 'mcp-patient-analysis',
+        name: 'analyze_patient_flow',
+        kind: 'tool',
+        description: '按时间、人群和科室层级分析患者流量变化趋势。',
+        inputSchema: '{ dateRange: [string, string]; cohort?: string; department?: string }',
+        outputSchema: '{ trend: TrendPoint[]; cohorts: CohortSummary[] }',
+        scopes: ['patient.read.summary'],
+        tags: ['只读分析', '患者流量'],
+        sideEffect: false,
+        riskLevel: '低',
+        enabled: true,
+        agentIds: ['agent-ask-outpatient', 'agent-report-special'],
+        skillIds: ['skill-patient-flow'],
       },
     ],
   },
@@ -3374,6 +3412,7 @@ function generateReportTemplate(agent: Agent, question: string, options: ResultB
     id: generatedId,
     name: templateName,
     description: `Agent 根据“${question}”动态生成的临时报告模板。`,
+    industry: '医疗',
     category,
     version: 'AI 临时版',
     createdAt: new Date().toLocaleString('zh-CN', { hour12: false }),
@@ -4655,7 +4694,8 @@ function buildHistoryMessages(agent: Agent, question: string, sentAt: Date): Mes
 function buildHistoryConversation(
   agentId: string,
   question: string,
-  updatedAt: string,
+  updatedAt: string | Date,
+  conversationId?: string,
 ): Conversation {
   const agent = agents.find((item) => item.id === agentId);
   const timestamp = new Date(updatedAt);
@@ -4665,7 +4705,7 @@ function buildHistoryConversation(
   }
 
   return {
-    id: `conv-${agentId}-${timestamp.getTime()}`,
+    id: conversationId ?? `conv-${agentId}-${timestamp.getTime()}`,
     title: question.length > 18 ? `${question.slice(0, 18)}...` : question,
     agentId: agent.id,
     agentType: agent.type,
@@ -4674,6 +4714,13 @@ function buildHistoryConversation(
     createdAt: new Date(timestamp.getTime() - 10 * 60 * 1000),
     updatedAt: timestamp,
   };
+}
+
+function getRelativeHistoryTimestamp(daysAgo: number, hours: number, minutes: number) {
+  const timestamp = new Date();
+  timestamp.setDate(timestamp.getDate() - daysAgo);
+  timestamp.setHours(hours, minutes, 0, 0);
+  return timestamp;
 }
 
 const demoStepTitles: Record<AnalysisProcessStep['id'], string> = {
@@ -5046,8 +5093,16 @@ function buildExceptionDemoConversation(
   return buildConversation(messages);
 }
 
+export const YESTERDAY_HISTORY_EXAMPLE_ID = 'conv-history-example-yesterday';
+
 export const initialConversations: Conversation[] = [
   ...exceptionDemoDefinitions.map(buildExceptionDemoConversation),
+  buildHistoryConversation(
+    'agent-ask-outpatient',
+    '昨天门诊收入同比变化如何？',
+    getRelativeHistoryTimestamp(1, 10, 30),
+    YESTERDAY_HISTORY_EXAMPLE_ID,
+  ),
   buildHistoryConversation('agent-ask-outpatient', '眼科近三个月诊量是否异常', '2026-07-12T10:30:00'),
   buildHistoryConversation('agent-ask-outpatient', '上月门诊总收入和药占比情况', '2026-07-12T10:20:00'),
   buildHistoryConversation('agent-ask-inpatient', '本季度平均住院日变化', '2026-07-12T09:24:00'),

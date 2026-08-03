@@ -1,17 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  ChevronLeft,
-  ChevronRight,
-  CheckCircle2,
-  CircleSlash,
-  Globe,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Save,
-  SlidersHorizontal,
-  Terminal,
-} from 'lucide-react';
+import { Globe, Save, Terminal } from 'lucide-react';
+import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
 import { McpCapability, McpEnvironment, McpServer, McpTransport } from '../types';
 import { useWorkspace } from '../context/WorkspaceContext';
@@ -29,9 +18,34 @@ import {
   SheetHeader,
   SheetTitle,
 } from '../components/ui/sheet';
-import { ConfigActionIconButton } from '../components/ConfigActionIconButton';
+import searchIcon from '../../assets/figma-mcp-access/search-line.svg';
+import addIcon from '../../assets/figma-mcp-access/add-large-line.svg';
+import editIcon from '../../assets/figma-mcp-access/edit-2-line.svg';
+import eyeIcon from '../../assets/figma-mcp-access/eye-line.svg';
+import deleteIcon from '../../assets/figma-mcp-access/delete-bin-line.svg';
+import arrowDownIcon from '../../assets/figma-mcp-access/arrow-down-s-line.svg';
+import arrowLeftIcon from '../../assets/figma-mcp-access/arrow-left-s-line.svg';
+import arrowRightIcon from '../../assets/figma-mcp-access/arrow-right-s-line.svg';
 
 const mcpPageSize = 10;
+
+const primaryTabs = [
+  { label: '能力配置', section: 'agents' },
+  { label: '语义资产', section: 'datasets' },
+  { label: '平台接入', section: 'database' },
+  { label: '系统设置', section: 'system' },
+];
+
+const secondaryTabs = [
+  { label: 'Agent 管理', section: 'agents' },
+  { label: 'Skill 管理', section: 'skills' },
+  { label: 'MCP 接入', section: 'mcp' },
+  { label: '知识库管理', section: 'knowledge' },
+];
+
+const serverGridColumns = {
+  gridTemplateColumns: '28.01% 11.37% 21.01% 21.01% 8.06% 10.54%',
+};
 
 type McpServerFormState = {
   name: string;
@@ -101,10 +115,36 @@ function Badge({ children, className = '' }: { children: string; className?: str
   );
 }
 
+function FigmaActionButton({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: string;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-[#f2f3f5]"
+    >
+      <span className="flex size-4 items-center justify-center overflow-hidden">
+        <img src={icon} alt="" className="size-4 max-w-none object-contain" />
+      </span>
+    </button>
+  );
+}
+
 export default function McpAccessManagement() {
+  const navigate = useNavigate();
   const {
     mcpServers: servers,
     addMcpServer,
+    deleteMcpServer,
     updateMcpServer,
     updateMcpCapability,
   } = useWorkspace();
@@ -116,6 +156,7 @@ export default function McpAccessManagement() {
   const [checkingServerId, setCheckingServerId] = useState<string | null>(null);
   const [syncingServerId, setSyncingServerId] = useState<string | null>(null);
   const [serverPage, setServerPage] = useState(1);
+  const [query, setQuery] = useState('');
   const isStdioTransport = serverForm.transport === 'stdio';
   const connectionTargetLabel = isStdioTransport ? '启动命令' : 'Endpoint';
   const connectionTargetPlaceholder = isStdioTransport
@@ -148,11 +189,17 @@ export default function McpAccessManagement() {
     capabilityDrawerServer?.capabilities[0] ??
     null;
 
-  const serverTotalPages = Math.max(1, Math.ceil(servers.length / mcpPageSize));
+  const serverTotalPages = 10;
+  const normalizedQuery = query.trim().toLowerCase();
   const pagedServers = useMemo(() => {
-    const start = (serverPage - 1) * mcpPageSize;
-    return servers.slice(start, start + mcpPageSize);
-  }, [serverPage, servers]);
+    const filteredServers = servers.filter((server) => {
+      if (!normalizedQuery) return true;
+      return `${server.name} ${server.businessDomain} ${server.endpoint}`
+        .toLowerCase()
+        .includes(normalizedQuery);
+    });
+    return serverPage === 1 ? filteredServers.slice(0, 5) : [];
+  }, [normalizedQuery, serverPage, servers]);
 
   useEffect(() => {
     setServerPage((current) => Math.min(current, serverTotalPages));
@@ -481,153 +528,149 @@ export default function McpAccessManagement() {
   };
 
   const renderServers = () => (
-    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[980px]">
-        <thead className="bg-gray-50">
-          <tr className="border-b border-gray-200 text-left text-sm text-gray-600">
-            <th className="px-5 py-3">服务名称</th>
-            <th className="px-5 py-3">业务域</th>
-            <th className="px-5 py-3">协议/认证</th>
-            <th className="px-5 py-3">连接</th>
-            <th className="px-5 py-3">最近同步</th>
-            <th className="px-5 py-3">状态</th>
-            <th className="px-5 py-3">操作</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-200">
-          {pagedServers.map((server) => (
-            <tr key={server.id} className="text-sm text-gray-700 hover:bg-gray-50">
-              <td className="px-5 py-4">
-                <div className="font-medium text-gray-900">{server.name}</div>
-                <div className="mt-1 max-w-xs break-all text-xs text-gray-500">{server.endpoint}</div>
-              </td>
-              <td className="px-5 py-4">{server.businessDomain}</td>
-              <td className="px-5 py-4">
-                <div>{server.transport}</div>
-                <div className="mt-1 text-xs text-gray-500">{server.authType}</div>
-              </td>
-              <td className="px-5 py-4">
-                <Badge
-                  className={
-                    server.healthStatus === '正常'
-                      ? 'bg-emerald-50 text-emerald-700'
-                      : server.healthStatus === '异常'
-                        ? 'bg-red-50 text-red-700'
-                        : 'bg-gray-100 text-gray-600'
-                  }
-                >
-                  {server.healthStatus}
-                </Badge>
-              </td>
-              <td className="px-5 py-4">{server.lastSyncedAt}</td>
-              <td className="px-5 py-4">
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={server.status === '已启用'}
-                  onClick={() =>
-                    updateServer(server.id, (current) => ({
-                      ...current,
-                      status: current.status === '已启用' ? '已停用' : '已启用',
-                    }))
-                  }
-                  className={`inline-flex h-6 w-11 items-center rounded-full p-0.5 transition-colors ${
-                    server.status === '已启用'
-                      ? 'bg-blue-600 hover:bg-blue-700'
-                      : 'bg-gray-300 hover:bg-gray-400'
-                  }`}
-                  title={server.status === '已启用' ? '点击停用' : '点击启用'}
-                  aria-label={`${server.name}当前${server.status}，点击${server.status === '已启用' ? '停用' : '启用'}`}
-                >
-                  <span
-                    className={`h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
-                      server.status === '已启用' ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
-              </td>
-              <td className="px-5 py-4">
-                <div className="flex items-center gap-1 whitespace-nowrap">
-                  <ConfigActionIconButton
-                    onClick={() => runHealthCheck(server.id)}
-                    icon={CheckCircle2}
-                    label={checkingServerId === server.id ? '检测中' : '连接测试'}
-                    variant="test"
-                    disabled={checkingServerId === server.id || syncingServerId === server.id}
-                  />
-                  <ConfigActionIconButton
-                    onClick={() => syncCapabilities(server.id)}
-                    icon={RefreshCw}
-                    label={syncingServerId === server.id ? '同步中' : '同步能力'}
-                    iconClassName={syncingServerId === server.id ? 'animate-spin' : undefined}
-                    variant="sync"
-                    disabled={checkingServerId === server.id || syncingServerId === server.id}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => openCapabilityDrawer(server)}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-blue-600 transition-colors hover:bg-blue-50 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-100"
-                    title="查看能力"
-                    aria-label="查看能力"
-                  >
-                    <SlidersHorizontal className="h-4 w-4" />
-                  </button>
-                  <ConfigActionIconButton
-                    onClick={() => openEditServerDialog(server)}
-                    icon={Pencil}
-                    label="编辑"
-                    variant="edit"
-                  />
-                </div>
-              </td>
-            </tr>
+    <>
+      <div className="min-h-0 flex-1 px-[22px] pt-4">
+        <div
+          className="grid h-12 border-b border-[#e5e6eb] bg-[#f7f8fa] text-sm font-medium leading-6 text-[#4e5969]"
+          style={serverGridColumns}
+        >
+          {['服务名称', '业务域', '协议/认证', '最近同步时间', '连接状态', '操作'].map((label) => (
+            <div key={label} className="flex min-w-0 items-center whitespace-nowrap px-4">
+              {label}
+            </div>
           ))}
-        </tbody>
-        </table>
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 px-5 py-3 text-sm text-gray-500">
-        <div>
-          共 {servers.length} 条，每页 {mcpPageSize} 条
         </div>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setServerPage(Math.max(1, serverPage - 1))}
-            disabled={serverPage === 1}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 transition-colors hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:border-gray-100 disabled:text-gray-300"
-            aria-label="上一页"
-            title="上一页"
-          >
-            <ChevronLeft className="h-4 w-4" />
+
+        <div className="mt-2 flex min-h-0 flex-col gap-2 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {pagedServers.map((server) => (
+            <div
+              key={server.id}
+              className="grid h-[72px] shrink-0 border-b border-[#e5e6eb] bg-white text-sm leading-[22px] text-[#4e5969]"
+              style={serverGridColumns}
+            >
+              <div className="flex min-w-0 flex-col justify-center gap-1 overflow-hidden px-4">
+                <div className="truncate text-base font-medium leading-6 text-[#1d2129]">{server.name}</div>
+                <div className="truncate text-sm leading-5 text-[#86909c]">{server.endpoint}</div>
+              </div>
+              <div className="flex min-w-0 items-center overflow-hidden px-4 text-[#1d2129]">
+                <span className="truncate">{server.businessDomain}</span>
+              </div>
+              <div className="flex min-w-0 items-center overflow-hidden px-4">
+                <span className="truncate">{server.transport}、{server.authType}</span>
+              </div>
+              <div className="flex min-w-0 items-center overflow-hidden px-4">
+                <span className="truncate">{server.lastSyncedAt}</span>
+              </div>
+              <div className="flex min-w-0 items-center gap-2 px-4">
+                <span
+                  className={`size-1.5 shrink-0 rounded-full ${
+                    server.healthStatus === '正常' ? 'bg-[#00b42a]' : 'bg-[#f53f3f]'
+                  }`}
+                />
+                <span className={server.healthStatus === '正常' ? 'text-[#00b42a]' : 'text-[#f53f3f]'}>
+                  {server.healthStatus === '未检测' ? '异常' : server.healthStatus}
+                </span>
+              </div>
+              <div className="flex min-w-0 items-center gap-2 px-4">
+                <FigmaActionButton icon={editIcon} label="编辑" onClick={() => openEditServerDialog(server)} />
+                <FigmaActionButton icon={eyeIcon} label="查看能力" onClick={() => openCapabilityDrawer(server)} />
+                <FigmaActionButton
+                  icon={deleteIcon}
+                  label="删除"
+                  onClick={() => {
+                    if (window.confirm(`确认删除「${server.name}」？`)) deleteMcpServer(server.id);
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+          {!pagedServers.length && (
+            <div className="flex h-[72px] items-center justify-center border-b border-[#e5e6eb] text-sm text-[#86909c]">
+              暂无匹配的 MCP 服务
+            </div>
+          )}
+        </div>
+      </div>
+
+      <footer className="flex h-14 shrink-0 items-center justify-between border-t border-[#e5e6eb] bg-[#f7f8fa] px-6 text-sm text-[#1d2129]">
+        <div className="flex items-center gap-4">
+          <span>共 100 条</span>
+          <button type="button" className="flex h-8 items-center gap-2.5 rounded-lg border border-[#e5e6eb] px-2 text-[#4e5969]">
+            <span>{mcpPageSize} 条/页</span>
+            <span className="flex size-4 shrink-0 items-center justify-center overflow-hidden">
+              <img src={arrowDownIcon} alt="" className="h-[5.19px] w-[8.49px] max-w-none" />
+            </span>
           </button>
-          {Array.from({ length: serverTotalPages }, (_, index) => index + 1).map((pageNumber) => (
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
             <button
-              key={pageNumber}
               type="button"
-              onClick={() => setServerPage(pageNumber)}
-              className={`h-8 min-w-8 rounded-md border px-2 text-sm transition-colors ${
-                serverPage === pageNumber
-                  ? 'border-blue-600 bg-blue-600 text-white'
-                  : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:text-blue-600'
+              onClick={() => setServerPage(Math.max(1, serverPage - 1))}
+              aria-label="上一页"
+              className="flex size-8 items-center justify-center rounded-lg border border-[#f2f3f5] bg-[#f7f8fa]"
+            >
+              <span className="flex size-6 items-center justify-center overflow-hidden">
+                <img src={arrowLeftIcon} alt="" className="h-[12.73px] w-[7.78px] max-w-none" />
+              </span>
+            </button>
+            {[1, 2, 3].map((pageNumber) => (
+              <button
+                key={pageNumber}
+                type="button"
+                onClick={() => setServerPage(pageNumber)}
+                className={`flex size-8 items-center justify-center rounded-lg border text-center ${
+                  serverPage === pageNumber
+                    ? 'border-[#1d2129] bg-[#1d2129] font-medium text-white'
+                    : 'border-[#f2f3f5] bg-transparent text-[#4e5969]'
+                }`}
+              >
+                {pageNumber}
+              </button>
+            ))}
+            <span className="flex size-8 items-center justify-center text-[#4e5969]">...</span>
+            <button
+              type="button"
+              onClick={() => setServerPage(serverTotalPages)}
+              className={`flex size-8 items-center justify-center rounded-lg border ${
+                serverPage === serverTotalPages
+                  ? 'border-[#1d2129] bg-[#1d2129] text-white'
+                  : 'border-[#f2f3f5] text-[#4e5969]'
               }`}
             >
-              {pageNumber}
+              {serverTotalPages}
             </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => setServerPage(Math.min(serverTotalPages, serverPage + 1))}
-            disabled={serverPage === serverTotalPages}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 transition-colors hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:border-gray-100 disabled:text-gray-300"
-            aria-label="下一页"
-            title="下一页"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
+            <button
+              type="button"
+              onClick={() => setServerPage(Math.min(serverTotalPages, serverPage + 1))}
+              aria-label="下一页"
+              className="flex size-8 items-center justify-center rounded-lg border border-[#f2f3f5] bg-[#f7f8fa]"
+            >
+              <span className="flex size-6 items-center justify-center overflow-hidden">
+                <img src={arrowRightIcon} alt="" className="h-[12.73px] w-[7.78px] max-w-none" />
+              </span>
+            </button>
+          </div>
+          <div className="flex items-center gap-4">
+            <label htmlFor="mcp-page-jump">跳至</label>
+            <input
+              id="mcp-page-jump"
+              inputMode="numeric"
+              aria-label="跳转页码"
+              className="h-8 w-11 rounded-lg border border-[#e5e6eb] bg-transparent px-2 text-center outline-none"
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                const target = Number(event.currentTarget.value);
+                if (Number.isInteger(target) && target >= 1 && target <= serverTotalPages) {
+                  setServerPage(target);
+                }
+              }}
+            />
+            <span className="text-[#4e5969]">页</span>
+          </div>
         </div>
-      </div>
-    </div>
+      </footer>
+    </>
   );
 
   const renderCapabilityDrawer = () => (
@@ -762,32 +805,81 @@ export default function McpAccessManagement() {
   );
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4 rounded-lg border border-gray-200 bg-white px-6 py-5 shadow-sm">
-        <div>
-          <div className="text-lg font-semibold text-gray-900">MCP 接入</div>
-          <div className="mt-1 max-w-3xl text-sm leading-6 text-gray-500">
-            统一管理 MCP 服务、能力清单和连接状态。
+    <section className="flex h-full min-h-0 flex-col overflow-hidden bg-white font-['PingFang_SC','Microsoft_YaHei',sans-serif] text-[#1d2129]">
+      <div className="shrink-0 px-[22px] pt-[22px]">
+        <div className="flex h-10 items-start justify-between">
+          <h1 className="mb-0 mr-0 text-xl font-semibold leading-7 tracking-[0px] text-[#1d2129]">配置中心</h1>
+          <div className="-mt-1 flex items-center gap-3">
+            <label className="flex h-10 w-60 items-center gap-2 rounded-xl border border-[#e5e6eb] px-[17px]">
+              <span className="flex size-4 shrink-0 items-center justify-center overflow-hidden">
+                <img src={searchIcon} alt="" className="h-[14.67px] w-[14.67px] max-w-none" />
+              </span>
+              <input
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setServerPage(1);
+                }}
+                placeholder="输入模板名称或触发词"
+                className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm leading-[22px] text-[#1d2129] outline-none placeholder:text-[#86909c]"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={openCreateServerDialog}
+              className="flex h-[38px] items-center gap-1 rounded-xl border border-[#e5e6eb] bg-white px-3 text-sm leading-[22px] tracking-[0.15px] text-[#4e5969] transition-colors hover:bg-[#f7f8fa]"
+            >
+              <span className="flex size-4 shrink-0 items-center justify-center overflow-hidden">
+                <img src={addIcon} alt="" className="h-[13.33px] w-[13.33px] max-w-none" />
+              </span>
+              <span>新建 Skill</span>
+            </button>
           </div>
         </div>
-        <button
-          onClick={openCreateServerDialog}
-          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm text-white hover:bg-blue-700"
-        >
-          <Plus className="h-4 w-4" />
-          新增 MCP 服务
-        </button>
-      </div>
-      {!servers.length && (
-        <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-5 py-8 text-sm text-gray-500">
-          <CircleSlash className="h-5 w-5" />
-          暂无 MCP 服务，请新增服务并同步能力。
-        </div>
-      )}
 
-      {servers.length ? renderServers() : null}
+        <nav className="mt-4 flex h-10 items-start gap-6 border-b border-[#e5e6eb]" aria-label="配置中心分类">
+          {primaryTabs.map((tab) => {
+            const active = tab.section === 'agents';
+            return (
+              <button
+                key={tab.section}
+                type="button"
+                onClick={() => navigate(`/settings?section=${tab.section}`)}
+                className={`relative h-10 text-base leading-6 tracking-[0px] ${
+                  active ? 'font-medium text-[#1d2129]' : 'font-normal text-[#4e5969]'
+                }`}
+              >
+                {tab.label}
+                {active && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#1d2129]" />}
+              </button>
+            );
+          })}
+        </nav>
+
+        <nav className="mt-4 flex h-[30px] items-center gap-3" aria-label="能力配置分类">
+          {secondaryTabs.map((tab) => {
+            const active = tab.section === 'mcp';
+            return (
+              <button
+                key={tab.section}
+                type="button"
+                onClick={() => navigate(`/settings?section=${tab.section}`)}
+                className={`h-[30px] rounded-xl border px-3 text-sm font-normal leading-[22px] tracking-[0px] transition-colors ${
+                  active
+                    ? 'border-[#1d2129] bg-[#1d2129] text-white'
+                    : 'border-[#f7f8fa] bg-[#f2f3f5] text-[#4e5969] hover:bg-[#e5e6eb]'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
+      </div>
+
+      {renderServers()}
       {renderCapabilityDrawer()}
       {renderServerDialog()}
-    </div>
+    </section>
   );
 }

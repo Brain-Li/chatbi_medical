@@ -366,6 +366,7 @@ export interface ReportTemplate {
   id: string;
   name: string;
   description: string;
+  industry: string;
   category: string;
   version: string;
   createdAt?: string;

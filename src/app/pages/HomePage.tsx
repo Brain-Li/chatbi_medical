@@ -15,20 +15,19 @@ import globalLine from '../../assets/figma-home/global-line.svg';
 import globalLineSelected from '../../assets/figma-home/global-line-selected.svg';
 import micLine from '../../assets/figma-home/mic-line.svg';
 import { HistorySidebarToggle } from '../components/HistorySidebarToggle';
-import { PromptModeBar } from '../components/PromptModeBar';
+import { PromptModeBar, type PromptModeSelection } from '../components/PromptModeBar';
 import { PromptComposerFrame } from '../components/PromptComposerFrame';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { inferPromptMode, type PromptMode } from '../utils/promptMode';
 import { ReportTemplateSelector } from '../components/ReportTemplateSelector';
 
 type HomeMode = PromptMode;
+type HomeInputMode = PromptModeSelection;
 type AppShellOutletContext = {
   sidebarOpen?: boolean;
-  sidebarUserAdjusted?: boolean;
   openSidebar?: () => void;
 };
 type HomeLocationState = {
-  historyOpen?: boolean;
   prefill?: HomePrefillPayload;
   deleteConversationId?: string;
   deleteConversationWorkspace?: 'ask' | 'report';
@@ -55,10 +54,10 @@ const askSuggestions: HomeSuggestion[] = [
   { mode: 'ask', title: '今年以来门诊检查收入变化趋势如何？' },
   { mode: 'ask', title: '眼科近三个月门诊量是否异常？' },
 ];
-const initialSuggestions: HomeSuggestion[] = [
+const smartSuggestions: HomeSuggestion[] = [
   { mode: 'ask', title: '上月门诊总收入和药占比情况' },
-  { mode: 'ask', title: '眼科近三个月诊量是否异常', deepAnalysisEnabled: true },
-  { mode: 'report', title: '生成昨天的门诊经营日报' },
+  { mode: 'ask', title: '眼科近三个月门诊量是否异常？', deepAnalysisEnabled: true },
+  { mode: 'report', title: '生成昨日门诊经营日报' },
 ];
 const reportSuggestions: HomeSuggestion[] = [
   { mode: 'report', title: '生成昨日门诊经营日报' },
@@ -97,7 +96,6 @@ export default function HomePage() {
   const navigate = useNavigate();
   const {
     sidebarOpen = false,
-    sidebarUserAdjusted = false,
     openSidebar,
   } = useOutletContext<AppShellOutletContext>();
   const {
@@ -108,7 +106,7 @@ export default function HomePage() {
     updateConversation,
   } = useWorkspace();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [selectedMode, setSelectedMode] = useState<HomeMode | null>(null);
+  const [selectedMode, setSelectedMode] = useState<HomeInputMode>('smart');
   const [selectedReportTemplateId, setSelectedReportTemplateId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [deepAnalysisEnabled, setDeepAnalysisEnabled] = useState(false);
@@ -122,18 +120,18 @@ export default function HomePage() {
   const hasAccountError = Boolean(loginErrors.account || loginErrors.general);
   const hasPasswordError = Boolean(loginErrors.password || loginErrors.general);
   const canSubmit = Boolean(draft.trim());
-  const visibleSuggestions = selectedMode === 'ask' ? askSuggestions : initialSuggestions;
+  const visibleSuggestions = selectedMode === 'smart' ? smartSuggestions : askSuggestions;
   const inputPlaceholder =
-    selectedMode === 'ask'
+    selectedMode === 'smart'
+      ? '输入数据问题，或描述要生成的报告...'
+      : selectedMode === 'ask'
       ? '查询指标、走势、异常等各类数据问题...'
-      : selectedMode === 'report'
-        ? '描述报告主题、统计周期、分析重点...'
-        : '输入数据问题，或描述要生成的报告...';
+      : '描述报告主题、统计周期、分析重点...';
 
   useEffect(() => {
     if (!textareaRef.current) return;
-    textareaRef.current.style.height = '52px';
-    textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 112)}px`;
+    textareaRef.current.style.height = '104px';
+    textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 132)}px`;
   }, [draft]);
 
   useEffect(() => {
@@ -166,7 +164,7 @@ export default function HomePage() {
 
     setActiveConversationForWorkspace(state.resetConversationWorkspace, null);
     setDraft('');
-    setSelectedMode(null);
+    setSelectedMode('smart');
     setSelectedReportTemplateId(null);
     setDeepAnalysisEnabled(false);
 
@@ -196,20 +194,14 @@ export default function HomePage() {
     });
   }, [location.state, navigate]);
 
-  const selectMode = (nextMode: HomeMode) => {
+  const selectMode = (nextMode: HomeInputMode) => {
     if (selectedMode === nextMode) {
-      exitMode();
+      window.setTimeout(() => textareaRef.current?.focus(), 0);
       return;
     }
 
     setSelectedMode(nextMode);
     if (nextMode !== 'ask') setDeepAnalysisEnabled(false);
-    window.setTimeout(() => textareaRef.current?.focus(), 0);
-  };
-
-  const exitMode = () => {
-    setSelectedMode(null);
-    setDeepAnalysisEnabled(false);
     window.setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
@@ -219,7 +211,9 @@ export default function HomePage() {
   ) => {
     const question = submittedQuestion.trim();
     if (!question) return;
-    const resolvedMode = options?.mode ?? selectedMode ?? inferPromptMode(question, null);
+    const resolvedMode =
+      options?.mode ??
+      (selectedMode === 'smart' ? inferPromptMode(question, null) : selectedMode);
     const shouldUseDeepAnalysis =
       resolvedMode === 'ask'
         ? options?.deepAnalysisEnabled ?? deepAnalysisEnabled
@@ -243,13 +237,9 @@ export default function HomePage() {
       forceNewConversation: false,
     };
 
-    const defaultTargetSidebarOpen = resolvedMode === 'ask' && !shouldUseDeepAnalysis;
-
     navigate(resolvedMode === 'ask' ? '/ask' : '/report', {
       state: {
         autoSubmit,
-        sidebarOpen: sidebarUserAdjusted ? sidebarOpen : defaultTargetSidebarOpen,
-        sidebarUserAdjusted,
       },
     });
   };
@@ -343,37 +333,33 @@ export default function HomePage() {
                   </div>
 
                   <div
-                    className={`relative w-full pt-11 ${
+                    className={`relative w-full ${
                       selectedMode === 'report' ? 'z-30' : 'z-0'
                     }`}
                   >
-                    <div className="absolute left-0 top-0 w-full">
-                      <PromptModeBar
-                        onSelect={selectMode}
-                        selectedMode={selectedMode}
-                        className="w-full"
-                      />
-                    </div>
-
                     <PromptComposerFrame
                       className="w-full"
                       bodyClassName="items-end justify-end !py-3 !pl-4 !pr-3"
                       overflowVisible={selectedMode === 'report'}
                     >
-                    <div className="flex min-h-[100px] w-full flex-col justify-between gap-3">
-                      <div className="flex min-h-[52px] w-full items-start gap-2">
+                    <div className="flex min-h-[160px] w-full flex-col justify-between gap-4">
+                      <div className="flex min-h-[104px] w-full items-start gap-2">
                         <textarea
                           ref={textareaRef}
                           value={draft}
                           onChange={(event) => setDraft(event.target.value)}
                           onKeyDown={handleKeyDown}
                           placeholder={inputPlaceholder}
-                          rows={2}
-                          className="h-[52px] max-h-[112px] min-h-[52px] min-w-0 flex-1 resize-none bg-white pt-[3px] text-[14px] leading-[22px] text-[#1d2129] placeholder:text-[#86909c] focus:outline-none"
+                          rows={4}
+                          className="h-[104px] max-h-[132px] min-h-[104px] min-w-0 flex-1 resize-none bg-white pt-[3px] text-[14px] leading-[22px] text-[#1d2129] placeholder:text-[#86909c] focus:outline-none"
                         />
                       </div>
-                      <div className="flex h-8 items-center">
-                        <div className="flex min-w-0 flex-1 items-center gap-2 pr-4">
+                      <div className="flex min-h-10 flex-wrap items-center gap-3">
+                        <PromptModeBar
+                          onSelect={selectMode}
+                          selectedMode={selectedMode}
+                        />
+                        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-3">
                           {selectedMode === 'report' && (
                             <ReportTemplateSelector
                               templates={reportTemplates}
@@ -386,10 +372,10 @@ export default function HomePage() {
                             <button
                               type="button"
                               onClick={() => setDeepAnalysisEnabled((current) => !current)}
-                              className={`inline-flex h-8 items-center gap-1 rounded-[8px] px-3 text-[14px] font-normal leading-[22px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25 ${
+                              className={`inline-flex h-9 items-center gap-1.5 rounded-[10px] px-3.5 text-[14px] font-normal leading-[22px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25 ${
                                 deepAnalysisEnabled
                                   ? 'bg-[#e8f3ff] text-[#165dff]'
-                                  : 'bg-[#f7f8fa] text-[#1d2129] hover:bg-[#f2f3f5]'
+                                  : 'bg-[#f2f3f5] text-[#1d2129] hover:bg-[#e8eaed]'
                               }`}
                               aria-pressed={deepAnalysisEnabled}
                             >
@@ -401,27 +387,27 @@ export default function HomePage() {
                               深度分析
                             </button>
                           )}
-                        </div>
-                        <div className="flex items-center gap-4">
                           <button
                             type="button"
-                            className="flex h-8 w-8 items-center justify-center rounded-lg"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-[#f2f3f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25"
                             title="语音输入"
+                            aria-label="语音输入"
                           >
                             <img className="h-6 w-6" src={micLine} alt="" />
                           </button>
                           <button
                             type="button"
                             onClick={() => submit()}
-                            className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
-                              canSubmit ? 'bg-[#1677ff]' : 'bg-[#c9cdd4]'
+                            disabled={!canSubmit}
+                            className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/30 focus-visible:ring-offset-2 ${
+                              canSubmit ? 'bg-[#1677ff] hover:bg-[#0e6ee8]' : 'bg-[#c9cdd4]'
                             }`}
                             title={
                               selectedMode === 'report'
                                 ? '生成报告'
-                                : selectedMode === 'ask'
-                                  ? '发送问题'
-                                  : '智能识别并发送'
+                                : selectedMode === 'smart'
+                                  ? '智能识别并发送'
+                                  : '发送问题'
                             }
                           >
                             <ArrowUp className="h-4 w-4 text-white" />
@@ -515,7 +501,7 @@ export default function HomePage() {
                       <div className="flex items-center gap-2">
                         <span className="h-[13px] w-[3px] shrink-0 rounded-xl bg-[#165dff]" />
                         <h2 className="text-[16px] font-medium leading-6 text-[#1d2129]">
-                          {selectedMode === 'ask' ? '快捷提问' : '从常用场景开始'}
+                          {selectedMode === 'smart' ? '从常用场景开始' : '快捷提问'}
                         </h2>
                       </div>
                       <div className="flex flex-col gap-4">

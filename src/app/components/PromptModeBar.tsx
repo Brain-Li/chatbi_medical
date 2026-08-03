@@ -1,43 +1,43 @@
+import { Sparkles } from 'lucide-react';
+
 import barChartBoxIcon from '../../assets/figma-home/bar-chart-box-line.svg';
-import barChartBoxSelectedIcon from '../../assets/figma-home/bar-chart-box-line-selected.svg';
 import reportIcon from '../../assets/figma-home/pie-chart-box-line.svg';
-import reportSelectedIcon from '../../assets/figma-home/pie-chart-box-line-selected.svg';
 import type { PromptMode } from '../utils/promptMode';
 
-const modeMeta: Record<
-  PromptMode,
-  { label: string; icon: string; selectedButtonIcon: string }
-> = {
+export type PromptModeSelection = 'smart' | PromptMode;
+
+const modeMeta: Record<PromptModeSelection, { label: string; icon?: string }> = {
+  smart: {
+    label: '智能',
+  },
   ask: {
     label: '问数',
     icon: barChartBoxIcon,
-    selectedButtonIcon: barChartBoxSelectedIcon,
   },
   report: {
     label: '报告',
     icon: reportIcon,
-    selectedButtonIcon: reportSelectedIcon,
   },
 };
 
 export function PromptModeBar({
   onSelect,
-  selectedMode = null,
+  selectedMode = 'smart',
   disabled = false,
   className = '',
 }: {
-  onSelect: (mode: PromptMode) => void;
-  selectedMode?: PromptMode | null;
+  onSelect: (mode: PromptModeSelection) => void;
+  selectedMode?: PromptModeSelection;
   disabled?: boolean;
   className?: string;
 }) {
   return (
     <div
-      className={`flex min-h-8 min-w-0 items-center gap-[13px] ${className}`}
-      role="group"
+      className={`inline-flex h-9 shrink-0 items-center rounded-full bg-[#eef0f3] p-0.5 ${className}`}
+      role="radiogroup"
       aria-label="对话模式"
     >
-      {(Object.keys(modeMeta) as PromptMode[]).map((mode) => {
+      {(Object.keys(modeMeta) as PromptModeSelection[]).map((mode) => {
         const item = modeMeta[mode];
         const isSelected = selectedMode === mode;
 
@@ -46,20 +46,37 @@ export function PromptModeBar({
             key={mode}
             type="button"
             onClick={() => onSelect(mode)}
+            onKeyDown={(event) => {
+              if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+
+              event.preventDefault();
+              const buttons = Array.from(
+                event.currentTarget.parentElement?.querySelectorAll('button') ?? [],
+              );
+              const currentIndex = buttons.indexOf(event.currentTarget);
+              const direction = event.key === 'ArrowLeft' ? -1 : 1;
+              const sibling = buttons[(currentIndex + direction + buttons.length) % buttons.length];
+              if (!sibling) return;
+
+              sibling.focus();
+              sibling.click();
+            }}
             disabled={disabled}
-            className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-[#d4d6dc] px-3 py-[5px] text-[14px] font-normal leading-[22px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25 disabled:cursor-not-allowed disabled:opacity-50 ${
+            tabIndex={isSelected ? 0 : -1}
+            className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-transparent px-3 text-[14px] leading-[22px] transition-[background-color,color,box-shadow] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/30 disabled:cursor-not-allowed disabled:opacity-50 ${
               isSelected
-                ? 'bg-[#e8f3ff] text-[#165dff]'
-                : 'bg-white text-[#1d2129] hover:border-[#bcd4ff] hover:bg-[#f9fbff]'
+                ? 'bg-white font-medium text-[#1d2129] shadow-[0_1px_2px_rgba(15,23,42,0.08)]'
+                : 'font-normal text-[#6b7280] hover:text-[#1d2129]'
             }`}
-            aria-label={isSelected ? `取消${item.label}模式` : `切换到${item.label}模式`}
-            aria-pressed={isSelected}
+            role="radio"
+            aria-label={`${item.label}模式`}
+            aria-checked={isSelected}
           >
-            <img
-              src={isSelected ? item.selectedButtonIcon : item.icon}
-              alt=""
-              className="h-4 w-4"
-            />
+            {item.icon ? (
+              <img src={item.icon} alt="" className="h-4 w-4" />
+            ) : (
+              <Sparkles aria-hidden="true" className="h-4 w-4" strokeWidth={1.8} />
+            )}
             {item.label}
           </button>
         );

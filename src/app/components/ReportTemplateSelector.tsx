@@ -15,7 +15,7 @@ type ReportTemplateOption = {
   name: string;
   selectorLabel: string;
   category: string;
-  prompt: string;
+  description: string;
 };
 
 const featuredTemplateIds = [
@@ -47,7 +47,7 @@ function toTemplateOption(template: LibraryReportTemplate): ReportTemplateOption
     name: featuredLabels?.name ?? template.name,
     selectorLabel: featuredLabels?.selectorLabel ?? template.name,
     category: template.category,
-    prompt: template.templatePrompt.trim() || template.description,
+    description: template.description.trim() || '暂无模板描述',
   };
 }
 
@@ -171,7 +171,7 @@ export function ReportTemplateSelector({
   };
 
   return (
-    <div ref={rootRef} className="relative shrink-0">
+    <div ref={rootRef} className="relative inline-flex max-w-full shrink-0">
       {selectedTemplate ? (
         <div
           className="flex h-8 max-w-[240px] items-center overflow-hidden rounded-lg border border-[#e5e6eb] bg-white text-[#1d2129] transition-colors hover:border-[#c9cdd4]"
@@ -283,9 +283,9 @@ export function ReportTemplateSelector({
                     align="start"
                     sideOffset={8}
                     arrowClassName="bg-[#1d2129] fill-[#1d2129]"
-                    className="z-[120] max-h-64 max-w-[420px] overflow-y-auto whitespace-pre-wrap rounded-[4px] bg-[#1d2129] px-3 py-2 text-left text-[12px] font-normal leading-5 text-white shadow-[0_6px_16px_rgba(29,33,41,0.16)]"
+                    className="z-[120] w-[320px] max-w-[calc(100vw-32px)] whitespace-normal rounded-[6px] bg-[#1d2129] px-3 py-2.5 text-left text-[13px] font-normal leading-5 text-white text-wrap shadow-[0_6px_16px_rgba(29,33,41,0.16)]"
                   >
-                    <div className="whitespace-pre-wrap">{template.prompt}</div>
+                    <p className="m-0">{template.description}</p>
                   </TooltipContent>
                 </Tooltip>
               );

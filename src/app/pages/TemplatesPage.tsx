@@ -33,9 +33,16 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/toolti
 
 const templatePageSizeOptions = [10, 20, 50] as const;
 const templateDescriptionMaxLength = 50;
+const defaultTemplateIndustry = '医疗';
+const templateIndustryCategories: Record<string, string[]> = {
+  医疗: ['日报', '月报', '专题'],
+  汽车: ['销售日报', '经营月报', '售后专题'],
+  云管: ['资源日报', '运营月报', '成本专题'],
+};
 
 type TemplateFormState = {
   name: string;
+  industry: string;
   category: string;
   status: ReportTemplateStatus;
   description: string;
@@ -46,6 +53,7 @@ type TemplateFormState = {
 
 const emptyTemplateForm: TemplateFormState = {
   name: '',
+  industry: defaultTemplateIndustry,
   category: '专题',
   status: 'published',
   description: '',
@@ -148,14 +156,10 @@ function TemplateDescription({ description }: { description: string }) {
         align="start"
         sideOffset={8}
         collisionPadding={12}
-        showArrow={false}
-        className="relative max-w-[280px] rounded-[4px] border-0 bg-[#1d2129] px-3 py-2.5 text-left font-['PingFang_SC'] text-[14px] font-normal leading-[22px] tracking-normal text-white shadow-none"
+        arrowClassName="bg-[#1d2129] fill-[#1d2129]"
+        className="z-[120] w-[320px] max-w-[calc(100vw-32px)] whitespace-normal rounded-[6px] border-0 bg-[#1d2129] px-3 py-2.5 text-left font-['PingFang_SC'] text-[13px] font-normal leading-5 tracking-normal text-white text-wrap shadow-[0_6px_16px_rgba(29,33,41,0.16)]"
       >
-        <div className="break-words text-balance text-white">{description}</div>
-        <span
-          aria-hidden="true"
-          className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[5px] border-t-[4px] border-x-transparent border-t-[#1d2129]"
-        />
+        <p className="m-0 break-words">{description}</p>
       </TooltipContent>
     </Tooltip>
   );
@@ -164,6 +168,7 @@ function TemplateDescription({ description }: { description: string }) {
 function toTemplateForm(template: ReportTemplate): TemplateFormState {
   return {
     name: template.name,
+    industry: template.industry || defaultTemplateIndustry,
     category: template.category,
     status: template.status === 'disabled' ? 'disabled' : 'published',
     description: template.description.slice(0, templateDescriptionMaxLength),
@@ -195,6 +200,7 @@ function createTemplateFromForm(form: TemplateFormState, existing?: ReportTempla
     id: existing?.id ?? `template-${timestamp}`,
     name: form.name.trim() || '未命名报告模板',
     description: (form.description ?? '').trim().slice(0, templateDescriptionMaxLength),
+    industry: form.industry.trim() || defaultTemplateIndustry,
     category: form.category.trim() || '专题',
     version: existing?.version ?? 'v1.0',
     createdAt: existing?.createdAt ?? formatTemplateCreatedAt(createdAt),
@@ -226,6 +232,7 @@ export default function TemplatesPage() {
     deleteReportTemplate,
   } = useWorkspace();
   const [query, setQuery] = useState('');
+  const [selectedIndustry, setSelectedIndustry] = useState('all');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [templatePage, setTemplatePage] = useState(1);
   const [templatePageSize, setTemplatePageSize] = useState<number>(templatePageSizeOptions[0]);
@@ -240,12 +247,15 @@ export default function TemplatesPage() {
 
     return reportTemplates
       .filter((template) => {
+        const templateIndustry = template.industry || defaultTemplateIndustry;
+        const matchesIndustry = selectedIndustry === 'all' || templateIndustry === selectedIndustry;
         const matchesCategory = selectedCategory === 'all' || template.category === selectedCategory;
         const matchesQuery =
           !normalizedQuery ||
           [
             template.name,
             template.description,
+            templateIndustry,
             template.templatePrompt,
             ...template.triggerPhrases,
             ...template.sections.map((section) => section.title),
@@ -254,28 +264,57 @@ export default function TemplatesPage() {
             .toLowerCase()
             .includes(normalizedQuery);
 
-        return matchesCategory && matchesQuery;
+        return matchesIndustry && matchesCategory && matchesQuery;
       })
       .sort((current, next) => getTemplateCreatedAtTime(next) - getTemplateCreatedAtTime(current));
-  }, [query, reportTemplates, selectedCategory]);
+  }, [query, reportTemplates, selectedCategory, selectedIndustry]);
 
   useEffect(() => {
     setTemplatePage(1);
-  }, [query, selectedCategory]);
+  }, [query, selectedCategory, selectedIndustry]);
 
-  const categoryOptions = useMemo(() => {
-    const categories = new Set(['专题']);
+  const industryOptions = useMemo(() => {
+    const industries = new Set(Object.keys(templateIndustryCategories));
 
     reportTemplates.forEach((template) => {
+      const industry = (template.industry || defaultTemplateIndustry).trim();
+      if (industry) industries.add(industry);
+    });
+
+    const currentIndustry = form.industry.trim();
+    if (currentIndustry) industries.add(currentIndustry);
+
+    return Array.from(industries);
+  }, [form.industry, reportTemplates]);
+
+  const categoryOptions = useMemo(() => {
+    const categories = new Set(
+      selectedIndustry === 'all'
+        ? Object.values(templateIndustryCategories).flat()
+        : templateIndustryCategories[selectedIndustry] ?? [],
+    );
+
+    reportTemplates.forEach((template) => {
+      if (selectedIndustry !== 'all' && (template.industry || defaultTemplateIndustry) !== selectedIndustry) return;
       const category = template.category.trim();
       if (category) categories.add(category);
     });
 
-    const currentCategory = form.category.trim();
-    if (currentCategory) categories.add(currentCategory);
-
     return Array.from(categories);
-  }, [form.category, reportTemplates]);
+  }, [reportTemplates, selectedIndustry]);
+
+  const formCategoryOptions = useMemo(() => {
+    const categories = new Set(templateIndustryCategories[form.industry] ?? []);
+
+    reportTemplates.forEach((template) => {
+      if ((template.industry || defaultTemplateIndustry) === form.industry && template.category.trim()) {
+        categories.add(template.category.trim());
+      }
+    });
+
+    if (form.category.trim()) categories.add(form.category.trim());
+    return Array.from(categories);
+  }, [form.category, form.industry, reportTemplates]);
 
   const templateTotalPages = Math.max(1, Math.ceil(filteredTemplates.length / templatePageSize));
   const templatePageItems = useMemo<Array<number | string>>(() => {
@@ -359,42 +398,90 @@ export default function TemplatesPage() {
           </div>
         </div>
 
-        <div className="mt-4 flex h-7 shrink-0 items-center gap-3 overflow-x-auto" aria-label="模板分类">
-          <button
-            type="button"
-            aria-pressed={selectedCategory === 'all'}
-            onClick={() => setSelectedCategory('all')}
-            className={`h-7 rounded-[14px] px-3 text-[14px] font-normal leading-7 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
-              selectedCategory === 'all'
-                ? 'bg-[#1d2129] text-white'
-                : 'bg-[#f2f3f5] text-[#4e5969] hover:bg-[#e5e6eb]'
-            }`}
-          >
-            全部
-          </button>
-          {categoryOptions.map((category) => (
+        <div
+          className="mt-4 flex min-h-8 shrink-0 flex-wrap items-center gap-x-5 gap-y-3"
+          aria-label="模板筛选"
+        >
+          <div className="flex items-center gap-2">
+            <span className="shrink-0 text-[14px] leading-[22px] text-[#4e5969]">业务线</span>
+            <Select
+              value={selectedIndustry}
+              onValueChange={(value) => {
+                setSelectedIndustry(value);
+                setSelectedCategory('all');
+              }}
+            >
+              <SelectTrigger
+                aria-label="选择模板业务线"
+                size="sm"
+                className="group h-8 w-[112px] rounded-[8px] border-[#e5e6eb] bg-white px-3 text-[14px] leading-[22px] text-[#1d2129] shadow-none focus-visible:border-[#165dff] focus-visible:ring-2 focus-visible:ring-[#165dff]/10"
+                icon={
+                  <span className="relative h-4 w-4 shrink-0 overflow-hidden transition-transform duration-150 group-data-[state=open]:rotate-180">
+                    <img aria-hidden="true" className="absolute left-[3.76px] top-[5.48px] h-[5.19px] w-[8.49px]" src={templatePageSizeChevronIcon} alt="" />
+                  </span>
+                }
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent
+                position="popper"
+                sideOffset={4}
+                viewportClassName="h-auto min-h-0 w-full !min-w-0 p-0"
+                className="w-[var(--radix-select-trigger-width)] !min-w-0 rounded-[8px] border-[#e5e6eb] bg-white p-1 text-[#1d2129] shadow-[0_4px_12px_rgba(29,33,41,0.08)] data-[side=bottom]:!translate-y-0 data-[side=top]:!translate-y-0"
+              >
+                <SelectItem value="all" className="h-8 rounded-[6px] py-0 pl-2 pr-8 text-[14px] focus:bg-[#f7f8fa] focus:text-[#1d2129]">
+                  全部
+                </SelectItem>
+                {industryOptions.map((industry) => (
+                  <SelectItem key={industry} value={industry} className="h-8 rounded-[6px] py-0 pl-2 pr-8 text-[14px] focus:bg-[#f7f8fa] focus:text-[#1d2129]">
+                    {industry}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <span aria-hidden="true" className="hidden h-4 w-px bg-[#e5e6eb] sm:block" />
+
+          <div className="flex min-w-0 items-center gap-3 overflow-x-auto" aria-label="模板分类">
+            <span className="shrink-0 text-[14px] leading-[22px] text-[#4e5969]">分类</span>
             <button
-              key={category}
               type="button"
-              aria-pressed={selectedCategory === category}
-              onClick={() => setSelectedCategory(category)}
-              className={`h-7 rounded-[14px] px-3 text-[14px] font-normal leading-7 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
-                selectedCategory === category
+              aria-pressed={selectedCategory === 'all'}
+              onClick={() => setSelectedCategory('all')}
+              className={`h-7 shrink-0 rounded-[14px] px-3 text-[14px] font-normal leading-7 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
+                selectedCategory === 'all'
                   ? 'bg-[#1d2129] text-white'
                   : 'bg-[#f2f3f5] text-[#4e5969] hover:bg-[#e5e6eb]'
               }`}
             >
-              {category}
+              全部
             </button>
-          ))}
+            {categoryOptions.map((category) => (
+              <button
+                key={category}
+                type="button"
+                aria-pressed={selectedCategory === category}
+                onClick={() => setSelectedCategory(category)}
+                className={`h-7 shrink-0 rounded-[14px] px-3 text-[14px] font-normal leading-7 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
+                  selectedCategory === category
+                    ? 'bg-[#1d2129] text-white'
+                    : 'bg-[#f2f3f5] text-[#4e5969] hover:bg-[#e5e6eb]'
+                }`}
+              >
+                {category}
+              </button>
+            ))}
+          </div>
         </div>
 
         <section className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden" aria-label="报告模板列表">
           <div className="min-h-0 flex-1 overflow-auto">
-            <table className="-mt-2 w-full min-w-[1080px] table-fixed border-separate border-spacing-x-0 border-spacing-y-2">
+            <table className="-mt-2 w-full min-w-[1160px] table-fixed border-separate border-spacing-x-0 border-spacing-y-2">
               <colgroup>
                 <col />
-                <col className="w-[92px]" />
+                <col className="w-[116px]" />
+                <col className="w-[100px]" />
                 <col className="w-[184px]" />
                 <col className="w-[104px]" />
                 <col className="w-[216px]" />
@@ -402,6 +489,7 @@ export default function TemplatesPage() {
               <thead className="sticky top-0 z-10 bg-[#f7f8fa]">
                 <tr className="h-12 text-left text-[14px] font-medium leading-6 text-[#4e5969]">
                   <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">模板名称</th>
+                  <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">业务线</th>
                   <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">分类</th>
                   <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">创建时间</th>
                   <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">状态</th>
@@ -426,6 +514,9 @@ export default function TemplatesPage() {
                             </span>
                             <TemplateDescription description={templateSummary || '-'} />
                           </div>
+                        </td>
+                        <td className="whitespace-nowrap border-b border-[#e5e6eb] p-4 text-[#4e5969]">
+                          {template.industry || defaultTemplateIndustry}
                         </td>
                         <td className="border-b border-[#e5e6eb] p-4">
                           <span className="inline-flex items-center justify-center rounded-[8px] bg-[#e8f3ff] px-2 py-1 text-[14px] leading-[22px] text-[#165dff]">
@@ -514,7 +605,7 @@ export default function TemplatesPage() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={5} className="h-40 px-4 text-center text-[14px] text-[#86909c]">
+                    <td colSpan={6} className="h-40 px-4 text-center text-[14px] text-[#86909c]">
                       未找到匹配的报告模板
                     </td>
                   </tr>
@@ -674,42 +765,88 @@ export default function TemplatesPage() {
               </div>
             </div>
 
-            <div className="flex flex-col gap-2">
-              <label htmlFor="template-category" className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">
-                分类
-              </label>
-              <Select
-                value={form.category}
-                onValueChange={(value) => setForm((current) => ({ ...current, category: value }))}
-              >
-                <SelectTrigger
-                  id="template-category"
-                  className="group h-10 w-full rounded-[12px] border-[#e5e6eb] bg-white px-3 text-[14px] leading-[22px] tracking-[0.15px] text-[#1d2129] shadow-none outline-none focus-visible:border-[#165dff] focus-visible:ring-2 focus-visible:ring-[#165dff]/10"
-                  icon={
-                    <span className="relative h-4 w-4 shrink-0 overflow-hidden transition-transform duration-150 group-data-[state=open]:rotate-180">
-                      <img className="absolute left-[3.757px] top-[5.482px] h-[5.186px] w-[8.486px]" src={templateModalChevronDown} alt="" />
-                    </span>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="flex flex-col gap-2">
+                <label htmlFor="template-industry" className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">
+                  业务线
+                </label>
+                <Select
+                  value={form.industry}
+                  onValueChange={(value) =>
+                    setForm((current) => ({
+                      ...current,
+                      industry: value,
+                      category: (templateIndustryCategories[value] ?? [])[0] ?? current.category,
+                    }))
                   }
                 >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent
-                  position="popper"
-                  sideOffset={4}
-                  viewportClassName="h-auto min-h-0 w-full !min-w-0 p-0"
-                  className="z-[70] w-[var(--radix-select-trigger-width)] !min-w-0 rounded-[12px] border-[#e5e6eb] bg-white p-1 text-[#1d2129] shadow-[0_4px_12px_rgba(29,33,41,0.08)] data-[side=bottom]:!translate-y-0 data-[side=top]:!translate-y-0"
+                  <SelectTrigger
+                    id="template-industry"
+                    className="group h-10 w-full rounded-[12px] border-[#e5e6eb] bg-white px-3 text-[14px] leading-[22px] tracking-[0.15px] text-[#1d2129] shadow-none outline-none focus-visible:border-[#165dff] focus-visible:ring-2 focus-visible:ring-[#165dff]/10"
+                    icon={
+                      <span className="relative h-4 w-4 shrink-0 overflow-hidden transition-transform duration-150 group-data-[state=open]:rotate-180">
+                        <img className="absolute left-[3.757px] top-[5.482px] h-[5.186px] w-[8.486px]" src={templateModalChevronDown} alt="" />
+                      </span>
+                    }
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent
+                    position="popper"
+                    sideOffset={4}
+                    viewportClassName="h-auto min-h-0 w-full !min-w-0 p-0"
+                    className="z-[70] w-[var(--radix-select-trigger-width)] !min-w-0 rounded-[12px] border-[#e5e6eb] bg-white p-1 text-[#1d2129] shadow-[0_4px_12px_rgba(29,33,41,0.08)] data-[side=bottom]:!translate-y-0 data-[side=top]:!translate-y-0"
+                  >
+                    {industryOptions.map((industry) => (
+                      <SelectItem
+                        key={industry}
+                        value={industry}
+                        className="h-10 rounded-[8px] py-0 pl-3 pr-9 text-[14px] leading-[22px] text-[#1d2129] focus:bg-[#f7f8fa] focus:text-[#1d2129] data-[state=checked]:bg-[#f2f3f5] data-[state=checked]:font-medium"
+                      >
+                        {industry}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label htmlFor="template-category" className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">
+                  分类
+                </label>
+                <Select
+                  value={form.category}
+                  onValueChange={(value) => setForm((current) => ({ ...current, category: value }))}
                 >
-                  {categoryOptions.map((category) => (
-                    <SelectItem
-                      key={category}
-                      value={category}
-                      className="h-10 rounded-[8px] py-0 pl-3 pr-9 text-[14px] leading-[22px] text-[#1d2129] focus:bg-[#f7f8fa] focus:text-[#1d2129] data-[state=checked]:bg-[#f2f3f5] data-[state=checked]:font-medium"
-                    >
-                      {category}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                  <SelectTrigger
+                    id="template-category"
+                    className="group h-10 w-full rounded-[12px] border-[#e5e6eb] bg-white px-3 text-[14px] leading-[22px] tracking-[0.15px] text-[#1d2129] shadow-none outline-none focus-visible:border-[#165dff] focus-visible:ring-2 focus-visible:ring-[#165dff]/10"
+                    icon={
+                      <span className="relative h-4 w-4 shrink-0 overflow-hidden transition-transform duration-150 group-data-[state=open]:rotate-180">
+                        <img className="absolute left-[3.757px] top-[5.482px] h-[5.186px] w-[8.486px]" src={templateModalChevronDown} alt="" />
+                      </span>
+                    }
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent
+                    position="popper"
+                    sideOffset={4}
+                    viewportClassName="h-auto min-h-0 w-full !min-w-0 p-0"
+                    className="z-[70] w-[var(--radix-select-trigger-width)] !min-w-0 rounded-[12px] border-[#e5e6eb] bg-white p-1 text-[#1d2129] shadow-[0_4px_12px_rgba(29,33,41,0.08)] data-[side=bottom]:!translate-y-0 data-[side=top]:!translate-y-0"
+                  >
+                    {formCategoryOptions.map((category) => (
+                      <SelectItem
+                        key={category}
+                        value={category}
+                        className="h-10 rounded-[8px] py-0 pl-3 pr-9 text-[14px] leading-[22px] text-[#1d2129] focus:bg-[#f7f8fa] focus:text-[#1d2129] data-[state=checked]:bg-[#f2f3f5] data-[state=checked]:font-medium"
+                      >
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <div className="flex flex-col gap-2">
@@ -849,6 +986,19 @@ export default function TemplatesPage() {
                   <dd className="min-w-0 flex-1 break-words text-[14px] font-medium leading-[22px] text-[#1d2129]">
                     {viewingTemplate.name}
                   </dd>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 border-b border-[#e5e6eb] pb-4">
+                  <div className="flex items-center gap-3">
+                    <dt className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">业务线</dt>
+                    <dd className="text-[14px] leading-[22px] text-[#1d2129]">
+                      {viewingTemplate.industry || defaultTemplateIndustry}
+                    </dd>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <dt className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">分类</dt>
+                    <dd className="text-[14px] leading-[22px] text-[#1d2129]">{viewingTemplate.category}</dd>
+                  </div>
                 </div>
 
                 <div className="flex min-h-0 flex-1 flex-col gap-2">

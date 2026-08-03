@@ -21,6 +21,7 @@ import {
   reportSubscriptions as initialReportSubscriptions,
   semanticDatasets as initialSemanticDatasets,
   skills as initialSkills,
+  YESTERDAY_HISTORY_EXAMPLE_ID,
 } from '../mockData';
 import {
   Agent,
@@ -103,6 +104,7 @@ interface WorkspaceContextValue {
   getServersForAgent: (agentId: string) => McpServer[];
   updateMcpServer: (serverId: string, updater: (server: McpServer) => McpServer) => void;
   addMcpServer: (server: McpServer) => void;
+  deleteMcpServer: (serverId: string) => void;
   updateMcpCapability: (
     capabilityId: string,
     updater: (capability: McpCapability) => McpCapability,
@@ -161,17 +163,23 @@ const getRetainedConversations = (conversations: Conversation[], now = Date.now(
   return conversations.filter((conversation) => conversation.updatedAt.getTime() >= cutoff);
 };
 
-const mergeExceptionDemoConversations = (conversations: Conversation[]) => {
+const mergeSeededConversations = (conversations: Conversation[]) => {
   const demos = initialConversations.filter((conversation) => conversation.isDemo);
-  const demoIds = new Set(demos.map((conversation) => conversation.id));
+  const yesterdayExample = initialConversations.find(
+    (conversation) => conversation.id === YESTERDAY_HISTORY_EXAMPLE_ID,
+  );
+  const seededConversations = yesterdayExample ? [...demos, yesterdayExample] : demos;
+  const seededConversationIds = new Set(
+    seededConversations.map((conversation) => conversation.id),
+  );
   const preserved = conversations.filter(
     (conversation) =>
-      !demoIds.has(conversation.id)
+      !seededConversationIds.has(conversation.id)
       && !conversation.id.startsWith('conv-boundary-')
       && !conversation.isDemo,
   );
 
-  return [...demos, ...preserved];
+  return [...seededConversations, ...preserved];
 };
 
 const readStoredConversations = () => {
@@ -188,7 +196,7 @@ const readStoredConversations = () => {
       fromStoredConversation(conversation as StoredConversation),
     );
 
-    return mergeExceptionDemoConversations(storedConversations);
+    return mergeSeededConversations(storedConversations);
   } catch {
     return null;
   }
@@ -753,6 +761,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       },
       addMcpServer: (server) => {
         setMcpServers((current) => [server, ...current]);
+      },
+      deleteMcpServer: (serverId) => {
+        setMcpServers((current) => current.filter((server) => server.id !== serverId));
       },
       updateMcpCapability: (capabilityId, updater) => {
         setMcpServers((current) =>

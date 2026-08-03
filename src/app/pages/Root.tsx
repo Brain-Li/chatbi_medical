@@ -16,42 +16,12 @@ export default function Root() {
     renameConversation,
     setActiveConversationForWorkspace,
   } = useWorkspace();
-  const navigationState = location.state as {
-    historyOpen?: boolean;
-    sidebarOpen?: boolean;
-    sidebarUserAdjusted?: boolean;
-  } | null;
-  const requestedSidebarOpen = typeof navigationState?.sidebarOpen === 'boolean'
-    ? navigationState.sidebarOpen
-    : navigationState?.historyOpen;
-  const requestedSidebarUserAdjusted = typeof navigationState?.sidebarUserAdjusted === 'boolean'
-    ? navigationState.sidebarUserAdjusted
-    : typeof requestedSidebarOpen === 'boolean'
-      ? true
-      : undefined;
   const isHome = location.pathname === '/home';
   const isLogin = location.pathname === '/';
   const isReportWorkspace = location.pathname === '/report';
   const isWorkspacePage = location.pathname === '/ask' || location.pathname === '/report';
   const isConversationPage = isHome || isWorkspacePage;
-  const defaultSidebarOpen = !isHome && !isReportWorkspace;
-  const [sidebarState, setSidebarState] = useState(() => ({
-    open: typeof requestedSidebarOpen === 'boolean'
-      ? requestedSidebarOpen
-      : defaultSidebarOpen,
-    userAdjusted: requestedSidebarUserAdjusted ?? false,
-    locationKey: location.key,
-  }));
-  const sidebarUserAdjusted = sidebarState.locationKey === location.key
-    ? sidebarState.userAdjusted
-    : requestedSidebarUserAdjusted ?? sidebarState.userAdjusted;
-  const sidebarOpen = sidebarState.locationKey === location.key
-    ? sidebarState.open
-    : typeof requestedSidebarOpen === 'boolean'
-      ? requestedSidebarOpen
-      : sidebarUserAdjusted
-        ? sidebarState.open
-        : defaultSidebarOpen;
+  const [sidebarOpen, setSidebarOpen] = useState(() => location.pathname === '/ask');
   const historyConversations = [
     ...getConversationsForWorkspace('ask'),
     ...getConversationsForWorkspace('report'),
@@ -63,21 +33,17 @@ export default function Root() {
     activeConversationIds,
     deleteConversation,
     historyConversations,
-    locationKey: location.key,
     locationPathname: location.pathname,
     renameConversation,
     setActiveConversationForWorkspace,
-    sidebarOpen,
   });
   sidebarRuntimeRef.current = {
     activeConversationIds,
     deleteConversation,
     historyConversations,
-    locationKey: location.key,
     locationPathname: location.pathname,
     renameConversation,
     setActiveConversationForWorkspace,
-    sidebarOpen,
   };
 
   const handleNewConversation = useCallback(() => {
@@ -86,9 +52,6 @@ export default function Root() {
 
     navigate('/home', {
       state: {
-        historyOpen: true,
-        sidebarOpen: true,
-        sidebarUserAdjusted: true,
         resetConversationWorkspace: workspaceType,
       },
     });
@@ -100,9 +63,7 @@ export default function Root() {
     const targetMode = conversation?.workspaceType === 'report' ? 'report' : 'ask';
 
     runtime.setActiveConversationForWorkspace(targetMode, conversationId);
-    navigate(targetMode === 'report' ? '/report' : '/ask', {
-      state: { sidebarOpen: true, sidebarUserAdjusted: true },
-    });
+    navigate(targetMode === 'report' ? '/report' : '/ask');
   }, [navigate]);
 
   const handleRenameConversation = useCallback((conversationId: string, title: string) => {
@@ -127,45 +88,15 @@ export default function Root() {
       (runtime.locationPathname === '/ask' && deletingAskConversation)
       || (runtime.locationPathname === '/report' && deletingReportConversation)
     ) {
-      navigate('/home', {
-        state: {
-          historyOpen: true,
-          sidebarOpen: true,
-          sidebarUserAdjusted: true,
-        },
-      });
+      navigate('/home');
     }
 
     return false;
   }, [navigate]);
 
   const handleCollapseSidebar = useCallback(() => {
-    setSidebarState({
-      open: false,
-      userAdjusted: true,
-      locationKey: sidebarRuntimeRef.current.locationKey,
-    });
+    setSidebarOpen(false);
   }, []);
-
-  const handleDefaultSidebarOpenChange = useCallback((open: boolean) => {
-    if (sidebarUserAdjusted) return;
-
-    setSidebarState({
-      open,
-      userAdjusted: false,
-      locationKey: location.key,
-    });
-  }, [location.key, sidebarUserAdjusted]);
-
-  useEffect(() => {
-    if (sidebarState.locationKey === location.key) return;
-
-    setSidebarState({
-      open: sidebarOpen,
-      userAdjusted: sidebarUserAdjusted,
-      locationKey: location.key,
-    });
-  }, [location.key, sidebarOpen, sidebarState.locationKey, sidebarUserAdjusted]);
 
   useEffect(() => {
     if (!isHome) {
@@ -204,18 +135,7 @@ export default function Root() {
           <Outlet
             context={{
               sidebarOpen,
-              sidebarUserAdjusted,
-              openSidebar: () => setSidebarState({
-                open: true,
-                userAdjusted: true,
-                locationKey: location.key,
-              }),
-              closeSidebar: () => setSidebarState({
-                open: false,
-                userAdjusted: true,
-                locationKey: location.key,
-              }),
-              setDefaultSidebarOpen: handleDefaultSidebarOpenChange,
+              openSidebar: () => setSidebarOpen(true),
             }}
           />
         </main>

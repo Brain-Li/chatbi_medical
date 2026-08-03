@@ -25,7 +25,7 @@ import { inferPromptMode } from '../utils/promptMode';
 import { buildAnalysisReportFileName } from '../utils/reportFileName';
 import { Agent, AgentClarificationOption, AgentRuntimeConfig, AgentType, AnalysisCandidateOption, AnalysisMcpMatch, AnalysisProcessData, AnalysisProcessStep, AnalysisResultData, AskQuestionIntentClassification, Conversation, DeepAnalysisActivityId, McpCapability, Message, ReportResultData, ReportTemplateUsage, ResultScope, Skill, WorkspaceAutoSubmitPayload } from '../types';
 import { HistorySidebarToggle } from './HistorySidebarToggle';
-import { PromptModeBar } from './PromptModeBar';
+import { PromptModeBar, type PromptModeSelection } from './PromptModeBar';
 import { PromptComposerFrame } from './PromptComposerFrame';
 import { ReportTemplateSelector } from './ReportTemplateSelector';
 import {
@@ -223,7 +223,7 @@ type SlashMatch = {
   end: number;
 };
 
-type WorkspaceSwitchMode = Extract<AgentType, 'ask' | 'report'>;
+type WorkspaceSwitchMode = PromptModeSelection;
 
 type QuestionThread = {
   userMessage: Message;
@@ -546,15 +546,11 @@ function getConversationDeepAnalysisEnabled(conversation: Conversation | null) {
 export default function AgentWorkspace({
   mode,
   sidebarOpen = true,
-  sidebarUserAdjusted = false,
   onSidebarOpen,
-  onDefaultSidebarOpenChange,
 }: {
   mode: AgentType;
   sidebarOpen?: boolean;
-  sidebarUserAdjusted?: boolean;
   onSidebarOpen?: () => void;
-  onDefaultSidebarOpenChange?: (open: boolean) => void;
 }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -587,7 +583,9 @@ export default function AgentWorkspace({
   const [highlightedSlashIndex, setHighlightedSlashIndex] = useState(0);
   const [isDeepAnalysisEnabled, setIsDeepAnalysisEnabled] = useState(false);
   const [selectedComposerMode, setSelectedComposerMode] =
-    useState<WorkspaceSwitchMode | null>(mode);
+    useState<WorkspaceSwitchMode>(
+      mode === 'report' ? 'report' : mode === 'ask' ? 'ask' : 'smart',
+    );
   const [selectedReportTemplateId, setSelectedReportTemplateId] = useState<string | null>(null);
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [deepAnalysisDockTab, setDeepAnalysisDockTab] =
@@ -629,6 +627,12 @@ export default function AgentWorkspace({
   const activeAgentType: AgentType =
     mode === 'ask' && isDeepAnalysisEnabled ? 'rca' : mode;
   const cleanedInputValue = removeActiveSlashToken(inputValue).trim();
+
+  useEffect(() => {
+    if (!textareaRef.current) return;
+    textareaRef.current.style.height = '72px';
+    textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 104)}px`;
+  }, [inputValue]);
 
   const enabledModeAgents = useMemo(
     () =>
@@ -974,7 +978,9 @@ export default function AgentWorkspace({
     setIsDeepAnalysisEnabled(
       mode === 'ask' && getConversationDeepAnalysisEnabled(currentConversation),
     );
-    setSelectedComposerMode(currentConversation ? mode : null);
+    setSelectedComposerMode(
+      currentConversation && mode !== 'rca' ? mode : 'smart',
+    );
     setSelectedReportTemplateId(null);
     setSelectedQuestionId(null);
     setDeepAnalysisDockTab('progress');
@@ -991,12 +997,6 @@ export default function AgentWorkspace({
     setIsFollowingReportActivity(true);
     resetManualSkillState();
   }, [currentConversation?.id, currentConversation?.deepAnalysisEnabled, mode]);
-
-  useEffect(() => {
-    if (sidebarUserAdjusted || !onDefaultSidebarOpenChange) return;
-
-    onDefaultSidebarOpenChange(mode === 'ask' && !isDeepAnalysisEnabled);
-  }, [isDeepAnalysisEnabled, mode, onDefaultSidebarOpenChange, sidebarUserAdjusted]);
 
   useEffect(() => {
     return () => {
@@ -1663,8 +1663,6 @@ export default function AgentWorkspace({
   useLayoutEffect(() => {
     const navigationState = location.state as {
       autoSubmit?: WorkspaceAutoSubmitPayload;
-      sidebarOpen?: boolean;
-      sidebarUserAdjusted?: boolean;
     } | null;
     const autoSubmit = navigationState?.autoSubmit;
 
@@ -1689,19 +1687,19 @@ export default function AgentWorkspace({
     });
     navigate('.', {
       replace: true,
-      state: {
-        sidebarOpen: navigationState?.sidebarOpen ?? sidebarOpen,
-        sidebarUserAdjusted: navigationState?.sidebarUserAdjusted ?? sidebarUserAdjusted,
-      },
+      state: null,
     });
-  }, [location.state, mode, navigate, sidebarOpen, sidebarUserAdjusted]);
+  }, [location.state, mode, navigate]);
 
   const handleSend = () => {
     const cleanedQuestion = removeActiveSlashToken(inputValue).trim();
 
     if (!cleanedQuestion) return;
 
-    const targetMode = inferPromptMode(cleanedQuestion, selectedComposerMode);
+    const targetMode = inferPromptMode(
+      cleanedQuestion,
+      selectedComposerMode === 'smart' ? null : selectedComposerMode,
+    );
 
     if (mode === 'ask' && selectedComposerMode === 'ask' && targetMode === 'report') {
       const conversation = currentConversation ?? createConversation(mode, newConversationLabel);
@@ -1758,12 +1756,9 @@ export default function AgentWorkspace({
       setSelectedComposerMode(targetMode);
       setSelectedReportTemplateId(null);
       resetManualSkillState();
-      const defaultTargetSidebarOpen = targetMode === 'ask';
       navigate(targetMode === 'ask' ? '/ask' : '/report', {
         state: {
           autoSubmit,
-          sidebarOpen: sidebarUserAdjusted ? sidebarOpen : defaultTargetSidebarOpen,
-          sidebarUserAdjusted,
         },
       });
       return;
@@ -2424,22 +2419,16 @@ export default function AgentWorkspace({
     stopPendingTimers();
     setIsRecording(false);
     setIsDeepAnalysisEnabled(false);
-    setSelectedComposerMode(null);
+    setSelectedComposerMode('smart');
     setSelectedReportTemplateId(null);
     resetManualSkillState();
     window.setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
   const renderComposer = () => (
-    <div className="flex flex-col gap-[6px]">
-      <PromptModeBar
-        onSelect={selectComposerMode}
-        selectedMode={selectedComposerMode}
-        disabled={isGenerating}
-        className="w-full"
-      />
+    <div>
       <PromptComposerFrame
-        bodyClassName="!gap-2 !py-2.5"
+        bodyClassName="!gap-3 !py-2.5 !pl-4 !pr-3"
       >
       {selectedManualSkills.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 px-5 pb-3 pt-4">
@@ -2471,7 +2460,7 @@ export default function AgentWorkspace({
         </div>
       )}
 
-      <div className="relative flex min-h-[44px] w-full items-start gap-2">
+      <div className="relative flex min-h-[72px] w-full items-start gap-2">
         {isSlashMenuOpen && (
           <div className="absolute bottom-full left-5 right-5 z-20 mb-3 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-lg">
             <Command className="bg-white">
@@ -2553,13 +2542,18 @@ export default function AgentWorkspace({
           onChange={(event) => handleInputChange(event.target.value)}
           onKeyDown={handleTextareaKeyDown}
           placeholder={inputPlaceholder}
-          className="h-[44px] min-w-0 flex-1 resize-none overflow-y-auto bg-white text-[14px] leading-[21px] text-[#1a1c26] placeholder:leading-[29px] placeholder:text-[#9ca3b0] focus:outline-none"
-          rows={2}
+          className="h-[72px] max-h-[104px] min-h-[72px] min-w-0 flex-1 resize-none overflow-y-auto bg-white pt-[3px] text-[14px] leading-[22px] text-[#1a1c26] placeholder:text-[#9ca3b0] focus:outline-none"
+          rows={3}
         />
       </div>
 
-      <div className="flex min-h-8 items-center justify-between gap-3">
-        <div className="min-w-0 flex-1 text-xs text-gray-400">
+      <div className="flex min-h-10 flex-wrap items-center gap-3">
+        <PromptModeBar
+          onSelect={selectComposerMode}
+          selectedMode={selectedComposerMode}
+          disabled={isGenerating}
+        />
+        <div className="ml-auto min-w-0 text-xs text-gray-400">
           {selectedComposerMode === 'report' ? (
             <ReportTemplateSelector
               templates={reportTemplates}
@@ -2580,10 +2574,10 @@ export default function AgentWorkspace({
                 <button
                   type="button"
                   onClick={handleToggleDeepAnalysis}
-                  className={`inline-flex h-8 items-center gap-1 rounded-[8px] px-3 text-[14px] font-normal leading-[22px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25 ${
+                  className={`inline-flex h-9 items-center gap-1.5 rounded-[10px] px-3.5 text-[14px] font-normal leading-[22px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25 ${
                     isDeepAnalysisEnabled
                       ? 'bg-[#e8f3ff] text-[#165dff]'
-                      : 'bg-[#f7f8fa] text-[#1d2129] hover:bg-[#f2f3f5]'
+                      : 'bg-[#f2f3f5] text-[#1d2129] hover:bg-[#e8eaed]'
                   }`}
                   aria-pressed={isDeepAnalysisEnabled}
                 >
@@ -2600,7 +2594,7 @@ export default function AgentWorkspace({
             </div>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-4">
+        <div className="flex shrink-0 items-center gap-3">
           <button
             type="button"
             onClick={isRecording ? stopRecording : startRecording}

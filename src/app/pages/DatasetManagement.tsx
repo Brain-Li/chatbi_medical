@@ -51,6 +51,9 @@ const aggregationOptions: AggregationMethod[] = [
 
 const datasetPageSize = 10;
 
+const datasetControlClass =
+  "w-full rounded-xl border border-[#e5e6eb] bg-white px-3 py-2 text-sm leading-[22px] text-[#1d2129] outline-none transition-colors placeholder:text-[#86909c] hover:border-[#c9cdd4] focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10";
+
 type DatasetDeleteDialogState = {
   dataset: SemanticDataset;
   blockers: string[];
@@ -439,26 +442,36 @@ function DatasetDeleteDialog({
   const canDelete = state.blockers.length === 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 px-4">
-      <div className="w-full max-w-md rounded-lg bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dataset-delete-dialog-title"
+        className="w-full max-w-md overflow-hidden rounded-[20px] border border-[#e5e6eb] bg-white shadow-[0_20px_60px_rgba(0,0,0,0.18)]"
+      >
+        <div className="flex items-center justify-between border-b border-[#e5e6eb] bg-white px-6 py-4">
           <div>
-            <div className="text-lg font-semibold text-gray-900">
+            <div id="dataset-delete-dialog-title" className="text-xl font-medium leading-7 text-[#1d2129]">
               {canDelete ? '删除数据集' : '无法删除数据集'}
             </div>
-            <div className="mt-1 text-xs text-gray-500">{state.dataset.name}</div>
+            <div className="mt-1 text-sm leading-[22px] text-[#86909c]">{state.dataset.name}</div>
           </div>
-          <button type="button" onClick={onClose} className="rounded p-2 text-gray-500 hover:bg-gray-100">
-            <X className="h-5 w-5" />
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="关闭删除提示"
+            className="flex size-10 items-center justify-center rounded-xl text-[#4e5969] transition-colors hover:bg-[#f7f8fa] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
+          >
+            <X className="size-4" />
           </button>
         </div>
-        <div className="px-6 py-5 text-sm leading-6 text-gray-600">
+        <div className="px-6 py-5 text-sm leading-6 text-[#4e5969]">
           {canDelete ? (
             `确认删除数据集“${state.dataset.name}”？此操作不可恢复。`
           ) : (
             <div className="space-y-2">
               <div>该数据集当前仍被引用，请先处理以下依赖。</div>
-              <ul className="list-disc space-y-1 pl-5">
+              <ul className="list-disc space-y-1 pl-5 text-[#4e5969]">
                 {state.blockers.map((blocker) => (
                   <li key={blocker}>{blocker}</li>
                 ))}
@@ -466,11 +479,11 @@ function DatasetDeleteDialog({
             </div>
           )}
         </div>
-        <div className="flex justify-end gap-3 border-t border-gray-200 px-6 py-4">
+        <div className="flex min-h-16 items-center justify-end gap-4 border-t border-[#e5e6eb] bg-[#f7f8fa] px-6 py-3">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            className="h-10 rounded-xl border border-[#e5e6eb] bg-white px-6 text-sm leading-[22px] text-[rgba(0,0,0,0.9)] transition-colors hover:bg-[#edeff1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
           >
             {canDelete ? '取消' : '我知道了'}
           </button>
@@ -478,7 +491,7 @@ function DatasetDeleteDialog({
             <button
               type="button"
               onClick={onConfirm}
-              className="rounded-lg bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700"
+              className="h-10 rounded-xl border border-red-600 bg-red-600 px-6 text-sm leading-[22px] text-white transition-colors hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-200"
             >
               确认删除
             </button>
@@ -648,45 +661,50 @@ function CreateDatasetModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 px-4">
-      <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6">
+      <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[20px] border border-[#e5e6eb] bg-white shadow-[0_20px_60px_rgba(0,0,0,0.18)]">
+        <div className="flex h-16 shrink-0 items-center justify-between border-b border-[#e5e6eb] bg-white px-6 py-3">
           <div>
-            <div className="text-lg font-semibold text-gray-900">
+            <div className="text-xl font-medium leading-7 text-[#1d2129]">
               {isEditMode ? '编辑数据集' : '新建数据集'}
             </div>
           </div>
-          <button onClick={onClose} className="rounded p-2 text-gray-500 hover:bg-gray-100">
-            <X className="h-5 w-5" />
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="关闭数据集编辑"
+            className="flex size-10 items-center justify-center rounded-xl text-[#4e5969] transition-colors hover:bg-[#f7f8fa] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
+          >
+            <X className="size-4" />
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-white px-6 py-5">
           <div className="space-y-5">
             <div className="space-y-5">
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                <div>
-                  <label className="text-sm text-gray-700">数据集名称</label>
+                  <div className="space-y-2">
+                    <label className="text-sm leading-[22px] text-[#4e5969]">数据集名称</label>
                   <input
                     value={datasetName}
                     onChange={(event) => setDatasetName(event.target.value)}
-                    className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                    className={`${datasetControlClass} mt-0`}
                   />
                 </div>
-                <div>
-                  <label className="text-sm text-gray-700">业务主题</label>
+                  <div className="space-y-2">
+                    <label className="text-sm leading-[22px] text-[#4e5969]">业务主题</label>
                   <input
                     value={businessTheme}
                     onChange={(event) => setBusinessTheme(event.target.value)}
-                    className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                    className={`${datasetControlClass} mt-0`}
                   />
                 </div>
-                <div>
-                  <label className="text-sm text-gray-700">数据库连接</label>
+                  <div className="space-y-2">
+                    <label className="text-sm leading-[22px] text-[#4e5969]">数据库连接</label>
                   <select
                     value={sourceId}
                     onChange={(event) => setSourceId(event.target.value)}
-                    className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                    className={`${datasetControlClass} mt-0`}
                   >
                     {databaseConnections.map((database) => (
                       <option key={database.id} value={database.id}>
@@ -697,22 +715,23 @@ function CreateDatasetModal({
                 </div>
               </div>
 
-              <div>
-                <label className="text-sm text-gray-700">描述</label>
+              <div className="space-y-2">
+                <label className="text-sm leading-[22px] text-[#4e5969]">描述</label>
                 <textarea
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
                   rows={3}
-                  className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
+                  className={`${datasetControlClass} mt-0 min-h-20 resize-y`}
                 />
               </div>
 
               <div>
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <label className="text-sm text-gray-700">查询 SQL</label>
+                  <label className="text-sm leading-[22px] text-[#4e5969]">查询 SQL</label>
                   <button
                     onClick={runPreview}
-                    className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+                    type="button"
+                    className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#165dff] px-5 text-sm leading-[22px] text-white transition-colors hover:bg-[#0e4ed6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
                   >
                     <Play className="h-4 w-4" />
                     运行预览
@@ -722,23 +741,23 @@ function CreateDatasetModal({
                   value={querySql}
                   onChange={(event) => setQuerySql(event.target.value)}
                   rows={9}
-                  className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-blue-500 focus:outline-none"
+                  className={`${datasetControlClass} mt-0 min-h-[196px] resize-y font-mono text-xs leading-6`}
                 />
               </div>
             </div>
 
             <div className="space-y-5">
-              <div className="text-sm text-gray-700">字段配置</div>
-              <div className="rounded-lg border border-gray-200">
+              <div className="text-sm leading-[22px] text-[#4e5969]">字段配置</div>
+              <div className="overflow-hidden rounded-xl border border-[#e5e6eb]">
                 <div className="max-h-[360px] overflow-auto">
                   <table className="w-full min-w-[860px]">
-                    <thead className="bg-gray-50 text-left text-xs text-gray-500">
-                      <tr>
-                        <th className="px-3 py-2">字段</th>
-                        <th className="px-3 py-2">业务名</th>
-                        <th className="px-3 py-2">分类</th>
-                        <th className="px-3 py-2">默认聚合</th>
-                        <th className="px-3 py-2">
+                    <thead className="bg-[#f7f8fa] text-left text-sm font-medium leading-[22px] text-[#4e5969]">
+                      <tr className="h-12 border-b border-[#e5e6eb]">
+                        <th className="px-3 py-3">字段</th>
+                        <th className="px-3 py-3">业务名</th>
+                        <th className="px-3 py-3">分类</th>
+                        <th className="px-3 py-3">默认聚合</th>
+                        <th className="px-3 py-3">
                           <div className="inline-flex items-center gap-1">
                             <span>发布为原子指标</span>
                             <Tooltip>
@@ -764,7 +783,7 @@ function CreateDatasetModal({
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200">
+                    <tbody className="divide-y divide-[#e5e6eb]">
                       {fields.map((field) => {
                         const referencedIndicators =
                           isEditMode && initialDataset
@@ -785,14 +804,14 @@ function CreateDatasetModal({
 
                         return (
                           <tr key={field.name} className="text-sm">
-                            <td className="px-3 py-3 font-mono text-xs text-gray-700">{field.name}</td>
+                            <td className="px-3 py-3 font-mono text-xs text-[#4e5969]">{field.name}</td>
                             <td className="px-3 py-3">
                               <input
                                 value={field.semanticName}
                                 onChange={(event) =>
                                   updateField(field.name, { semanticName: event.target.value })
                                 }
-                                className="w-full min-w-36 rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none"
+                                className="h-9 w-full min-w-36 rounded-lg border border-[#e5e6eb] px-2 py-1 text-sm text-[#1d2129] outline-none transition-colors focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10"
                               />
                             </td>
                             <td className="px-3 py-3">
@@ -810,7 +829,7 @@ function CreateDatasetModal({
                                           fieldRole: event.target.value as DatasetFieldRole,
                                         })
                                       }
-                                      className="rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+                                      className="h-9 rounded-lg border border-[#e5e6eb] bg-white px-2 py-1 text-sm text-[#1d2129] outline-none transition-colors focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10 disabled:cursor-not-allowed disabled:bg-[#f7f8fa] disabled:text-[#86909c]"
                                     >
                                       {fieldRoleOptions.map((role) => (
                                         <option key={role} value={role}>
@@ -842,7 +861,7 @@ function CreateDatasetModal({
                                           defaultAggregation: event.target.value as AggregationMethod,
                                         })
                                       }
-                                      className="rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+                                      className="h-9 rounded-lg border border-[#e5e6eb] bg-white px-2 py-1 text-sm text-[#1d2129] outline-none transition-colors focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10 disabled:cursor-not-allowed disabled:bg-[#f7f8fa] disabled:text-[#86909c]"
                                     >
                                       {aggregationOptions.map((aggregation) => (
                                         <option key={aggregation} value={aggregation}>
@@ -890,14 +909,14 @@ function CreateDatasetModal({
                     </tbody>
                   </table>
                   {!fields.length && (
-                    <div className="px-4 py-12 text-center text-sm text-gray-500">
+                    <div className="px-4 py-12 text-center text-sm text-[#86909c]">
                       运行预览后展示 SQL 返回字段
                     </div>
                   )}
                 </div>
               </div>
 
-              <div className="text-xs leading-5 text-gray-500">
+              <div className="text-xs leading-5 text-[#86909c]">
                 勾选“发布为原子指标”后，默认使用业务名作为指标名称、字段名作为英文标识，并按默认聚合生成计算公式。
               </div>
 
@@ -905,17 +924,18 @@ function CreateDatasetModal({
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-3 border-t border-gray-200 px-6 py-4">
+        <div className="flex h-16 shrink-0 items-center justify-end gap-4 border-t border-[#e5e6eb] bg-[#f7f8fa] px-6 py-3">
           <button
+            type="button"
             onClick={onClose}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            className="h-10 rounded-xl border border-[#e5e6eb] bg-white px-6 text-sm leading-[22px] text-[rgba(0,0,0,0.9)] transition-colors hover:bg-[#edeff1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
           >
             取消
           </button>
           <button
             onClick={submit}
             disabled={!canSubmit}
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+            className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1d2129] bg-[#1d2129] px-6 text-sm leading-[22px] tracking-[0.15px] text-white transition-colors hover:bg-[#272e3b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1d2129]/20 disabled:cursor-not-allowed disabled:border-[#c9cdd4] disabled:bg-[#c9cdd4]"
           >
             <Save className="h-4 w-4" />
             {isEditMode ? '保存修改' : '保存数据集'}
@@ -970,49 +990,50 @@ function DatasetListView({
   onDelete: (dataset: SemanticDataset) => void;
 }) {
   return (
-    <div className="h-full min-h-0 overflow-auto bg-gray-50">
-      <div className="px-6 py-6">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+    <div className="h-full min-h-0 overflow-auto bg-white text-[#1d2129]">
+      <div className="flex min-h-full flex-col px-[22px] pt-[22px]">
+        <div className="flex shrink-0 flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="text-lg font-semibold text-gray-900">数据集</div>
-            <div className="mt-1 text-sm text-gray-500">管理语义数据集与字段映射，沉淀可复用指标。</div>
+            <h1 className="text-xl font-semibold leading-7 text-[#1d2129]">数据集</h1>
+            <div className="mt-1 text-sm leading-[22px] text-[#86909c]">管理语义数据集与字段映射，沉淀可复用指标。</div>
           </div>
-          <button
-            onClick={onCreate}
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm text-white hover:bg-blue-700"
-          >
-            <Plus className="h-4 w-4" />
-            新建数据集
-          </button>
+          <div className="flex w-full flex-wrap items-center justify-end gap-3 sm:w-auto">
+            <label className="relative min-w-0 flex-1 sm:w-60 sm:flex-none">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#86909c]" />
+              <input
+                value={keyword}
+                onChange={(event) => onKeywordChange(event.target.value)}
+                placeholder="搜索数据集名称、描述或业务主题"
+                aria-label="搜索数据集"
+                className="h-10 w-full rounded-xl border border-[#e5e6eb] bg-white px-4 pl-9 text-sm leading-[22px] text-[#1d2129] outline-none transition-colors placeholder:text-[#86909c] hover:border-[#c9cdd4] focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={onCreate}
+              className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-[#e5e6eb] bg-white px-4 text-sm leading-[22px] tracking-[0.15px] text-[#4e5969] transition-colors hover:bg-[#f7f8fa] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
+            >
+              <Plus className="size-4" />
+              新建数据集
+            </button>
+          </div>
         </div>
 
-        <div className="mb-4 w-full min-w-[280px] sm:w-[420px]">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            <input
-              value={keyword}
-              onChange={(event) => onKeywordChange(event.target.value)}
-              placeholder="搜索数据集名称、描述或业务主题"
-              className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none"
-            />
-          </div>
-        </div>
-
-        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-          <div className="overflow-x-auto">
+        <div className="mt-4 min-h-0 flex-1 overflow-hidden">
+          <div className="h-full overflow-x-auto">
             <table className="w-full min-w-[980px]">
-              <thead className="bg-gray-50">
-                <tr className="border-b border-gray-200 text-left text-sm font-medium text-gray-600">
-                  <th className="px-6 py-3">数据集名称</th>
-                  <th className="px-6 py-3">业务主题</th>
-                  <th className="px-6 py-3 text-left">字段数</th>
-                  <th className="px-6 py-3 text-left">原子指标发布</th>
-                  <th className="px-6 py-3 text-left">数据库连接</th>
-                  <th className="px-6 py-3">更新时间</th>
-                  <th className="px-6 py-3">操作</th>
+              <thead className="bg-[#f7f8fa]">
+                <tr className="h-12 border-b border-[#e5e6eb] text-left text-sm font-medium leading-6 text-[#4e5969]">
+                  <th className="px-4">数据集名称</th>
+                  <th className="px-4">业务主题</th>
+                  <th className="px-4 text-left">字段数</th>
+                  <th className="px-4 text-left">原子指标发布</th>
+                  <th className="px-4 text-left">数据库连接</th>
+                  <th className="px-4">更新时间</th>
+                  <th className="px-4">操作</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-[#e5e6eb]">
                 {datasets.map((dataset) => {
                   const fields = getDatasetFields(dataset);
                   const formalCount = indicatorAssets.filter((indicator) =>
@@ -1023,18 +1044,18 @@ function DatasetListView({
                     <tr
                       key={dataset.id}
                       onClick={() => onView(dataset.id)}
-                      className="cursor-pointer text-sm text-gray-700 transition-colors hover:bg-gray-50"
+                      className="h-[72px] cursor-pointer text-sm leading-[22px] text-[#4e5969] transition-colors hover:bg-[#f7f8fa]"
                     >
-                      <td className="px-6 py-4">
-                        <div className="font-medium text-gray-900">{dataset.name}</div>
-                        <div className="mt-1 line-clamp-2 text-xs text-gray-500">{dataset.description}</div>
+                      <td className="px-4 py-2">
+                        <div className="font-medium leading-6 text-[#1d2129]">{dataset.name}</div>
+                        <div className="mt-1 line-clamp-2 text-xs leading-5 text-[#86909c]">{dataset.description}</div>
                       </td>
-                      <td className="px-6 py-4">{dataset.businessTheme}</td>
-                      <td className="px-6 py-4 text-left">{fields.length}</td>
-                      <td className="px-6 py-4 text-left">{formalCount}</td>
-                      <td className="px-6 py-4 text-left">{dataset.sourceName ?? '未配置'}</td>
-                      <td className="px-6 py-4">{dataset.updatedAt}</td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-2 text-[#1d2129]">{dataset.businessTheme}</td>
+                      <td className="px-4 py-2 text-left">{fields.length}</td>
+                      <td className="px-4 py-2 text-left">{formalCount}</td>
+                      <td className="px-4 py-2 text-left">{dataset.sourceName ?? '未配置'}</td>
+                      <td className="px-4 py-2">{dataset.updatedAt}</td>
+                      <td className="px-4 py-2">
                         <div className="flex items-center gap-1 whitespace-nowrap">
                           <ConfigActionIconButton
                             onClick={(event) => {
@@ -1073,20 +1094,20 @@ function DatasetListView({
           </div>
 
           {!datasets.length && (
-            <div className="px-6 py-16 text-center text-sm text-gray-500">未找到匹配的数据集</div>
+            <div className="flex h-20 items-center justify-center text-sm text-[#86909c]">未找到匹配的数据集</div>
           )}
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 px-1 pt-3 text-sm text-gray-500">
-          <div>
+        <div className="flex h-14 shrink-0 flex-wrap items-center justify-between gap-3 border-t border-[#e5e6eb] bg-[#f7f8fa] px-1 text-sm text-[#1d2129]">
+          <div className="px-3">
             共 {totalCount} 条，每页 {datasetPageSize} 条
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2 px-3">
             <button
               type="button"
               onClick={() => onPageChange(Math.max(1, page - 1))}
               disabled={page === 1}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 transition-colors hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:border-gray-100 disabled:text-gray-300"
+              className="inline-flex size-8 items-center justify-center rounded-lg border border-[#e5e6eb] bg-white text-[#4e5969] transition-colors hover:border-[#c9cdd4] hover:text-[#1d2129] disabled:cursor-not-allowed disabled:border-[#f2f3f5] disabled:bg-transparent disabled:text-[#c9cdd4]"
               aria-label="上一页"
               title="上一页"
             >
@@ -1097,10 +1118,10 @@ function DatasetListView({
                 key={pageNumber}
                 type="button"
                 onClick={() => onPageChange(pageNumber)}
-                className={`h-8 min-w-8 rounded-md border px-2 text-sm transition-colors ${
+                className={`flex h-8 min-w-8 items-center justify-center rounded-lg border px-2 text-sm transition-colors ${
                   page === pageNumber
-                    ? 'border-blue-600 bg-blue-600 text-white'
-                    : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:text-blue-600'
+                    ? 'border-[#1d2129] bg-[#1d2129] font-medium text-white'
+                    : 'border-[#e5e6eb] bg-transparent text-[#4e5969] hover:border-[#c9cdd4] hover:text-[#1d2129]'
                 }`}
               >
                 {pageNumber}
@@ -1110,7 +1131,7 @@ function DatasetListView({
               type="button"
               onClick={() => onPageChange(Math.min(totalPages, page + 1))}
               disabled={page === totalPages}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 transition-colors hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:border-gray-100 disabled:text-gray-300"
+              className="inline-flex size-8 items-center justify-center rounded-lg border border-[#e5e6eb] bg-white text-[#4e5969] transition-colors hover:border-[#c9cdd4] hover:text-[#1d2129] disabled:cursor-not-allowed disabled:border-[#f2f3f5] disabled:bg-transparent disabled:text-[#c9cdd4]"
               aria-label="下一页"
               title="下一页"
             >
@@ -1140,8 +1161,9 @@ function DatasetDetailView({
   const datasetIndicators = indicatorAssets.filter((indicator) => dataset.metricIds.includes(indicator.id));
 
   return (
-    <div className="h-full min-h-0 overflow-y-auto bg-gray-50 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="h-full min-h-0 overflow-y-auto bg-white [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <ConfigDetailHeader
+        variant="flat"
         backLabel="返回数据集列表"
         onBack={onBack}
         icon={Layers3}
@@ -1151,7 +1173,7 @@ function DatasetDetailView({
           <button
             type="button"
             onClick={onEdit}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#e5e6eb] bg-white px-5 text-sm leading-[22px] text-[#4e5969] transition-colors hover:bg-[#f7f8fa] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
           >
             <PencilLine className="h-4 w-4" />
             编辑数据集
@@ -1165,39 +1187,39 @@ function DatasetDetailView({
         ]}
       />
 
-      <div className="mx-auto max-w-7xl px-6 py-6">
-        <div className="space-y-6">
+      <div className="mx-auto max-w-7xl px-6 py-5">
+        <div className="space-y-4">
           {dataset.querySql && (
-            <section className="rounded-lg border border-gray-200 bg-white">
-              <div className="flex items-center gap-2 border-b border-gray-200 px-5 py-4 text-sm font-medium text-gray-900">
-                <Table2 className="h-4 w-4 text-blue-600" />
+            <section className="overflow-hidden rounded-xl border border-[#e5e6eb] bg-white">
+              <div className="flex h-12 items-center gap-2 border-b border-[#e5e6eb] bg-[#f7f8fa] px-5 text-sm font-medium leading-[22px] text-[#4e5969]">
+                <Table2 className="size-4 text-[#165dff]" />
                 数据集 SQL
               </div>
-              <pre className="max-h-64 overflow-auto bg-slate-950 p-5 text-xs leading-6 text-slate-100">
+              <pre className="max-h-64 overflow-auto bg-[#1d2129] p-5 text-xs leading-6 text-[#f7f8fa]">
                 {dataset.querySql}
               </pre>
             </section>
           )}
 
-            <section className="rounded-lg border border-gray-200 bg-white">
-            <div className="flex items-center gap-2 border-b border-gray-200 px-5 py-4 text-sm font-medium text-gray-900">
-              <Blocks className="h-4 w-4 text-blue-600" />
+            <section className="overflow-hidden rounded-xl border border-[#e5e6eb] bg-white">
+            <div className="flex h-12 items-center gap-2 border-b border-[#e5e6eb] bg-[#f7f8fa] px-5 text-sm font-medium leading-[22px] text-[#4e5969]">
+              <Blocks className="size-4 text-[#165dff]" />
               字段配置
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1120px]">
-                <thead className="bg-gray-50 text-left text-sm text-gray-600">
-                  <tr>
-                    <th className="px-5 py-3">字段</th>
-                    <th className="px-5 py-3">业务名</th>
-                    <th className="px-5 py-3">分类</th>
-                    <th className="px-5 py-3">类型</th>
-                    <th className="px-5 py-3">默认聚合</th>
-                    <th className="px-5 py-3">原子指标</th>
-                    <th className="px-5 py-3">引用指标</th>
+                <thead className="bg-[#f7f8fa] text-left text-sm font-medium leading-6 text-[#4e5969]">
+                  <tr className="h-12 border-b border-[#e5e6eb]">
+                    <th className="px-4 py-3">字段</th>
+                    <th className="px-4 py-3">业务名</th>
+                    <th className="px-4 py-3">分类</th>
+                    <th className="px-4 py-3">类型</th>
+                    <th className="px-4 py-3">默认聚合</th>
+                    <th className="px-4 py-3">原子指标</th>
+                    <th className="px-4 py-3">引用指标</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
+                <tbody className="divide-y divide-[#e5e6eb]">
                   {queryFields.map((field) => {
                     const generatedIndicators = getGeneratedAtomicIndicators(
                       dataset,
@@ -1211,22 +1233,22 @@ function DatasetDetailView({
                     );
 
                     return (
-                      <tr key={field.name} className="text-sm text-gray-700">
-                        <td className="px-5 py-3 font-mono text-xs">{field.name}</td>
-                        <td className="px-5 py-3 font-medium text-gray-900">{field.semanticName}</td>
-                        <td className="px-5 py-3">
+                      <tr key={field.name} className="min-h-[52px] text-sm leading-[22px] text-[#4e5969]">
+                        <td className="px-4 py-3 font-mono text-xs">{field.name}</td>
+                        <td className="px-4 py-3 font-medium text-[#1d2129]">{field.semanticName}</td>
+                        <td className="px-4 py-3">
                           <FieldRoleBadge role={field.fieldRole} />
                         </td>
-                        <td className="px-5 py-3">{field.dataType ?? '-'}</td>
-                        <td className="px-5 py-3">{field.defaultAggregation ?? 'NONE'}</td>
-                        <td className="px-5 py-3">
+                        <td className="px-4 py-3">{field.dataType ?? '-'}</td>
+                        <td className="px-4 py-3">{field.defaultAggregation ?? 'NONE'}</td>
+                        <td className="px-4 py-3">
                           {generatedIndicators.length ? (
                             <div className="flex flex-wrap gap-2">
                               {generatedIndicators.map((indicator) => (
                                 <button
                                   key={indicator.id}
                                   onClick={() => onViewIndicator(indicator.id)}
-                                  className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs text-emerald-700 hover:bg-emerald-100"
+                                  className="rounded-lg bg-emerald-50 px-2.5 py-1 text-xs text-emerald-700 transition-colors hover:bg-emerald-100"
                                 >
                                   {indicator.name}
                                 </button>
@@ -1236,14 +1258,14 @@ function DatasetDetailView({
                             <span className="text-gray-400">-</span>
                           )}
                         </td>
-                        <td className="px-5 py-3">
+                        <td className="px-4 py-3">
                           {associatedIndicators.length ? (
                             <div className="flex flex-wrap gap-2">
                               {associatedIndicators.map((indicator) => (
                                 <button
                                   key={indicator.id}
                                   onClick={() => onViewIndicator(indicator.id)}
-                                  className="rounded-full bg-blue-50 px-2.5 py-1 text-xs text-blue-700 hover:bg-blue-100"
+                                  className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs text-blue-700 transition-colors hover:bg-blue-100"
                                 >
                                   {indicator.name}
                                 </button>
@@ -1261,31 +1283,31 @@ function DatasetDetailView({
             </div>
           </section>
 
-          <section className="rounded-lg border border-gray-200 bg-white">
-            <div className="flex items-center gap-2 border-b border-gray-200 px-5 py-4 text-sm font-medium text-gray-900">
-              <Database className="h-4 w-4 text-blue-600" />
+          <section className="overflow-hidden rounded-xl border border-[#e5e6eb] bg-white">
+            <div className="flex h-12 items-center gap-2 border-b border-[#e5e6eb] bg-[#f7f8fa] px-5 text-sm font-medium leading-[22px] text-[#4e5969]">
+              <Database className="size-4 text-[#165dff]" />
               数据集关联指标
             </div>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-50">
-                  <tr className="border-b border-gray-200 text-left text-sm text-gray-600">
-                    <th className="px-5 py-3">指标</th>
-                    <th className="px-5 py-3">类型</th>
-                    <th className="px-5 py-3">公式</th>
-                    <th className="px-5 py-3">状态</th>
+                  <tr className="h-12 border-b border-[#e5e6eb] text-left text-sm font-medium leading-6 text-[#4e5969]">
+                    <th className="px-4 py-3">指标</th>
+                    <th className="px-4 py-3">类型</th>
+                    <th className="px-4 py-3">公式</th>
+                    <th className="px-4 py-3">状态</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
+                <tbody className="divide-y divide-[#e5e6eb]">
                   {datasetIndicators.map((indicator) => (
-                    <tr key={indicator.id} className="text-sm text-gray-700">
-                      <td className="px-5 py-3">
-                        <div className="font-medium text-gray-900">{indicator.name}</div>
-                        <div className="mt-1 text-xs text-gray-500">{indicator.nameEn}</div>
+                    <tr key={indicator.id} className="min-h-[52px] text-sm leading-[22px] text-[#4e5969]">
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-[#1d2129]">{indicator.name}</div>
+                        <div className="mt-1 text-xs text-[#86909c]">{indicator.nameEn}</div>
                       </td>
-                      <td className="px-5 py-3">{indicator.type}</td>
-                      <td className="px-5 py-3 font-mono text-xs text-blue-700">{indicator.formula}</td>
-                      <td className="px-5 py-3">{indicator.status}</td>
+                      <td className="px-4 py-3">{indicator.type}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-[#165dff]">{indicator.formula}</td>
+                      <td className="px-4 py-3">{indicator.status}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1300,13 +1322,13 @@ function DatasetDetailView({
 
 function DatasetNotFound({ onBack }: { onBack: () => void }) {
   return (
-    <div className="flex flex-1 items-center justify-center bg-gray-50 px-6">
-      <div className="rounded-xl border border-gray-200 bg-white px-8 py-10 text-center shadow-sm">
-        <div className="text-lg font-semibold text-gray-900">未找到对应的数据集</div>
-        <div className="mt-2 text-sm text-gray-500">这个数据集可能已被删除，或者链接不再有效。</div>
+    <div className="flex flex-1 items-center justify-center bg-white px-6">
+      <div className="rounded-xl border border-[#e5e6eb] bg-white px-8 py-10 text-center">
+        <div className="text-xl font-medium leading-7 text-[#1d2129]">未找到对应的数据集</div>
+        <div className="mt-2 text-sm leading-[22px] text-[#86909c]">这个数据集可能已被删除，或者链接不再有效。</div>
         <button
           onClick={onBack}
-          className="mt-6 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+          className="mt-6 inline-flex h-10 items-center gap-2 rounded-xl bg-[#165dff] px-5 text-sm leading-[22px] text-white transition-colors hover:bg-[#0e4ed6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
         >
           <ArrowLeft className="h-4 w-4" />
           返回数据集列表

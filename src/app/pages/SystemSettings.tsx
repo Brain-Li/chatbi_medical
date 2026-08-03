@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { llmConnections } from '../mockData';
 import { useWorkspace } from '../context/WorkspaceContext';
-import { AgentType, DatabaseConnection, KnowledgeDocument, LlmConnection, Skill } from '../types';
+import { Agent, AgentType, DatabaseConnection, KnowledgeDocument, LlmConnection, Skill } from '../types';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,6 +52,12 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Switch } from '../components/ui/switch';
 import { ConfigActionIconButton } from '../components/ConfigActionIconButton';
+import AgentManagementSection from '../components/AgentManagementSection';
+import CreateAgentDialog from '../components/CreateAgentDialog';
+import SkillManagementSection from '../components/SkillManagementSection';
+import KnowledgeManagementSection from '../components/KnowledgeManagementSection';
+import SemanticAssetManagementSection from '../components/SemanticAssetManagementSection';
+import ConfigCenterSection from '../components/ConfigCenterSection';
 import McpAccessManagement from './McpAccessManagement';
 import IndicatorMarket from './IndicatorMarket';
 import SemanticModel from './SemanticModel';
@@ -158,8 +164,6 @@ const systemSettingsPrimaryButtonClass = 'rounded-lg bg-blue-600 px-4 py-2 text-
 const systemSettingsDangerButtonClass =
   'rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-500';
 
-const agentPageSize = 10;
-const skillPageSize = 10;
 const knowledgePageSize = 10;
 const databasePageSize = 10;
 const llmPageSize = 10;
@@ -312,6 +316,7 @@ export default function SystemSettings() {
     knowledgeDocuments,
     databaseConnections,
     getCapabilitiesForAgent,
+    addAgent,
     addDatabaseConnection,
     updateDatabaseConnection,
     updateAgent,
@@ -332,6 +337,7 @@ export default function SystemSettings() {
   const [databasePendingDeleteId, setDatabasePendingDeleteId] = useState<number | null>(null);
   const [llmPendingDeleteId, setLlmPendingDeleteId] = useState<number | null>(null);
   const [isDatabaseDialogOpen, setIsDatabaseDialogOpen] = useState(false);
+  const [isAgentDialogOpen, setIsAgentDialogOpen] = useState(false);
   const [isSkillDialogOpen, setIsSkillDialogOpen] = useState(false);
   const [isKnowledgeDocumentDialogOpen, setIsKnowledgeDocumentDialogOpen] = useState(false);
   const [isLlmDialogOpen, setIsLlmDialogOpen] = useState(false);
@@ -363,6 +369,20 @@ export default function SystemSettings() {
   const sectionParam = searchParams.get('section');
   const systemTabParam = searchParams.get('systemTab');
   const activeSection: SettingsSection = isSettingsSection(sectionParam) ? sectionParam : 'agents';
+  const useCapabilityLayout =
+    activeSection === 'agents' ||
+    activeSection === 'skills' ||
+    activeSection === 'mcp' ||
+    activeSection === 'knowledge';
+  const useSemanticAssetLayout =
+    activeSection === 'datasets' ||
+    activeSection === 'dimensions' ||
+    activeSection === 'indicators' ||
+    activeSection === 'synonyms';
+  const usePlatformAccessLayout = activeSection === 'database' || activeSection === 'llm';
+  const useSystemSettingsLayout = activeSection === 'system';
+  const useConfigCenterLayout =
+    useCapabilityLayout || useSemanticAssetLayout || usePlatformAccessLayout || useSystemSettingsLayout;
   const selectedDatasetId = searchParams.get('datasetId');
   const selectedIndicatorId = searchParams.get('indicatorId');
 
@@ -383,16 +403,8 @@ export default function SystemSettings() {
       .map((dataset) => dataset.name);
   }, [pendingDeleteDatabase, semanticDatasets]);
 
-  const agentTotalPages = Math.max(1, Math.ceil(agents.length / agentPageSize));
-  const paginatedAgents = useMemo(() => {
-    const start = (agentPage - 1) * agentPageSize;
-    return agents.slice(start, start + agentPageSize);
-  }, [agentPage, agents]);
-  const skillTotalPages = Math.max(1, Math.ceil(skills.length / skillPageSize));
-  const paginatedSkills = useMemo(() => {
-    const start = (skillPage - 1) * skillPageSize;
-    return skills.slice(start, start + skillPageSize);
-  }, [skillPage, skills]);
+  const agentTotalPages = 10;
+  const skillTotalPages = 10;
   const knowledgeTotalPages = Math.max(1, Math.ceil(knowledgeDocuments.length / knowledgePageSize));
   const paginatedKnowledgeDocuments = useMemo(() => {
     const start = (knowledgePage - 1) * knowledgePageSize;
@@ -522,6 +534,32 @@ export default function SystemSettings() {
     setDatabaseForm(emptyDatabaseConnectionForm);
     setShowDatabasePassword(false);
     setIsDatabaseDialogOpen(true);
+  };
+
+  const submitAgent = (value: Pick<Agent, 'name' | 'type' | 'description' | 'exampleQuestions'>) => {
+    const agent: Agent = {
+      id: `agent-${Date.now()}`,
+      name: value.name,
+      type: value.type,
+      group: value.type,
+      description: value.description,
+      creator: 'admin',
+      updatedAt: new Date(),
+      status: '已启用',
+      skills: [],
+      exampleQuestions: value.exampleQuestions,
+      capabilitySummary: '',
+      datasetIds: [],
+      knowledgeConfig: {
+        enabled: false,
+        mode: 'manual-documents',
+        knowledgeDocumentIds: [],
+      },
+    };
+
+    addAgent(agent);
+    setAgentPage(1);
+    setIsAgentDialogOpen(false);
   };
 
   const openCreateSkillDialog = () => {
@@ -800,433 +838,49 @@ export default function SystemSettings() {
     closeLlmDialog();
   };
 
-  const renderAgentSection = () =>
-    renderSectionShell(
-      <>
-        <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-6 py-5 shadow-sm">
-          <div>
-            <div className="text-lg font-semibold text-gray-900">Agent 管理</div>
-            <div className="mt-1 text-sm text-gray-500">
-              管理问数和报告 Agent，配置可访问的数据集、Skill、MCP 能力和知识文档。
-            </div>
-          </div>
-          <button
-            onClick={() => navigate('/assistant-editor')}
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm text-white hover:bg-blue-700"
-          >
-            <Plus className="h-4 w-4" />
-            新建 Agent
-          </button>
-        </div>
+  const renderAgentSection = () => (
+    <AgentManagementSection
+      agents={agents}
+      page={agentPage}
+      onPageChange={setAgentPage}
+      datasetName={datasetName}
+      capabilityCount={(agentId) => getCapabilitiesForAgent(agentId).length}
+      knowledgeDocumentCount={knowledgeDocuments.length}
+      onOpenSection={(section) => openSection(section as SettingsSection)}
+      onCreate={() => setIsAgentDialogOpen(true)}
+      onEdit={(agentId) => navigate(`/assistant-editor/${agentId}`)}
+      onCopy={copyAgent}
+      onDelete={setAgentPendingDeleteId}
+      onUpdate={updateAgent}
+    />
+  );
 
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr className="border-b border-gray-200 text-left text-sm text-gray-600">
-                <th className="px-6 py-3">Agent 名称</th>
-                <th className="px-6 py-3">类型</th>
-                <th className="px-6 py-3">数据集</th>
-                <th className="px-6 py-3">Skills</th>
-                <th className="px-6 py-3">MCP能力</th>
-                <th className="px-6 py-3">知识文档</th>
-                <th className="px-6 py-3">状态</th>
-                <th className="px-6 py-3">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {paginatedAgents.map((agent) => (
-                <tr key={agent.id} className="text-sm text-gray-700 hover:bg-gray-50">
-                  <td className="px-6 py-4">
-                    <div className="font-medium text-gray-900">{agent.name}</div>
-                    <div className="mt-1 max-w-sm truncate text-xs text-gray-400">{agent.description}</div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs text-blue-700">
-                      {agentTypeLabel[agent.type]}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 max-w-xs">
-                    <div className="line-clamp-2">
-                      {agent.datasetIds?.length ? agent.datasetIds.map(datasetName).join('、') : '-'}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">{agent.skills.length} 个</td>
-                  <td className="px-6 py-4">
-                    {getCapabilitiesForAgent(agent.id).length} 个
-                  </td>
-                  <td className="px-6 py-4">
-                    {agent.knowledgeConfig?.knowledgeDocumentIds?.length ?? knowledgeDocuments.length} 个
-                  </td>
-                  <td className="px-6 py-4">
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={agent.status === enabledStatus}
-                      onClick={() =>
-                        updateAgent(agent.id, {
-                          status: agent.status === enabledStatus ? '已停用' : enabledStatus,
-                        })
-                      }
-                      className={`inline-flex h-6 w-11 items-center rounded-full p-0.5 transition-colors ${
-                        agent.status === enabledStatus
-                          ? 'bg-blue-600 hover:bg-blue-700'
-                          : 'bg-gray-300 hover:bg-gray-400'
-                      }`}
-                      title={agent.status === enabledStatus ? '点击停用' : '点击启用'}
-                      aria-label={`${agent.name}当前${agent.status}，点击${
-                        agent.status === enabledStatus ? '停用' : '启用'
-                      }`}
-                    >
-                      <span
-                        className={`h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
-                          agent.status === enabledStatus ? 'translate-x-5' : 'translate-x-0'
-                        }`}
-                      />
-                    </button>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-1 whitespace-nowrap">
-                      <ConfigActionIconButton
-                        onClick={() => navigate(`/assistant-editor/${agent.id}`)}
-                        icon={PencilLine}
-                        label="编辑"
-                        variant="edit"
-                      />
-                      <ConfigActionIconButton
-                        onClick={() => copyAgent(agent.id)}
-                        icon={Copy}
-                        label="复制"
-                        variant="copy"
-                      />
-                      <ConfigActionIconButton
-                        onClick={() => setAgentPendingDeleteId(agent.id)}
-                        icon={Trash2}
-                        label="删除"
-                        variant="delete"
-                      />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 px-1 pt-3 text-sm text-gray-500">
-          <div>
-            共 {agents.length} 条，每页 {agentPageSize} 条
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setAgentPage((page) => Math.max(1, page - 1))}
-              disabled={agentPage === 1}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 transition-colors hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:border-gray-100 disabled:text-gray-300"
-              aria-label="上一页"
-              title="上一页"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            {Array.from({ length: agentTotalPages }, (_, index) => index + 1).map((page) => (
-              <button
-                key={page}
-                type="button"
-                onClick={() => setAgentPage(page)}
-                className={`h-8 min-w-8 rounded-md border px-2 text-sm transition-colors ${
-                  agentPage === page
-                    ? 'border-blue-600 bg-blue-600 text-white'
-                    : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:text-blue-600'
-                }`}
-              >
-                {page}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => setAgentPage((page) => Math.min(agentTotalPages, page + 1))}
-              disabled={agentPage === agentTotalPages}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 transition-colors hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:border-gray-100 disabled:text-gray-300"
-              aria-label="下一页"
-              title="下一页"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      </>,
-    );
+  const renderSkillSection = () => (
+    <SkillManagementSection
+      skills={skills}
+      page={skillPage}
+      onPageChange={setSkillPage}
+      onOpenSection={(section) => openSection(section as SettingsSection)}
+      onCreate={openCreateSkillDialog}
+      onEdit={openEditSkillDialog}
+      onCopy={copySkill}
+      onDelete={setSkillPendingDeleteId}
+      onUpdate={updateSkill}
+    />
+  );
 
-  const renderSkillSection = () =>
-    renderSectionShell(
-      <>
-        <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-6 py-5 shadow-sm">
-          <div>
-            <div className="text-lg font-semibold text-gray-900">Skill 管理</div>
-            <div className="mt-1 text-sm text-gray-500">
-              维护可被 Agent 调用的分析技能、触发词和适用场景。
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            <button
-              onClick={openCreateSkillDialog}
-              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm text-white hover:bg-blue-700"
-            >
-              <Plus className="h-4 w-4" />
-              新建 Skill
-            </button>
-          </div>
-        </div>
-
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr className="border-b border-gray-200 text-left text-sm text-gray-600">
-                    <th className="px-6 py-3">Skill 名称</th>
-                    <th className="px-6 py-3">场景</th>
-                    <th className="px-6 py-3">适用 Agent</th>
-                    <th className="px-6 py-3">触发词</th>
-                    <th className="px-6 py-3">状态</th>
-                    <th className="px-6 py-3">操作</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {paginatedSkills.map((skill) => (
-                    <tr key={skill.id} className="text-sm text-gray-700 hover:bg-gray-50">
-                      <td className="px-6 py-4">
-                        <div className="font-medium text-gray-900">{skill.name}</div>
-                        <div className="mt-1 max-w-sm truncate text-xs text-gray-400">{skill.description}</div>
-                      </td>
-                      <td className="px-6 py-4">{skill.scene}</td>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-wrap gap-1">
-                          {skill.applicableAgentTypes.map((type) => (
-                            <span key={type} className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
-                              {agentTypeLabel[type]}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 max-w-xs">
-                        <div className="line-clamp-2">
-                          {skill.triggerPhrases.length ? skill.triggerPhrases.join(' / ') : '-'}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={skill.status === enabledStatus}
-                          onClick={() =>
-                            updateSkill(skill.id, {
-                              status: skill.status === enabledStatus ? '已停用' : enabledStatus,
-                            })
-                          }
-                          className={`inline-flex h-6 w-11 items-center rounded-full p-0.5 transition-colors ${
-                            skill.status === enabledStatus
-                              ? 'bg-blue-600 hover:bg-blue-700'
-                              : 'bg-gray-300 hover:bg-gray-400'
-                          }`}
-                          title={skill.status === enabledStatus ? '点击停用' : '点击启用'}
-                          aria-label={`${skill.name}当前${skill.status}，点击${
-                            skill.status === enabledStatus ? '停用' : '启用'
-                          }`}
-                        >
-                          <span
-                            className={`h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
-                              skill.status === enabledStatus ? 'translate-x-5' : 'translate-x-0'
-                            }`}
-                          />
-                        </button>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-1 whitespace-nowrap">
-                          <ConfigActionIconButton
-                            onClick={() => openEditSkillDialog(skill)}
-                            icon={PencilLine}
-                            label="编辑"
-                            variant="edit"
-                          />
-                          <ConfigActionIconButton
-                            onClick={() => copySkill(skill.id)}
-                            icon={Copy}
-                            label="复制"
-                            variant="copy"
-                          />
-                          <ConfigActionIconButton
-                            onClick={() => setSkillPendingDeleteId(skill.id)}
-                            icon={Trash2}
-                            label="删除"
-                            variant="delete"
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 px-1 pt-3 text-sm text-gray-500">
-              <div>
-                共 {skills.length} 条，每页 {skillPageSize} 条
-              </div>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setSkillPage((page) => Math.max(1, page - 1))}
-                  disabled={skillPage === 1}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 transition-colors hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:border-gray-100 disabled:text-gray-300"
-                  aria-label="上一页"
-                  title="上一页"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                {Array.from({ length: skillTotalPages }, (_, index) => index + 1).map((page) => (
-                  <button
-                    key={page}
-                    type="button"
-                    onClick={() => setSkillPage(page)}
-                    className={`h-8 min-w-8 rounded-md border px-2 text-sm transition-colors ${
-                      skillPage === page
-                        ? 'border-blue-600 bg-blue-600 text-white'
-                        : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:text-blue-600'
-                    }`}
-                  >
-                    {page}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setSkillPage((page) => Math.min(skillTotalPages, page + 1))}
-                  disabled={skillPage === skillTotalPages}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 transition-colors hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:border-gray-100 disabled:text-gray-300"
-                  aria-label="下一页"
-                  title="下一页"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-      </>,
-    );
-
-  const renderKnowledgeSection = () =>
-    renderSectionShell(
-      <>
-        <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-6 py-5 shadow-sm">
-          <div>
-            <div className="text-lg font-semibold text-gray-900">知识库管理</div>
-            <div className="mt-1 text-sm text-gray-500">
-              上传并管理 Agent 可检索的知识文档。
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={openCreateKnowledgeDocumentDialog}
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm text-white hover:bg-blue-700"
-          >
-            <Plus className="h-4 w-4" />
-            上传文档
-          </button>
-        </div>
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr className="border-b border-gray-200 text-left text-sm text-gray-600">
-                <th className="px-6 py-3">文档名称</th>
-                <th className="px-6 py-3">类型</th>
-                <th className="px-6 py-3">适用场景</th>
-                <th className="px-6 py-3">更新时间</th>
-                <th className="px-6 py-3">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {paginatedKnowledgeDocuments.map((document) => (
-                <tr key={document.id} className="text-sm text-gray-700 hover:bg-gray-50">
-                  <td className="px-6 py-4 font-medium text-gray-900">{document.title}</td>
-                  <td className="px-6 py-4">{document.type}</td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-wrap gap-1">
-                      {document.applicableScenes.length ? (
-                        document.applicableScenes.map((scene) => (
-                          <span key={scene} className="rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
-                            {scene}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-gray-400">-</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">{document.updatedAt}</td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-1 whitespace-nowrap">
-                      <ConfigActionIconButton
-                        onClick={() => setViewingKnowledgeDocumentId(document.id)}
-                        icon={Eye}
-                        label="查看"
-                        variant="neutral"
-                      />
-                      <ConfigActionIconButton
-                        onClick={() => openEditKnowledgeDocumentDialog(document)}
-                        icon={PencilLine}
-                        label="编辑"
-                        variant="edit"
-                      />
-                      <ConfigActionIconButton
-                        onClick={() => setKnowledgeDocumentPendingDeleteId(document.id)}
-                        icon={Trash2}
-                        label="删除"
-                        variant="delete"
-                      />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 px-1 pt-3 text-sm text-gray-500">
-          <div>
-            共 {knowledgeDocuments.length} 条，每页 {knowledgePageSize} 条
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setKnowledgePage((page) => Math.max(1, page - 1))}
-              disabled={knowledgePage === 1}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 transition-colors hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:border-gray-100 disabled:text-gray-300"
-              aria-label="上一页"
-              title="上一页"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            {Array.from({ length: knowledgeTotalPages }, (_, index) => index + 1).map((page) => (
-              <button
-                key={page}
-                type="button"
-                onClick={() => setKnowledgePage(page)}
-                className={`h-8 min-w-8 rounded-md border px-2 text-sm transition-colors ${
-                  knowledgePage === page
-                    ? 'border-blue-600 bg-blue-600 text-white'
-                    : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:text-blue-600'
-                }`}
-              >
-                {page}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => setKnowledgePage((page) => Math.min(knowledgeTotalPages, page + 1))}
-              disabled={knowledgePage === knowledgeTotalPages}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 transition-colors hover:border-blue-200 hover:text-blue-600 disabled:cursor-not-allowed disabled:border-gray-100 disabled:text-gray-300"
-              aria-label="下一页"
-              title="下一页"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      </>,
-    );
+  const renderKnowledgeSection = () => (
+    <KnowledgeManagementSection
+      documents={knowledgeDocuments}
+      page={knowledgePage}
+      onPageChange={setKnowledgePage}
+      onOpenSection={(section) => openSection(section as SettingsSection)}
+      onCreateSkill={openCreateSkillDialog}
+      onEdit={openEditKnowledgeDocumentDialog}
+      onView={setViewingKnowledgeDocumentId}
+      onDelete={setKnowledgeDocumentPendingDeleteId}
+    />
+  );
 
   const renderDatabaseSection = () =>
     renderSectionShell(
@@ -1294,6 +948,21 @@ export default function SystemSettings() {
         </div>
       </>,
     );
+
+  const renderPlatformAccessSection = (children: React.ReactNode) => (
+    <ConfigCenterSection
+      activePrimary="database"
+      activeSecondary={activeSection}
+      secondaryTabs={[
+        { label: '数据库管理', section: 'database' },
+        { label: '大模型管理', section: 'llm' },
+      ]}
+      onOpenPrimarySection={(section) => openSection(section)}
+      onOpenSecondary={(tab) => openSection(tab.section as SettingsSection)}
+    >
+      {children}
+    </ConfigCenterSection>
+  );
 
   const renderLlmSection = () =>
     renderSectionShell(
@@ -1403,9 +1072,9 @@ export default function SystemSettings() {
       </>,
     );
 
-  const renderSystemSection = () =>
-    renderSectionShell(
-      <div className="space-y-5">
+    const renderSystemSection = () =>
+      renderSectionShell(
+        <div className="space-y-5">
         <div className="rounded-xl border border-gray-200 bg-white px-7 py-7 shadow-sm">
           {systemSettingsTab === 'general' && (
             <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
@@ -1854,10 +1523,37 @@ export default function SystemSettings() {
             </div>
           )}
         </div>
-      </div>,
+        </div>,
+      );
+
+    const renderSystemSettingsSection = () => (
+      <ConfigCenterSection
+        activePrimary="system"
+        activeSecondary="system"
+        activeSystemTab={systemSettingsTab}
+        secondaryTabs={systemSettingsTabs.map((tab) => ({
+          label: tab.label,
+          section: 'system',
+          systemTab: tab.id,
+        }))}
+        onOpenPrimarySection={(section) => openSection(section)}
+        onOpenSecondary={(tab) => openSection('system', tab.systemTab as SystemSettingsTab)}
+      >
+        {renderSystemSection()}
+      </ConfigCenterSection>
     );
 
-  const renderContent = () => {
+    const renderSemanticAssetSection = (children: React.ReactNode) => (
+      <SemanticAssetManagementSection
+        activeSection={activeSection as 'datasets' | 'dimensions' | 'indicators' | 'synonyms'}
+        onOpenSection={(section) => openSection(section)}
+        onOpenPrimarySection={(section) => openSection(section)}
+      >
+        {children}
+      </SemanticAssetManagementSection>
+    );
+
+    const renderContent = () => {
     switch (activeSection) {
       case 'agents':
         return renderAgentSection();
@@ -1866,7 +1562,7 @@ export default function SystemSettings() {
       case 'knowledge':
         return renderKnowledgeSection();
       case 'datasets':
-        return (
+        return renderSemanticAssetSection(
           <SemanticModel
             embeddedTab="datasets"
             selectedDatasetId={selectedDatasetId}
@@ -1875,10 +1571,10 @@ export default function SystemSettings() {
             onViewIndicator={(indicatorId) => navigate(`/settings?section=indicators&indicatorId=${indicatorId}`)}
             onEditIndicator={(indicatorId) => navigate(`/settings?section=indicators&indicatorId=${indicatorId}&mode=edit`)}
             onSelectTab={(tab) => navigate(`/settings?section=${tab}`)}
-          />
+          />,
         );
       case 'dimensions':
-        return (
+        return renderSemanticAssetSection(
           <SemanticModel
             embeddedTab="dimensions"
             onViewDataset={(datasetId) => navigate(`/settings?section=datasets&datasetId=${datasetId}`)}
@@ -1886,19 +1582,19 @@ export default function SystemSettings() {
             onViewIndicator={(indicatorId) => navigate(`/settings?section=indicators&indicatorId=${indicatorId}`)}
             onEditIndicator={(indicatorId) => navigate(`/settings?section=indicators&indicatorId=${indicatorId}&mode=edit`)}
             onSelectTab={(tab) => navigate(`/settings?section=${tab}`)}
-          />
+          />,
         );
       case 'indicators':
-        return (
+        return renderSemanticAssetSection(
           <IndicatorMarket
             embedded
             selectedIndicatorId={selectedIndicatorId}
             onBackToList={() => navigate('/settings?section=indicators')}
             onViewIndicator={(indicatorId) => navigate(`/settings?section=indicators&indicatorId=${indicatorId}`)}
-          />
+          />,
         );
       case 'synonyms':
-        return (
+        return renderSemanticAssetSection(
           <SemanticModel
             embeddedTab="synonyms"
             onViewDataset={(datasetId) => navigate(`/settings?section=datasets&datasetId=${datasetId}`)}
@@ -1906,16 +1602,16 @@ export default function SystemSettings() {
             onViewIndicator={(indicatorId) => navigate(`/settings?section=indicators&indicatorId=${indicatorId}`)}
             onEditIndicator={(indicatorId) => navigate(`/settings?section=indicators&indicatorId=${indicatorId}&mode=edit`)}
             onSelectTab={(tab) => navigate(`/settings?section=${tab}`)}
-          />
+          />,
         );
       case 'database':
-        return renderDatabaseSection();
+        return renderPlatformAccessSection(renderDatabaseSection());
       case 'llm':
-        return renderLlmSection();
+        return renderPlatformAccessSection(renderLlmSection());
       case 'mcp':
         return <McpAccessManagement />;
       case 'system':
-        return renderSystemSection();
+        return renderSystemSettingsSection();
     }
   };
 
@@ -1939,8 +1635,8 @@ export default function SystemSettings() {
 
   return (
     <div className="h-full min-h-0 overflow-hidden bg-transparent">
-      <div className="mx-auto flex h-full min-h-0 max-w-[1920px] gap-4 px-4 py-6">
-        <aside className="min-h-0 w-64 shrink-0">
+      <div className={`mx-auto flex h-full min-h-0 max-w-[1920px] ${useConfigCenterLayout ? '' : 'gap-4 px-4 py-6'}`}>
+        <aside className={`min-h-0 w-64 shrink-0 ${useConfigCenterLayout ? 'hidden' : ''}`}>
           <div className="h-full overflow-y-auto rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
             <nav className="space-y-3">
               {sectionGroups.map((group, groupIndex) => (
@@ -1980,7 +1676,7 @@ export default function SystemSettings() {
           </div>
         </aside>
 
-        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <main className={`min-h-0 min-w-0 flex-1 ${useConfigCenterLayout ? 'overflow-hidden' : 'overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'}`}>
           {renderContent()}
         </main>
       </div>
@@ -2041,6 +1737,12 @@ export default function SystemSettings() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <CreateAgentDialog
+        open={isAgentDialogOpen}
+        onOpenChange={setIsAgentDialogOpen}
+        onSave={submitAgent}
+      />
+
       <Dialog
         open={isSkillDialogOpen}
         onOpenChange={(open) => {
@@ -2051,7 +1753,7 @@ export default function SystemSettings() {
           }
         }}
       >
-        <DialogContent className="max-h-[88vh] overflow-hidden p-0 sm:max-w-3xl">
+        <DialogContent aria-describedby={undefined} className="max-h-[88vh] overflow-hidden p-0 sm:max-w-3xl">
           <DialogHeader className="border-b border-gray-100 px-6 py-4">
             <DialogTitle>{editingSkillId ? '编辑 Skill' : '新建 Skill'}</DialogTitle>
           </DialogHeader>
@@ -2216,7 +1918,7 @@ export default function SystemSettings() {
           if (!open) setViewingKnowledgeDocumentId(null);
         }}
       >
-        <DialogContent className="max-h-[88vh] overflow-hidden p-0 sm:max-w-4xl">
+        <DialogContent aria-describedby={undefined} className="max-h-[88vh] overflow-hidden p-0 sm:max-w-4xl">
           <DialogHeader className="border-b border-gray-100 px-6 py-4">
             <DialogTitle>{viewingKnowledgeDocument?.title ?? '查看知识文档'}</DialogTitle>
           </DialogHeader>
@@ -2315,7 +2017,7 @@ export default function SystemSettings() {
           }
         }}
       >
-        <DialogContent className="max-h-[86vh] overflow-hidden p-0 sm:max-w-2xl">
+        <DialogContent aria-describedby={undefined} className="max-h-[86vh] overflow-hidden p-0 sm:max-w-2xl">
           <DialogHeader className="border-b border-gray-100 px-6 py-4">
             <DialogTitle>{editingKnowledgeDocumentId ? '编辑知识文档' : '新建知识文档'}</DialogTitle>
           </DialogHeader>

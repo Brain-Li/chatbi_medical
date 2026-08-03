@@ -16,6 +16,7 @@ type ConfigDetailHeaderProps = {
   status?: ReactNode;
   actions?: ReactNode;
   metaItems?: ConfigDetailHeaderMetaItem[];
+  variant?: 'card' | 'flat';
 };
 
 export function ConfigDetailHeader({
@@ -27,10 +28,19 @@ export function ConfigDetailHeader({
   status,
   actions,
   metaItems = [],
+  variant = 'card',
 }: ConfigDetailHeaderProps) {
+  const isFlat = variant === 'flat';
+
   return (
-    <div className="mx-auto max-w-7xl px-6 pt-6">
-      <div className="rounded-lg border border-gray-200 bg-white px-6 py-5 shadow-sm">
+    <div className={`mx-auto max-w-7xl px-6 ${isFlat ? 'pt-5' : 'pt-6'}`}>
+      <div
+        className={
+          isFlat
+            ? 'border-b border-[#e5e6eb] bg-white px-0 py-5'
+            : 'rounded-lg border border-gray-200 bg-white px-6 py-5 shadow-sm'
+        }
+      >
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <button

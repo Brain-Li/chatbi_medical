@@ -82,6 +82,7 @@ function getConversationGroupLabel(conversation: Conversation, lastQuestionAt: D
   const diffDays = Math.floor((today.getTime() - targetDay.getTime()) / 86400000);
 
   if (diffDays <= 0) return '今天';
+  if (diffDays === 1) return '昨天';
   return '更早';
 }
 
@@ -107,7 +108,7 @@ function sortConversationsForHistory(conversations: Conversation[]) {
 }
 
 function groupConversationsByDate(conversations: Conversation[]): ConversationGroup[] {
-  const order = ['异常演示', '今天', '更早'];
+  const order = ['异常演示', '今天', '昨天', '更早'];
   const groups = new Map<string, Conversation[]>();
 
   sortConversationsForHistory(conversations)
