@@ -76,6 +76,10 @@ button:disabled,
     grid-template-columns: minmax(480px, 1fr) minmax(480px, 1fr);
   }
 
+  .workspace-analysis-grid.workspace-analysis-grid-figma.workspace-analysis-grid-split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
   .workspace-single-activity {
     margin-inline: auto;
     width: 100%;

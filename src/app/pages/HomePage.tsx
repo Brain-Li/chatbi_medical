@@ -1,5 +1,5 @@
 import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate, useOutletContext } from 'react-router';
+import { Link, useLocation, useNavigate, useOutletContext } from 'react-router';
 import { ArrowUp, Eye, EyeOff } from 'lucide-react';
 import { HomePrefillPayload, WorkspaceAutoSubmitPayload } from '../types';
 
@@ -9,20 +9,21 @@ import loginIllustration from '../../assets/figma-login/login-illustration.png';
 import arrowRightUpLine from '../../assets/figma-home/arrow-right-up-line.svg';
 import assistantImage from '../../assets/figma-home/assistant.png';
 import caseArrowRightUp from '../../assets/figma-home/case-arrow-right-up.svg';
-import caseTemplateIcon from '../../assets/figma-home/case-template-icon.svg';
-import homeContainerBackground from '../../assets/figma-home/container.png';
+import caseMonthlyImage from '../../assets/figma-home/case-monthly.png';
+import caseBydImage from '../../assets/figma-home/case-byd.png';
+import caseGridImage from '../../assets/figma-home/case-grid.png';
 import globalLine from '../../assets/figma-home/global-line.svg';
 import globalLineSelected from '../../assets/figma-home/global-line-selected.svg';
 import micLine from '../../assets/figma-home/mic-line.svg';
 import { HistorySidebarToggle } from '../components/HistorySidebarToggle';
-import { PromptModeBar, type PromptModeSelection } from '../components/PromptModeBar';
+import { PromptModeBar, type PromptModeBarSelection } from '../components/PromptModeBar';
 import { PromptComposerFrame } from '../components/PromptComposerFrame';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { inferPromptMode, type PromptMode } from '../utils/promptMode';
 import { ReportTemplateSelector } from '../components/ReportTemplateSelector';
 
 type HomeMode = PromptMode;
-type HomeInputMode = PromptModeSelection;
+type HomeInputMode = PromptModeBarSelection;
 type AppShellOutletContext = {
   sidebarOpen?: boolean;
   openSidebar?: () => void;
@@ -47,6 +48,7 @@ type ReportCase = {
   title: string;
   description: string;
   previewId: string;
+  image: string;
 };
 
 const askSuggestions: HomeSuggestion[] = [
@@ -57,7 +59,12 @@ const askSuggestions: HomeSuggestion[] = [
 const smartSuggestions: HomeSuggestion[] = [
   { mode: 'ask', title: '上月门诊总收入和药占比情况' },
   { mode: 'ask', title: '眼科近三个月门诊量是否异常？', deepAnalysisEnabled: true },
-  { mode: 'report', title: '生成昨日门诊经营日报' },
+  { mode: 'ask', title: '上月门诊总收入和药占比情况' },
+];
+const qaSuggestions: HomeSuggestion[] = [
+  { mode: 'ask', title: '什么是药占比，如何合理控制？' },
+  { mode: 'ask', title: '门诊次均费用的计算口径是什么？' },
+  { mode: 'ask', title: '医院运营分析通常关注哪些核心指标？' },
 ];
 const reportSuggestions: HomeSuggestion[] = [
   { mode: 'report', title: '生成昨日门诊经营日报' },
@@ -69,22 +76,63 @@ const reportCases: ReportCase[] = [
     title: '门诊经营日报',
     description: '汇总昨日门诊量、收入、药占比和重点科室表现，快速定位需要关注的异常项。',
     previewId: 'outpatient-daily',
+    image: caseMonthlyImage,
   },
   {
     title: '门急诊运营周报',
     description: '按周复盘门急诊流量、收入趋势和资源使用情况，沉淀管理层可读的经营结论。',
     previewId: 'emergency-weekly',
+    image: caseBydImage,
   },
   {
     title: '月度经营分析',
     description: '面向经营例会输出月度指标、同比环比、结构拆解和管理建议。',
     previewId: 'operation-monthly',
+    image: caseGridImage,
   },
 ];
 
+function FeaturedCases({ className = '' }: { className?: string }) {
+  return (
+    <section className={`flex flex-col gap-4 ${className}`}>
+      <div className="flex items-center gap-2">
+        <span className="h-[13px] w-[3px] shrink-0 rounded-xl bg-[#165dff]" />
+        <h2 className="text-[20px] font-medium leading-7 text-[#1d2129]">案例精选</h2>
+      </div>
+      <div className="grid w-full grid-cols-1 gap-4 md:grid-cols-3">
+        {reportCases.map((reportCase, index) => (
+          <Link
+            key={reportCase.title}
+            to={`/report/case/${reportCase.previewId}`}
+            className={`group flex min-w-0 flex-col gap-3 rounded-[12px] border border-[#e5e6eb] bg-white p-4 text-left transition-colors hover:bg-[#f7f8fa] [@media(max-height:840px)]:gap-2 [@media(max-height:840px)]:p-3 ${index === 0 ? 'shadow-[0_10px_18px_rgba(29,33,41,0.1)]' : ''}`}
+          >
+            <img
+              className="h-[126px] w-full rounded-[8px] object-cover [@media(max-height:840px)]:h-[104px]"
+              src={reportCase.image}
+              alt=""
+            />
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <span className="truncate text-[16px] font-medium leading-6 text-[#1d2129]">
+                {reportCase.title}
+              </span>
+              <img
+                className="h-4 w-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+                src={caseArrowRightUp}
+                alt=""
+              />
+            </div>
+            <p className="line-clamp-2 text-[14px] leading-[22px] text-[#4e5969]">
+              {reportCase.description}
+            </p>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 const homeVerticalOffsetStyle = {
   '--home-vertical-offset': '12px',
-  '--home-background-offset': '25px',
 } as CSSProperties;
 const homeHistoryOpenVerticalOffsetStyle = {
   ...homeVerticalOffsetStyle,
@@ -120,10 +168,19 @@ export default function HomePage() {
   const hasAccountError = Boolean(loginErrors.account || loginErrors.general);
   const hasPasswordError = Boolean(loginErrors.password || loginErrors.general);
   const canSubmit = Boolean(draft.trim());
-  const visibleSuggestions = selectedMode === 'smart' ? smartSuggestions : askSuggestions;
+  const visibleSuggestions =
+    selectedMode === 'smart'
+      ? smartSuggestions
+      : selectedMode === 'qa'
+        ? qaSuggestions
+        : selectedMode === 'report'
+          ? reportSuggestions
+          : askSuggestions;
   const inputPlaceholder =
     selectedMode === 'smart'
-      ? '输入数据问题，或描述要生成的报告...'
+      ? '输入问题或需求，智能分析、解答或生成报告...'
+      : selectedMode === 'qa'
+      ? '咨询专业知识、业务相关问题...'
       : selectedMode === 'ask'
       ? '查询指标、走势、异常等各类数据问题...'
       : '描述报告主题、统计周期、分析重点...';
@@ -213,7 +270,11 @@ export default function HomePage() {
     if (!question) return;
     const resolvedMode =
       options?.mode ??
-      (selectedMode === 'smart' ? inferPromptMode(question, null) : selectedMode);
+      (selectedMode === 'smart'
+        ? inferPromptMode(question, null)
+        : selectedMode === 'qa'
+          ? 'ask'
+          : selectedMode);
     const shouldUseDeepAnalysis =
       resolvedMode === 'ask'
         ? options?.deepAnalysisEnabled ?? deepAnalysisEnabled
@@ -281,7 +342,7 @@ export default function HomePage() {
   };
 
   return (
-    <div className="relative h-full min-h-0 overflow-hidden rounded-[inherit] bg-white font-['Login_Figma_Sans','PingFang_SC','Microsoft_YaHei',sans-serif] text-[#1d2129]">
+    <div className="relative h-[calc(100%+34px)] min-h-0 overflow-hidden rounded-[inherit] bg-gradient-to-b from-[rgba(229,230,235,0.2)] via-[rgba(229,235,245,0.1)] to-white font-['Login_Figma_Sans','PingFang_SC','Microsoft_YaHei',sans-serif] text-[#1d2129]">
       <div
         className="relative h-full overflow-hidden rounded-[inherit]"
         style={sidebarOpen ? homeHistoryOpenVerticalOffsetStyle : homeVerticalOffsetStyle}
@@ -293,18 +354,6 @@ export default function HomePage() {
                   className="absolute left-4 top-6 z-20"
                 />
               )}
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute left-1/2 top-0 h-[609px] w-full max-w-[960px] -translate-x-1/2 overflow-hidden"
-                style={{ top: 'calc(var(--home-vertical-offset) + var(--home-background-offset))' }}
-              >
-                <img
-                  className="absolute left-1/2 top-[8.26%] h-[70.11%] w-[1522px] max-w-none -translate-x-1/2"
-                  src={homeContainerBackground}
-                  alt=""
-                />
-              </div>
-
               <section
                 className="relative mx-auto flex w-full max-w-[1208px] flex-col px-4 lg:px-6"
                 style={{ paddingTop: 'calc(60px + var(--home-vertical-offset))' }}
@@ -355,27 +404,21 @@ export default function HomePage() {
                         />
                       </div>
                       <div className="flex min-h-10 flex-wrap items-center gap-3">
-                        <PromptModeBar
-                          onSelect={selectMode}
-                          selectedMode={selectedMode}
-                        />
-                        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-3">
-                          {selectedMode === 'report' && (
-                            <ReportTemplateSelector
-                              templates={reportTemplates}
-                              selectedId={selectedReportTemplateId}
-                              onSelect={(template) => setSelectedReportTemplateId(template.id)}
-                              onClear={() => setSelectedReportTemplateId(null)}
-                            />
-                          )}
-                          {selectedMode === 'ask' && (
+                        <div className="flex min-w-0 items-center gap-2">
+                          <PromptModeBar
+                            onSelect={selectMode}
+                            onQaSelect={() => selectMode('qa')}
+                            selectedMode={selectedMode}
+                            showQa
+                          />
+                          {(selectedMode === 'ask' || selectedMode === 'qa') && (
                             <button
                               type="button"
                               onClick={() => setDeepAnalysisEnabled((current) => !current)}
-                              className={`inline-flex h-9 items-center gap-1.5 rounded-[10px] px-3.5 text-[14px] font-normal leading-[22px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25 ${
+                              className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-[20px] border px-[13px] text-[14px] font-normal leading-[22px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25 ${
                                 deepAnalysisEnabled
-                                  ? 'bg-[#e8f3ff] text-[#165dff]'
-                                  : 'bg-[#f2f3f5] text-[#1d2129] hover:bg-[#e8eaed]'
+                                  ? 'border-[#94bfff] bg-[#e8f3ff] text-[#165dff]'
+                                  : 'border-[#e5e6eb] bg-[#f2f3f5] text-[#1d2129] hover:bg-[#e8eaed]'
                               }`}
                               aria-pressed={deepAnalysisEnabled}
                             >
@@ -387,6 +430,16 @@ export default function HomePage() {
                               深度分析
                             </button>
                           )}
+                          {selectedMode === 'report' && (
+                            <ReportTemplateSelector
+                              templates={reportTemplates}
+                              selectedId={selectedReportTemplateId}
+                              onSelect={(template) => setSelectedReportTemplateId(template.id)}
+                              onClear={() => setSelectedReportTemplateId(null)}
+                            />
+                          )}
+                        </div>
+                        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-4">
                           <button
                             type="button"
                             className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-[#f2f3f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25"
@@ -400,7 +453,7 @@ export default function HomePage() {
                             onClick={() => submit()}
                             disabled={!canSubmit}
                             className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/30 focus-visible:ring-offset-2 ${
-                              canSubmit ? 'bg-[#1677ff] hover:bg-[#0e6ee8]' : 'bg-[#c9cdd4]'
+                              canSubmit ? 'bg-[#1677ff] hover:bg-[#0e6ee8]' : 'bg-[#94bfff]'
                             }`}
                             title={
                               selectedMode === 'report'
@@ -423,107 +476,27 @@ export default function HomePage() {
                 <div
                   className="mx-auto mt-[50px] w-full max-w-[960px]"
                 >
-                  {selectedMode === 'report' ? (
-                    <div className="flex flex-col">
-                      <section className="pb-[10px]">
-                        <div className="mx-auto flex w-full max-w-[960px] flex-col gap-4">
-                          <div className="flex items-center gap-2">
-                            <span className="h-[13px] w-[3px] shrink-0 rounded-xl bg-[#165dff]" />
-                            <h2 className="text-[16px] font-medium leading-6 text-[#1d2129]">
-                              快捷提问
-                            </h2>
-                          </div>
-                          <div className="flex w-full gap-4">
-                            {reportSuggestions.map((suggestion, index) => (
-                              <button
-                                key={`${suggestion.title}-${index}`}
-                                type="button"
-                                onClick={() => handleSuggestionClick(suggestion)}
-                                className="group flex h-[38px] min-w-0 flex-1 items-center justify-between gap-2 rounded-[8px] border border-[#e5e6eb] bg-white px-4 py-[7px] text-left text-[14px] font-normal leading-[22px] text-[#1d2129] transition-colors hover:border-[#bcd4ff] hover:bg-[#f9fbff]"
-                              >
-                                <span className="min-w-0 truncate">{suggestion.title}</span>
-                                <img
-                                  aria-hidden="true"
-                                  className="h-4 w-4 shrink-0 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-active:opacity-100"
-                                  src={arrowRightUpLine}
-                                  alt=""
-                                />
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </section>
-
-                      <section className="py-[10px]">
-                        <div className="mx-auto flex w-full max-w-[960px] flex-col gap-4">
-                          <div className="flex items-center gap-2">
-                            <span className="h-[13px] w-[3px] shrink-0 rounded-xl bg-[#165dff]" />
-                            <h2 className="text-[16px] font-medium leading-6 text-[#1d2129]">
-                              案例精选
-                            </h2>
-                          </div>
-                          <div className="flex w-full items-start gap-4">
-                            {reportCases.map((reportCase) => (
-                              <a
-                                key={reportCase.title}
-                                href={`/report/case/${reportCase.previewId}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="group relative flex h-[130px] min-w-0 flex-1 flex-col items-start rounded-[12px] border border-[#e5e6eb] bg-white p-4 text-left transition-colors hover:bg-[#f7f8fa]"
-                              >
-                                <img
-                                  aria-hidden="true"
-                                  className="absolute right-4 top-5 h-4 w-4 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-active:opacity-100"
-                                  src={caseArrowRightUp}
-                                  alt=""
-                                />
-                                <div className="flex w-full flex-col gap-2">
-                                  <div className="flex w-full items-center">
-                                    <div className="flex min-w-0 items-center gap-2">
-                                      <img className="h-6 w-6 shrink-0 object-contain" src={caseTemplateIcon} alt="" />
-                                      <span className="min-w-0 truncate text-[16px] font-medium leading-6 text-[#1d2129]">
-                                        {reportCase.title}
-                                      </span>
-                                    </div>
-                                  </div>
-                                  <p className="text-[14px] leading-[22px] text-[#4e5969]">
-                                    {reportCase.description}
-                                  </p>
-                                </div>
-                              </a>
-                            ))}
-                          </div>
-                        </div>
-                      </section>
+                  <div className="flex flex-col gap-12">
+                    <div className="-mt-8 flex w-full flex-wrap items-start gap-4">
+                      {visibleSuggestions.map((suggestion, index) => (
+                        <button
+                          key={`${suggestion.title}-${index}`}
+                          type="button"
+                          onClick={() => handleSuggestionClick(suggestion)}
+                          className="group inline-flex h-[38px] min-w-0 items-center justify-between gap-2 rounded-[20px] border border-[#e5e6eb] bg-[#f7f8fa] px-4 py-[7px] text-left text-[14px] font-normal leading-[22px] text-[#1d2129] transition-colors hover:border-[#bcd4ff] hover:bg-white"
+                        >
+                          <span className="whitespace-nowrap">{suggestion.title}</span>
+                          <img
+                            aria-hidden="true"
+                            className="h-4 w-4 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-active:opacity-100"
+                            src={arrowRightUpLine}
+                            alt=""
+                          />
+                        </button>
+                      ))}
                     </div>
-                  ) : (
-                    <div className="flex flex-col gap-4">
-                      <div className="flex items-center gap-2">
-                        <span className="h-[13px] w-[3px] shrink-0 rounded-xl bg-[#165dff]" />
-                        <h2 className="text-[16px] font-medium leading-6 text-[#1d2129]">
-                          {selectedMode === 'smart' ? '从常用场景开始' : '快捷提问'}
-                        </h2>
-                      </div>
-                      <div className="flex flex-col gap-4">
-                        {visibleSuggestions.map((suggestion, index) => (
-                          <button
-                            key={`${suggestion.title}-${index}`}
-                            type="button"
-                            onClick={() => handleSuggestionClick(suggestion)}
-                            className="group flex h-[38px] w-full items-center justify-between rounded-lg border border-[#e5e6eb] bg-white px-4 py-[7px] text-left text-[14px] font-normal leading-[22px] text-[#1d2129] transition-colors hover:border-[#bcd4ff] hover:bg-[#f9fbff]"
-                          >
-                            <span>{suggestion.title}</span>
-                            <img
-                              aria-hidden="true"
-                              className="h-4 w-4 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-active:opacity-100"
-                              src={arrowRightUpLine}
-                              alt=""
-                            />
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                    <FeaturedCases className="-mt-4" />
+                  </div>
                 </div>
               </section>
       </div>

@@ -157,7 +157,7 @@ function TemplateDescription({ description }: { description: string }) {
         sideOffset={8}
         collisionPadding={12}
         arrowClassName="bg-[#1d2129] fill-[#1d2129]"
-        className="z-[120] w-[320px] max-w-[calc(100vw-32px)] whitespace-normal rounded-[6px] border-0 bg-[#1d2129] px-3 py-2.5 text-left font-['PingFang_SC'] text-[13px] font-normal leading-5 tracking-normal text-white text-wrap shadow-[0_6px_16px_rgba(29,33,41,0.16)]"
+        className="z-[120] w-fit min-w-[220px] max-w-[min(320px,calc(100vw-32px))] whitespace-normal rounded-[6px] border-0 bg-[#1d2129] px-3 py-2.5 text-left font-['PingFang_SC'] text-[13px] font-normal leading-5 tracking-normal text-white text-wrap shadow-[0_6px_16px_rgba(29,33,41,0.16)]"
       >
         <p className="m-0 break-words">{description}</p>
       </TooltipContent>

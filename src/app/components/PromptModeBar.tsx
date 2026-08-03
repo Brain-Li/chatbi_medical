@@ -1,14 +1,18 @@
 import { Sparkles } from 'lucide-react';
 
 import barChartBoxIcon from '../../assets/figma-home/bar-chart-box-line.svg';
+import chatBubbleIcon from '../../assets/figma-home/chat-bubble-line-muted.svg';
 import reportIcon from '../../assets/figma-home/pie-chart-box-line.svg';
+import smartIcon from '../../assets/figma-home/spy-line.svg';
 import type { PromptMode } from '../utils/promptMode';
 
 export type PromptModeSelection = 'smart' | PromptMode;
+export type PromptModeBarSelection = PromptModeSelection | 'qa';
 
 const modeMeta: Record<PromptModeSelection, { label: string; icon?: string }> = {
   smart: {
     label: '智能',
+    icon: smartIcon,
   },
   ask: {
     label: '问数',
@@ -22,30 +26,47 @@ const modeMeta: Record<PromptModeSelection, { label: string; icon?: string }> = 
 
 export function PromptModeBar({
   onSelect,
+  onQaSelect,
   selectedMode = 'smart',
   disabled = false,
+  showQa = false,
   className = '',
 }: {
   onSelect: (mode: PromptModeSelection) => void;
-  selectedMode?: PromptModeSelection;
+  onQaSelect?: () => void;
+  selectedMode?: PromptModeBarSelection;
   disabled?: boolean;
+  showQa?: boolean;
   className?: string;
 }) {
+  const modes = (Object.keys(modeMeta) as PromptModeSelection[]).flatMap((mode) =>
+    mode === 'ask' && showQa
+      ? [mode, 'qa' as const]
+      : [mode],
+  );
+
   return (
     <div
       className={`inline-flex h-9 shrink-0 items-center rounded-full bg-[#eef0f3] p-0.5 ${className}`}
       role="radiogroup"
       aria-label="对话模式"
     >
-      {(Object.keys(modeMeta) as PromptModeSelection[]).map((mode) => {
-        const item = modeMeta[mode];
+      {modes.map((mode) => {
+        const isQa = mode === 'qa';
+        const item = isQa ? { label: '问答', icon: chatBubbleIcon } : modeMeta[mode];
         const isSelected = selectedMode === mode;
 
         return (
           <button
             key={mode}
             type="button"
-            onClick={() => onSelect(mode)}
+            onClick={() => {
+              if (mode === 'qa') {
+                onQaSelect?.();
+                return;
+              }
+              onSelect(mode);
+            }}
             onKeyDown={(event) => {
               if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
 

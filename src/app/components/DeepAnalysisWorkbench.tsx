@@ -1,13 +1,8 @@
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
-  ArrowLeft,
   Check,
   CheckCircle2,
-  ChevronsRight,
-  Download,
-  Eye,
-  ExternalLink,
   FileText,
   Loader2,
   RefreshCw,
@@ -17,7 +12,6 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   ResponsiveContainer,
   Tooltip as ChartTooltip,
   XAxis,
@@ -31,6 +25,21 @@ import {
   TooltipTrigger,
 } from './ui/tooltip';
 import copyLineIcon from '../../assets/figma-ask/file-copy-line.svg';
+import searchEyeLineIcon from '../../assets/figma-ask/search-eye-line.svg';
+import bookOpenLineIcon from '../../assets/figma-ask/book-open-line.svg';
+import fileTextLineIcon from '../../assets/figma-ask/file-text-line.svg';
+import arrowRightDoubleFillIcon from '../../assets/figma-ask/arrow-right-double-fill.svg';
+import sourceBook3LineIcon from '../../assets/figma-ask/source-book-3-line.svg';
+import sourceGlobalLineIcon from '../../assets/figma-ask/source-global-line.svg';
+import sourceArrowRightSLineIcon from '../../assets/figma-ask/source-arrow-right-s-line.svg';
+import emptyFilesIllustration from '../../assets/figma-ask/empty-files-illustration.png';
+import generatedFileTextLineIcon from '../../assets/figma-ask/generated-file-text-line.svg';
+import generatedFileEyeLineIcon from '../../assets/figma-ask/generated-file-eye-line.svg';
+import generatedFileDownloadLineIcon from '../../assets/figma-ask/generated-file-download-line.svg';
+import reportArrowLeftLineIcon from '../../assets/figma-ask/report-arrow-left-line.svg';
+import reportTrendUpLineIcon from '../../assets/figma-ask/report-trend-up-line.svg';
+import reportTrendDownLineIcon from '../../assets/figma-ask/report-trend-down-line.svg';
+import reportBarChartFillIcon from '../../assets/figma-ask/report-bar-chart-fill.svg';
 
 type DeepAnalysisWorkbenchProps = {
   processMessage: Message;
@@ -57,9 +66,9 @@ export type DeepAnalysisStage =
 
 export type DeepAnalysisWorkbenchTab = 'progress' | 'sources' | 'files';
 export type DeepAnalysisFeedback = 'like' | 'dislike';
+type ReportArtifactFormat = 'html' | 'markdown';
 
 const AI_REPORT_DISCLAIMER = '内容由 AI 生成，仅供参考，无法保证完全真实';
-const reportChartColors = ['#165dff', '#4080ff', '#6aa1ff', '#94bfff', '#bedaff'];
 
 const workbenchTabs: Array<{ id: DeepAnalysisWorkbenchTab; label: string }> = [
   { id: 'progress', label: '分析进展' },
@@ -252,7 +261,7 @@ function SourceTitle({
       <TooltipTrigger asChild>
         <h3
           ref={titleRef}
-          className={`truncate text-sm font-medium leading-[22px] ${isKnowledgeDocument ? 'text-[#1d2129]' : 'text-[#1d2129] underline-offset-4 transition-colors group-hover:text-[#165dff] group-hover:underline'}`}
+          className={`min-w-0 truncate text-sm font-medium leading-5 ${isKnowledgeDocument ? 'text-[#1d2129]' : 'text-[#1d2129] underline-offset-4 transition-colors group-hover:text-[#165dff] group-hover:underline'}`}
         >
           {title}
         </h3>
@@ -388,14 +397,14 @@ function StreamingPlanList({ items, streaming }: { items: string[]; streaming: b
   }, [itemSignature, items.length]);
 
   return (
-    <div className="min-h-[196px] divide-y divide-[#f2f3f5]" aria-label={items.join('，')}>
+    <div className="flex min-h-[196px] flex-col gap-2 rounded-[8px]" aria-label={items.join('，')}>
       {items.slice(0, visibleItemCount).map((item, index) => (
         <div
           key={item}
-          className="animate-in fade-in-0 slide-in-from-top-1 flex gap-3 py-3 duration-200 first:pt-0 last:pb-0 motion-reduce:animate-none"
+          className="animate-in fade-in-0 slide-in-from-top-1 flex items-center gap-2.5 border-b border-[#e5e6eb] p-2 duration-200 last:border-b-0 motion-reduce:animate-none"
         >
-          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#e8f3ff] text-xs text-[#165dff]">{index + 1}</span>
-          <span className="text-sm leading-5 text-[#4e5969]">{item}</span>
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[8px] bg-[#e8f3ff] font-['DIN_Alternate','Arial',sans-serif] text-[12px] font-bold leading-[22px] text-[#165dff]">{index + 1}</span>
+          <span className="min-w-0 flex-1 text-sm leading-[22px] text-[#1d2129]">{item}</span>
         </div>
       ))}
     </div>
@@ -542,64 +551,93 @@ function ReportVisualSummary({ report }: { report: ReportResultData }) {
   const chartDescription = report.chartData
     .map((item) => `${item.name}${item.value}`)
     .join('，');
+  const stackedChartData = report.chartData.map((item) => {
+    const primary = Math.round(item.value * 0.55);
+    return { ...item, primary, secondary: item.value - primary };
+  });
 
   return (
-    <div className="space-y-4 pb-2">
-      <h2 className="border-b border-[#e5e6eb] pb-1.5 text-[18px] font-medium leading-[26px] text-[#1d2129]">数据概览</h2>
+    <section className="flex flex-col gap-4 border-t border-[#e5e6eb] pt-4" aria-labelledby="report-overview-title">
+      <h2 id="report-overview-title" className="text-sm font-medium leading-6 text-[#1d2129]">数据概览</h2>
       {hasMetrics ? (
-        <div className="grid grid-cols-2 gap-3" aria-label="关键指标卡片">
+        <div className="grid grid-cols-2 gap-4" aria-label="关键指标卡片">
           {report.keyMetrics.map((metric, index) => {
-            const trendLabel = metric.trend === 'up' ? '↑ 上升' : metric.trend === 'down' ? '↓ 下降' : metric.trend === 'flat' ? '— 持平' : null;
+            const trendLabel = metric.trend === 'up' ? '上升' : metric.trend === 'down' ? '下降' : metric.trend === 'flat' ? '持平' : null;
+            const trendClassName = metric.trend === 'up'
+              ? 'bg-[#ffece8] text-[#f53f3f]'
+              : metric.trend === 'down'
+                ? 'bg-[#e8ffea] text-[#00b42a]'
+                : 'bg-[#f2f3f5] text-[#86909c]';
 
             return (
-              <div key={`${metric.label}-${index}`} className="min-w-0 rounded-[10px] border border-[#e5e6eb] bg-[#f7f8fa] px-3.5 py-3">
-                <div className="truncate text-xs leading-[18px] text-[#86909c]" title={metric.label}>{metric.label}</div>
-                <div className="mt-1 truncate text-xl font-semibold leading-7 text-[#1d2129]" title={metric.value}>{metric.value}</div>
-                {trendLabel ? <div className="mt-1 text-xs leading-[18px] text-[#4e5969]">{trendLabel}</div> : null}
+              <div key={`${metric.label}-${index}`} className="flex h-[59px] min-w-0 flex-col justify-center gap-1 rounded-[8px] bg-[#f7f8fa] px-2 py-1.5">
+                <div className="truncate text-sm font-normal leading-5 text-[#4e5969]" title={metric.label}>{metric.label}</div>
+                <div className="flex min-w-0 items-center gap-1">
+                  <span className="truncate text-sm font-normal leading-[22px] text-[#4e5969]" title={metric.value}>{metric.value}</span>
+                  {trendLabel ? (
+                    <span className={`inline-flex h-[21px] shrink-0 items-center gap-0.5 rounded-[4px] py-px pl-1 pr-2 text-xs font-normal leading-5 ${trendClassName}`}>
+                      {metric.trend === 'up' ? <img src={reportTrendUpLineIcon} alt="" className="h-[9.3333px] w-[9.0746px]" /> : null}
+                      {metric.trend === 'down' ? <img src={reportTrendDownLineIcon} alt="" className="h-[9.3333px] w-[9.0746px]" /> : null}
+                      {trendLabel}
+                    </span>
+                  ) : null}
+                </div>
               </div>
             );
           })}
         </div>
       ) : null}
       {hasChart ? (
-        <section className="overflow-hidden rounded-[10px] border border-[#e5e6eb] bg-white" aria-labelledby="report-chart-title">
-          <h3 id="report-chart-title" className="border-b border-[#f2f3f5] bg-[#f7f8fa] px-4 py-2.5 text-sm font-medium leading-[22px] text-[#1d2129]">{report.chartTitle}</h3>
-          <div className="h-[250px] px-3 pb-2 pt-4" role="img" aria-label={`${report.chartTitle}柱状图：${chartDescription}`}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={report.chartData} margin={{ top: 4, right: 8, bottom: 4, left: -8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#eef0f3" vertical={false} />
+        <section className="overflow-hidden rounded-[8px] border border-[#e5e6eb] bg-white" aria-labelledby="report-chart-title">
+          <div className="flex h-10 items-center justify-between border-b border-[#e5e6eb] bg-[#f7f8fa] px-4">
+            <h3 id="report-chart-title" className="truncate text-sm font-medium leading-6 text-[#1d2129]">{report.chartTitle}</h3>
+            <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[4px] bg-white" aria-hidden="true">
+              <img src={reportBarChartFillIcon} alt="" className="h-[12.6667px] w-3" />
+            </span>
+          </div>
+          <div className="h-[284px] px-4 pb-3 pt-4" role="img" aria-label={`${report.chartTitle}柱状图：${chartDescription}`}>
+            <div className="mb-1 flex h-6 items-center justify-between text-xs leading-5 text-[#4e5969]">
+              <span>纵轴标题</span>
+              <span className="flex items-center gap-4">
+                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 bg-[#165dff]" />Legend</span>
+                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 bg-[#0fc6c2]" />Legend</span>
+              </span>
+            </div>
+            <div className="h-[232px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={stackedChartData} margin={{ top: 4, right: 0, bottom: 0, left: -14 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e6eb" vertical={false} />
                 <XAxis
                   dataKey="name"
-                  axisLine={false}
+                  axisLine={{ stroke: '#c9cdd4' }}
                   tickLine={false}
-                  tickMargin={10}
-                  height={38}
-                  tick={{ fontSize: 11, fill: '#86909c' }}
+                  tickMargin={4}
+                  height={28}
+                  tick={{ fontSize: 12, fill: '#4e5969' }}
                   tickFormatter={(value) => {
                     const label = String(value);
-                    return label.length > 7 ? `${label.slice(0, 7)}…` : label;
+                    return label.length > 4 ? `${label.slice(0, 4)}…` : label;
                   }}
                 />
-                <YAxis axisLine={false} tickLine={false} width={48} tick={{ fontSize: 11, fill: '#86909c' }} />
+                  <YAxis axisLine={false} tickLine={false} width={44} tick={{ fontSize: 12, fill: '#86909c' }} />
                 <ChartTooltip
                   cursor={{ fill: '#f7f8fa' }}
                   contentStyle={{
-                    borderRadius: 8,
+                    borderRadius: 4,
                     border: '1px solid #e5e6eb',
                     boxShadow: '0 6px 16px rgba(29, 33, 41, 0.10)',
                   }}
+                  formatter={(_, name, item) => [item.payload.value, name]}
                 />
-                <Bar dataKey="value" name="指标值" radius={[5, 5, 0, 0]} maxBarSize={52}>
-                  {report.chartData.map((item, index) => (
-                    <Cell key={`${item.name}-${item.value}-${index}`} fill={reportChartColors[index % reportChartColors.length]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+                  <Bar dataKey="primary" name="Legend" stackId="total" fill="#165dff" maxBarSize={26} />
+                  <Bar dataKey="secondary" name="Legend" stackId="total" fill="#0fc6c2" maxBarSize={26} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </section>
       ) : null}
-    </div>
+    </section>
   );
 }
 
@@ -607,9 +645,10 @@ function MarkdownDocument({ content, reportResult }: { content: string; reportRe
   const lines = content.split('\n');
   let isInVisualizedSection = false;
   let hasRenderedVisualSummary = false;
+  let hasRenderedSectionHeading = false;
 
   return (
-    <article className="mx-auto max-w-[760px] space-y-2 text-sm font-normal leading-6 text-[#4e5969]">
+    <article className="flex w-full flex-col gap-4 text-sm font-normal leading-[22px] text-[#4e5969]">
       {lines.map((line, index) => {
         const key = `${index}-${line}`;
         const trimmed = line.trim();
@@ -628,18 +667,24 @@ function MarkdownDocument({ content, reportResult }: { content: string; reportRe
         if (!trimmed) return null;
         if (isInVisualizedSection) return null;
         if (trimmed.startsWith('# ')) {
-          return <h1 key={key} className="pb-1 text-[22px] font-medium leading-8 text-[#1d2129]">{trimmed.slice(2)}</h1>;
+          return null;
+        }
+        if (trimmed.startsWith('统计周期：')) {
+          return null;
         }
         if (trimmed.startsWith('## ')) {
-          return <h2 key={key} className="border-b border-[#e5e6eb] pb-1.5 pt-4 text-[18px] font-medium leading-[26px] text-[#1d2129]">{trimmed.slice(3)}</h2>;
+          const isFirstSection = !hasRenderedSectionHeading;
+          hasRenderedSectionHeading = true;
+          return <h2 key={key} className={`${isFirstSection ? '' : 'border-t border-[#e5e6eb] pt-4'} text-sm font-medium leading-6 text-[#1d2129]`}>{trimmed.slice(3)}</h2>;
         }
         if (trimmed.startsWith('### ')) {
-          return <h3 key={key} className="pt-2 text-[15px] font-medium leading-6 text-[#1d2129]">{trimmed.slice(4)}</h3>;
+          return <h3 key={key} className="text-sm font-medium leading-6 text-[#1d2129]">{trimmed.slice(4)}</h3>;
         }
         if (trimmed.startsWith('- ')) {
+          const followsBullet = lines[index - 1]?.trim().startsWith('- ');
           return (
-            <div key={key} className="flex gap-2.5">
-              <span className="mt-[9px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#165dff]" />
+            <div key={key} className={`flex gap-2 leading-7 ${followsBullet ? '-mt-4' : ''}`}>
+              <span className="mt-[12px] h-1 w-1 shrink-0 rounded-full bg-[#4e5969]" />
               <span className="min-w-0">{trimmed.slice(2)}</span>
             </div>
           );
@@ -696,7 +741,6 @@ function ActivityDetailPanel({
     || mcpTools.some((mcp) => /网页|搜索|浏览|web|browser/i.test(`${mcp.name} ${mcp.serverName}`));
   const activityIndex = Math.max(0, processStepDefinitions.findIndex((step) => step.id === activityId));
   const status = getStepStatus(processMessage, stage, activityIndex, processStepDefinitions.length);
-  const statusLabel = status === 'completed' ? '已完成' : status === 'running' ? '进行中' : status === 'interrupted' ? '已中断' : '等待中';
   const capabilityExecutionTitle = skills.length && mcpTools.length
     ? '调用 Skill 和 MCP'
     : mcpTools.length
@@ -943,14 +987,16 @@ function ActivityDetailPanel({
       </div>
     );
   } else if (variant === 'report') {
-    const reportFileName = resultMessage?.markdownArtifact?.fileName ?? '分析报告.md';
+    const reportTitle = resultMessage?.reportResult?.title
+      ?? resultMessage?.markdownArtifact?.fileName.replace(/_\d{8}_\d{6}\.md$/i, '').replace(/\.md$/i, '')
+      ?? '分析报告';
     const markdown = getVisibleMarkdown(resultMessage);
     const reportActivities: ActivityStreamItem[] = [
       {
         id: 'create-report-file',
         source: '报告',
-        action: '创建文件',
-        detail: reportFileName,
+        action: '创建报告',
+        detail: reportTitle,
       },
       {
         id: 'organize-report-structure',
@@ -963,8 +1009,8 @@ function ActivityDetailPanel({
         source: '报告',
         action: '写入内容',
         detail: markdown.totalLineCount
-          ? `正在生成报告正文，已写入 ${markdown.visibleLineCount}/${markdown.totalLineCount} 行`
-          : '正在生成报告正文',
+          ? `正在生成 HTML 和 Markdown，已写入 ${markdown.visibleLineCount}/${markdown.totalLineCount} 行`
+          : '正在生成 HTML 和 Markdown 文件',
       },
     ];
 
@@ -987,19 +1033,9 @@ function ActivityDetailPanel({
 
   return (
     <div className="min-w-0">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-medium leading-[22px] text-[#1d2129]">{title}</h2>
-          </div>
-        </div>
-        <span className={`inline-flex shrink-0 items-center gap-1 rounded-[6px] px-2 py-1 text-xs ${status === 'completed' ? 'bg-[#e8f8ee] text-[#00b42a]' : status === 'running' ? 'bg-[#e8f3ff] text-[#165dff]' : status === 'interrupted' ? 'bg-[#fff2f0] text-[#f53f3f]' : 'bg-[#f2f3f5] text-[#657180]'}`} aria-live="polite">
-          {status === 'running' ? <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" /> : null}
-          {statusLabel}
-        </span>
-      </div>
-      <div className="mt-4 border-t border-[#f2f3f5] pt-4">{content}</div>
-      {stage === 'interrupted' && onRetry ? <button type="button" onClick={onRetry} className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-[#165dff] px-3 text-sm font-normal text-white hover:bg-[#0e42d2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25"><RefreshCw className="h-3.5 w-3.5" />重新分析</button> : null}
+      <h2 className="truncate text-sm font-medium leading-6 text-[#1d2129]">{title}</h2>
+      <div className="mt-4">{content}</div>
+      {variant === 'deep-analysis' && stage === 'interrupted' && onRetry ? <button type="button" onClick={onRetry} className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-[#165dff] px-3 text-sm font-normal text-white hover:bg-[#0e42d2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25"><RefreshCw className="h-3.5 w-3.5" />重新分析</button> : null}
     </div>
   );
 }
@@ -1069,66 +1105,133 @@ function SourcesPanel({ processMessage, stage }: { processMessage: Message; stag
   }
 
   return (
-    <div>
-      <div className="divide-y divide-[#f2f3f5] overflow-hidden rounded-[12px] border border-[#e5e6eb] bg-white">
-        {orderedSources.map((source) => {
-          const isKnowledgeDocument = source.kind === 'knowledge-document';
-          const renderSourceContent = (title: ReactNode) => (
-            <>
-              <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] transition-colors ${isKnowledgeDocument ? 'bg-[#e8f3ff] text-[#165dff]' : 'bg-[#f2f3f5] text-[#657180] group-hover:bg-[#e8f3ff] group-hover:text-[#165dff]'}`} aria-hidden="true">
-                {isKnowledgeDocument ? <FileText className="h-3.5 w-3.5" /> : <ExternalLink className="h-3.5 w-3.5" />}
+    <div className="flex w-full flex-col gap-4">
+      {orderedSources.map((source) => {
+        const isKnowledgeDocument = source.kind === 'knowledge-document';
+        const renderSourceContent = (title: ReactNode) => (
+          <>
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
+                <img
+                  src={isKnowledgeDocument ? sourceBook3LineIcon : sourceGlobalLineIcon}
+                  alt=""
+                  className={isKnowledgeDocument ? 'h-[13.3333px] w-3' : 'h-[13.3333px] w-[13.3333px]'}
+                />
               </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex min-w-0 items-center gap-2">
-                  {title}
-                  <span className="shrink-0 text-xs leading-[18px] text-[#86909c]">{isKnowledgeDocument ? '知识文档' : '外部网页'}</span>
-                </div>
-              </div>
-            </>
-          );
+              {title}
+              <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-[#e5e6eb]" />
+              <span className="shrink-0 rounded-[2px] border border-[#e5e6eb] px-1 text-sm font-normal leading-[22px] text-[#4e5969]">
+                {isKnowledgeDocument ? '知识文档' : '外部网页'}
+              </span>
+            </div>
+            <span className={`flex h-4 w-4 shrink-0 items-center justify-center ${isKnowledgeDocument ? 'opacity-0' : ''}`} aria-hidden="true">
+              <img src={sourceArrowRightSLineIcon} alt="" className="h-[8.48525px] w-[5.18545px]" />
+            </span>
+          </>
+        );
 
-          return (
-            <article key={source.id} className={isKnowledgeDocument ? 'px-4 py-3' : ''}>
-              {isKnowledgeDocument ? (
-                <div className="flex items-center gap-3">
-                  {renderSourceContent(
-                    <SourceTitle title={source.title} isKnowledgeDocument />,
-                  )}
-                </div>
-              ) : (
-                <a
-                  href={source.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-[#f7f8fa] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#165dff]/25"
-                  aria-label={`在新标签页打开网页：${source.title}`}
-                >
-                  {renderSourceContent(
-                    <SourceTitle title={source.title} isKnowledgeDocument={false} />,
-                  )}
-                </a>
-              )}
-            </article>
-          );
-        })}
-      </div>
+        return (
+          <article key={source.id}>
+            {isKnowledgeDocument ? (
+              <div className="flex min-h-10 w-full items-center justify-between gap-2 rounded-[8px] border border-[#e5e6eb] bg-white px-4 py-2">
+                {renderSourceContent(
+                  <SourceTitle title={source.title} isKnowledgeDocument />,
+                )}
+              </div>
+            ) : (
+              <a
+                href={source.url}
+                target="_blank"
+                rel="noreferrer"
+                className="group flex min-h-10 w-full items-center justify-between gap-2 rounded-[8px] border border-[#e5e6eb] bg-white px-4 py-2 transition-colors hover:bg-[#f7f8fa] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#165dff]/25"
+                aria-label={`在新标签页打开网页：${source.title}`}
+              >
+                {renderSourceContent(
+                  <SourceTitle title={source.title} isKnowledgeDocument={false} />,
+                )}
+              </a>
+            )}
+          </article>
+        );
+      })}
     </div>
   );
 }
 
-export function downloadMarkdownArtifact(message?: Message | null) {
+function getReportArtifactFileName(message: Message | null | undefined, format: ReportArtifactFormat) {
+  const sourceFileName = message?.markdownArtifact?.fileName || '分析报告.md';
+  const baseName = message?.reportResult?.title.replace(/[\\/:*?"<>|]/g, '_')
+    || sourceFileName.replace(/\.(?:md|markdown|html?)$/i, '');
+  return `${baseName}.${format === 'html' ? 'html' : 'md'}`;
+}
+
+function escapeHtml(value: string | number) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function buildReportHtmlArtifact(message: Message) {
+  const report = message.reportResult;
+  if (!report) {
+    return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>分析报告</title></head><body><pre>${escapeHtml(sanitizeGeneratedReportMarkdown(message))}</pre></body></html>`;
+  }
+
+  const maxChartValue = Math.max(...report.chartData.map((item) => item.value), 1);
+  const metricCards = report.keyMetrics.map((metric) => `
+    <div class="metric"><div class="metric-label">${escapeHtml(metric.label)}</div><div class="metric-value">${escapeHtml(metric.value)}</div></div>`).join('');
+  const chartRows = report.chartData.map((item) => `
+    <div class="chart-row"><span>${escapeHtml(item.name)}</span><div class="bar-track"><i style="width:${Math.max(2, Math.round((item.value / maxChartValue) * 100))}%"></i></div><b>${escapeHtml(item.value)}</b></div>`).join('');
+  const renderList = (items: string[]) => `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`;
+
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>${escapeHtml(report.title)}</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#f7f8fa;color:#1d2129;font-family:"PingFang SC","Microsoft YaHei",Arial,sans-serif;font-size:14px;line-height:1.7}.report{max-width:960px;margin:32px auto;padding:32px;background:#fff;border:1px solid #e5e6eb;border-radius:8px}h1{margin:0;font-size:24px;line-height:32px}h2{margin:24px 0 12px;padding-top:16px;border-top:1px solid #e5e6eb;font-size:16px;line-height:24px}.period,.summary,li{color:#4e5969}.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.metric{padding:10px 12px;background:#f7f8fa;border-radius:8px}.metric-label{color:#4e5969}.metric-value{margin-top:4px;font-size:18px;font-weight:600}.chart{padding:16px;border:1px solid #e5e6eb;border-radius:8px}.chart-row{display:grid;grid-template-columns:96px 1fr 64px;align-items:center;gap:12px;margin:12px 0;color:#4e5969}.bar-track{height:12px;overflow:hidden;background:#f2f3f5}.bar-track i{display:block;height:100%;background:#165dff}ul{margin:0;padding-left:22px}.disclaimer{margin-top:40px;text-align:center;color:#86909c}@media(max-width:640px){.report{margin:0;padding:20px;border:0}.metrics{grid-template-columns:1fr}.chart-row{grid-template-columns:72px 1fr 48px}}
+  </style>
+</head>
+<body>
+  <main class="report">
+    <h1>${escapeHtml(report.title)}</h1>
+    <p class="period">统计周期：${escapeHtml(report.period)}</p>
+    <h2>核心结论</h2><p class="summary">${escapeHtml(report.summary)}</p>
+    <h2>数据概览</h2><div class="metrics">${metricCards}</div>
+    <h2>${escapeHtml(report.chartTitle)}</h2><div class="chart">${chartRows}</div>
+    <h2>关键发现</h2>${renderList(report.findings)}
+    <h2>风险提示</h2>${renderList(report.alerts)}
+    <h2>分析依据</h2>${renderList(report.embeddedAnalysis)}
+    <p class="disclaimer">${AI_REPORT_DISCLAIMER}</p>
+  </main>
+</body>
+</html>`;
+}
+
+function downloadReportArtifact(message: Message | null | undefined, format: ReportArtifactFormat) {
   if (!message?.markdownArtifact) return;
   const reportContent = sanitizeGeneratedReportMarkdown(message);
-  const downloadContent = reportContent.includes(AI_REPORT_DISCLAIMER)
-    ? reportContent
-    : `${reportContent}\n\n---\n\n> ${AI_REPORT_DISCLAIMER}\n`;
-  const blob = new Blob([downloadContent], { type: 'text/markdown;charset=utf-8' });
+  const content = format === 'html'
+    ? buildReportHtmlArtifact(message)
+    : reportContent.includes(AI_REPORT_DISCLAIMER)
+      ? reportContent
+      : `${reportContent}\n\n---\n\n> ${AI_REPORT_DISCLAIMER}\n`;
+  const blob = new Blob([content], { type: format === 'html' ? 'text/html;charset=utf-8' : 'text/markdown;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = message.markdownArtifact.fileName;
+  link.download = getReportArtifactFileName(message, format);
   link.click();
   URL.revokeObjectURL(url);
+}
+
+export function downloadMarkdownArtifact(message?: Message | null) {
+  downloadReportArtifact(message, 'markdown');
 }
 
 function FilesPanel({
@@ -1138,58 +1241,88 @@ function FilesPanel({
 }: {
   resultMessage?: Message | null;
   variant: 'deep-analysis' | 'report';
-  onPreview: () => void;
+  onPreview: (format: ReportArtifactFormat) => void;
 }) {
   const markdown = getVisibleMarkdown(resultMessage);
   const hasFile = Boolean(resultMessage?.markdownArtifact);
   const isInterrupted = Boolean(resultMessage?.isInterrupted);
   const isComplete = hasFile && !resultMessage?.isGenerating && !isInterrupted && markdown.visibleLineCount >= markdown.totalLineCount;
-  const fileActionButtonClassName = 'inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-[#e5e6eb] bg-white px-3 text-sm font-normal text-[#4e5969] transition-colors hover:bg-[#f2f3f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 disabled:cursor-not-allowed disabled:bg-[#f7f8fa] disabled:text-[#a8abb2]';
+  const fileActionButtonClassName = 'inline-flex items-center gap-2 rounded-[4px] border border-[#f2f3f5] bg-[rgba(255,255,255,0.8)] px-4 py-1.5 text-sm font-normal leading-5 text-[#1d2129] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 disabled:cursor-not-allowed disabled:opacity-50';
 
   if (!hasFile) {
     return (
-      <div className="rounded-[12px] border border-dashed border-[#c9cdd4] bg-white px-5 py-14 text-center">
-        <FileText className="mx-auto h-5 w-5 text-[#86909c]" />
-        <div className="mt-3 text-sm font-medium leading-[22px] text-[#1d2129]">暂无文件</div>
+      <div className="flex h-full min-h-[320px] w-full items-center justify-center bg-white" aria-live="polite">
+        <div className="flex -translate-y-6 flex-col items-center justify-center gap-2.5 text-center">
+          <img src={emptyFilesIllustration} alt="" className="h-[140px] w-[140px] object-contain" />
+          <div className="text-sm font-normal leading-6 tracking-[0.15px] text-[#86909c]">暂无文件</div>
+        </div>
       </div>
     );
   }
 
   const progress = Math.round((markdown.visibleLineCount / Math.max(markdown.totalLineCount, 1)) * 100);
+  const artifacts: Array<{ format: ReportArtifactFormat; fileName: string }> = variant === 'report'
+    ? [
+        { format: 'html', fileName: getReportArtifactFileName(resultMessage, 'html') },
+        { format: 'markdown', fileName: getReportArtifactFileName(resultMessage, 'markdown') },
+      ]
+    : [{ format: 'markdown', fileName: getReportArtifactFileName(resultMessage, 'markdown') }];
+
   return (
-    <div className="rounded-[12px] border border-[#e5e6eb] bg-white p-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] bg-[#e8f3ff] text-[#165dff]"><FileText className="h-5 w-5" /></span>
-          <div className="min-w-0">
-            <div className="truncate text-sm font-medium leading-[22px] text-[#1d2129]">{resultMessage?.markdownArtifact?.fileName}</div>
+    <div className="flex w-full flex-col gap-4">
+      {artifacts.map((artifact) => (
+        <div
+          key={artifact.format}
+          className="flex w-full flex-col gap-4 rounded-[8px] border border-[#e5e6eb] bg-[#e8f3ff] p-4"
+          style={{ backgroundImage: 'linear-gradient(-79.2405deg, rgba(232, 243, 255, 0.3) 0%, rgb(232, 243, 255) 98.872%)' }}
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-[8px] bg-[#e8f3ff]" aria-hidden="true">
+              <img src={generatedFileTextLineIcon} alt="" className="h-[13.3333px] w-3" />
+            </span>
+            <div className="min-w-0 truncate text-sm font-medium leading-5 text-[#1d2129]">{artifact.fileName}</div>
           </div>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={() => onPreview(artifact.format)} className={fileActionButtonClassName}>
+              <span className="flex h-4 w-4 items-center justify-center" aria-hidden="true"><img src={generatedFileEyeLineIcon} alt="" className="h-3 w-[14.4248px]" /></span>
+              预览
+            </button>
+            <button type="button" onClick={() => downloadReportArtifact(resultMessage, artifact.format)} disabled={!isComplete} className={fileActionButtonClassName}>
+              <span className="flex h-4 w-4 items-center justify-center" aria-hidden="true"><img src={generatedFileDownloadLineIcon} alt="" className="h-[12.6667px] w-3" /></span>
+              下载
+            </button>
+          </div>
+          {!isComplete ? <div className="h-1.5 overflow-hidden rounded-full bg-[#f2f3f5]" role="progressbar" aria-label={`${artifact.fileName}生成进度`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div className="h-full rounded-full bg-[#165dff] transition-[width] duration-300 motion-reduce:transition-none" style={{ width: `${progress}%` }} /></div> : null}
         </div>
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={onPreview} className={fileActionButtonClassName}><Eye className="h-3.5 w-3.5" />预览</button>
-          <button type="button" onClick={() => downloadMarkdownArtifact(resultMessage)} disabled={!isComplete} className={fileActionButtonClassName}><Download className="h-3.5 w-3.5" />下载</button>
-        </div>
-      </div>
-      {!isComplete ? <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-[#f2f3f5]" role="progressbar" aria-label="文件生成进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div className="h-full rounded-full bg-[#165dff] transition-[width] duration-300 motion-reduce:transition-none" style={{ width: `${progress}%` }} /></div> : null}
+      ))}
     </div>
   );
 }
 
-function ReportPanel({ resultMessage, onBack }: {
+function ReportPanel({ resultMessage, onBack, format = 'html' }: {
   resultMessage?: Message | null;
   onBack?: () => void;
+  format?: ReportArtifactFormat;
 }) {
   const contentScrollRef = useRef<HTMLDivElement>(null);
   const isNearBottomRef = useRef(true);
   const [isNearBottom, setIsNearBottom] = useState(true);
   const markdown = getVisibleMarkdown(resultMessage);
   const isGenerating = Boolean(resultMessage?.isGenerating && markdown.content);
+  const wasGeneratingRef = useRef(isGenerating);
   const isInterrupted = Boolean(resultMessage?.isInterrupted);
-  const isComplete = Boolean(resultMessage?.markdownArtifact && !resultMessage?.isGenerating && !resultMessage?.isInterrupted && markdown.visibleLineCount >= markdown.totalLineCount);
-  const actionButtonClassName = 'inline-flex h-8 w-8 items-center justify-center rounded-[8px] text-[#86909c] transition-colors hover:bg-[#f2f3f5] hover:text-[#4e5969] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20';
+  const hasReachedReportEnd = markdown.totalLineCount > 0 && markdown.visibleLineCount >= markdown.totalLineCount;
+  const isComplete = Boolean(resultMessage?.markdownArtifact && !resultMessage?.isGenerating && !resultMessage?.isInterrupted && hasReachedReportEnd);
+  const previewFileName = getReportArtifactFileName(resultMessage, format);
+  const reportPeriod = resultMessage?.reportResult?.period
+    ?? markdown.content.split('\n').find((line) => line.trim().startsWith('统计周期：'))?.trim().slice(5)
+    ?? '-';
+  const actionButtonClassName = 'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-[4px] bg-[#f7f8fa] transition-colors hover:bg-[#f2f3f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20';
 
   useEffect(() => {
-    if (!isGenerating || !isNearBottomRef.current) return;
+    const shouldFollowLatestContent = isGenerating || wasGeneratingRef.current;
+    wasGeneratingRef.current = isGenerating;
+    if (!shouldFollowLatestContent || !isNearBottomRef.current) return;
     const container = contentScrollRef.current;
     if (!container) return;
     const frame = window.requestAnimationFrame(() => {
@@ -1225,47 +1358,42 @@ function ReportPanel({ resultMessage, onBack }: {
   }
 
   return (
-    <div className="flex h-full min-h-[360px] flex-col overflow-hidden rounded-[12px] border border-[#e5e6eb] bg-white">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-[#e5e6eb] px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2.5">
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-white">
+      <div className="flex shrink-0 items-start gap-2.5 pb-4">
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <div className="flex min-w-0 items-center gap-2">
           {onBack ? (
-            <>
-              <ActionTooltip label="返回">
-                <button
-                  type="button"
-                  onClick={onBack}
-                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-[#4e5969] transition-colors hover:bg-[#f2f3f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
-                  aria-label="返回文件列表"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                </button>
-              </ActionTooltip>
-              <span className="h-4 w-px shrink-0 bg-[#e5e6eb]" aria-hidden="true" />
-            </>
+            <ActionTooltip label="返回">
+              <button type="button" onClick={onBack} className={actionButtonClassName} aria-label="返回文件列表">
+                <img src={reportArrowLeftLineIcon} alt="" className="h-[10.3709px] w-[10.6667px]" />
+              </button>
+            </ActionTooltip>
           ) : null}
-          <FileText className="h-4 w-4 shrink-0 text-[#165dff]" />
-          <span className="truncate text-sm font-medium leading-[22px] text-[#1d2129]">{resultMessage.markdownArtifact.fileName}</span>
-          {!isComplete ? isInterrupted ? (
-            <span className="shrink-0 rounded-[6px] bg-[#fff2f0] px-2 py-1 text-xs leading-[18px] text-[#f53f3f]">已中断</span>
-          ) : (
-            <span className="inline-flex shrink-0 items-center gap-1.5 text-xs leading-[18px] text-[#86909c]">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#165dff] motion-reduce:animate-none" aria-hidden="true" />
-              生成中
-            </span>
+          <h2 className="min-w-0 flex-1 truncate text-base font-medium leading-6 text-[#1d2129]" title={previewFileName}>{previewFileName}</h2>
+          {!isComplete && isInterrupted ? (
+            <span className="shrink-0 rounded-[4px] bg-[#fff2f0] px-2 py-0.5 text-xs leading-5 text-[#f53f3f]">已中断</span>
           ) : null}
+          </div>
+          <p className="truncate text-sm font-normal leading-[22px] text-[#4e5969]">统计周期：{reportPeriod}</p>
         </div>
-        <div className="flex items-center gap-1">
-          <ActionTooltip label="下载"><button type="button" onClick={() => downloadMarkdownArtifact(resultMessage)} disabled={!isComplete} className={`${actionButtonClassName} disabled:cursor-not-allowed disabled:opacity-40`} aria-label="下载报告"><Download className="h-4 w-4" /></button></ActionTooltip>
-        </div>
+        {onBack ? (
+          <ActionTooltip label="下载">
+            <button type="button" onClick={() => downloadReportArtifact(resultMessage, format)} disabled={!isComplete} className={`${actionButtonClassName} disabled:cursor-not-allowed disabled:opacity-40`} aria-label={`下载${format === 'html' ? ' HTML' : ' Markdown'}报告`}>
+              <img src={generatedFileDownloadLineIcon} alt="" className="h-[12.6667px] w-3" />
+            </button>
+          </ActionTooltip>
+        ) : null}
       </div>
-      <div ref={contentScrollRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto px-5 py-6 md:px-8 md:py-8">
+      <div ref={contentScrollRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto border-t border-[#e5e6eb] pt-4">
         <MarkdownDocument content={markdown.content} reportResult={resultMessage.reportResult} />
-        {isInterrupted ? <div className="mx-auto mt-5 flex max-w-[760px] items-center gap-2 rounded-[8px] bg-[#fff2f0] px-3 py-2 text-sm text-[#f53f3f]" role="status"><AlertTriangle className="h-4 w-4" />报告生成已中断，可重新发起分析。</div> : null}
+        {isInterrupted ? <div className="mt-4 flex items-center gap-2 rounded-[8px] bg-[#fff2f0] px-3 py-2 text-sm text-[#f53f3f]" role="status"><AlertTriangle className="h-4 w-4" />报告生成已中断，可重新发起分析。</div> : null}
+        {hasReachedReportEnd ? (
+          <div className="mt-10 bg-white px-4 py-1 text-center text-sm font-normal leading-7 text-[#86909c]" role="note">
+            {AI_REPORT_DISCLAIMER}
+          </div>
+        ) : null}
       </div>
-      <div className="shrink-0 bg-white px-4 py-1 text-center text-xs leading-4 text-[#a8abb2]" role="note">
-        {AI_REPORT_DISCLAIMER}
-      </div>
-      {isGenerating && !isNearBottom ? <button type="button" onClick={scrollToLatest} className="absolute bottom-14 left-1/2 z-10 -translate-x-1/2 rounded-full border border-[#bedaff] bg-white px-3 py-1.5 text-xs text-[#165dff] shadow-[0_4px_12px_rgba(29,33,41,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20">回到最新</button> : null}
+      {isGenerating && !isNearBottom ? <button type="button" onClick={scrollToLatest} className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-full border border-[#bedaff] bg-white px-3 py-1.5 text-xs text-[#165dff] shadow-[0_4px_12px_rgba(29,33,41,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20">回到最新</button> : null}
     </div>
   );
 }
@@ -1284,9 +1412,23 @@ export function DeepAnalysisWorkbench({
   onTabChange,
   onPreviewedFileMessageIdChange,
 }: DeepAnalysisWorkbenchProps) {
+  const [previewedFileFormat, setPreviewedFileFormat] = useState<ReportArtifactFormat>('html');
   const isFilesPreviewOpen = Boolean(
     variant === 'report' && resultMessage?.markdownArtifact && previewedFileMessageId === resultMessage.id,
   );
+  const isRealtimeReportOpen = Boolean(
+    tab === 'progress'
+      && variant === 'report'
+      && selectedActivityId === 'draft-report'
+      && resultMessage?.markdownArtifact,
+  );
+  const isReportPanelOpen = Boolean(
+    isRealtimeReportOpen || (tab === 'files' && isFilesPreviewOpen),
+  );
+
+  useEffect(() => {
+    if (!previewedFileMessageId) setPreviewedFileFormat('html');
+  }, [previewedFileMessageId]);
 
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
@@ -1298,10 +1440,10 @@ export function DeepAnalysisWorkbench({
     window.requestAnimationFrame(() => document.getElementById(`deep-analysis-tab-${nextTab}`)?.focus());
   };
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-[12px] border border-[#dde2e8] bg-[#fafbfc] xl:shadow-[-6px_0_18px_rgba(29,33,41,0.04)]">
-      <div className="shrink-0 border-b border-[#e5e6eb] bg-white px-4 md:px-5">
+    <section className="flex h-full min-h-0 flex-col overflow-hidden bg-white">
+      <div className="shrink-0 border-b border-[#e5e6eb] bg-white px-4">
         <div className="flex items-center gap-2">
-          <div role="tablist" aria-label={workbenchLabel} className="flex min-w-0 flex-1 gap-5 overflow-x-auto">
+          <div role="tablist" aria-label={workbenchLabel} className="flex min-w-0 flex-1 gap-6 overflow-x-auto">
             {workbenchTabs.map((item, index) => (
               <button
                 key={item.id}
@@ -1313,10 +1455,19 @@ export function DeepAnalysisWorkbench({
                 onClick={() => onTabChange(item.id)}
                 onKeyDown={(event) => handleTabKeyDown(event, index)}
                 tabIndex={tab === item.id ? 0 : -1}
-                className={`relative h-10 shrink-0 px-0.5 text-sm font-normal leading-[22px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${tab === item.id ? 'text-[#165dff]' : 'text-[#4e5969] hover:text-[#1d2129]'}`}
+                className={`relative inline-flex h-10 shrink-0 items-center gap-2 px-0 text-[16px] leading-6 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${tab === item.id ? 'font-medium text-[#1d2129]' : 'font-normal text-[#4e5969] hover:text-[#1d2129]'}`}
               >
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
+                  {item.id === 'progress' ? (
+                    <img src={searchEyeLineIcon} alt="" className="h-[13.5425px] w-[13.5425px]" />
+                  ) : item.id === 'sources' ? (
+                    <img src={bookOpenLineIcon} alt="" className="h-[13.3333px] w-[13.3333px]" />
+                  ) : (
+                    <img src={fileTextLineIcon} alt="" className="h-[13.3333px] w-3" />
+                  )}
+                </span>
                 {item.label}
-                {tab === item.id ? <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-[#165dff]" /> : null}
+                {tab === item.id ? <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#1d2129]" /> : null}
               </button>
             ))}
           </div>
@@ -1324,10 +1475,10 @@ export function DeepAnalysisWorkbench({
             <button
               type="button"
               onClick={onClose}
-              className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-[#86909c] transition-colors hover:bg-[#f2f3f5] hover:text-[#4e5969] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 xl:flex"
+              className="hidden h-10 w-4 shrink-0 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 xl:flex"
               aria-label={`收起${workbenchLabel}`}
             >
-              <ChevronsRight aria-hidden="true" className="h-4 w-4" strokeWidth={1.75} />
+              <img src={arrowRightDoubleFillIcon} alt="" className="h-[8.2761px] w-[8.8475px]" />
             </button>
           </ActionTooltip>
         </div>
@@ -1337,9 +1488,9 @@ export function DeepAnalysisWorkbench({
         role="tabpanel"
         id={`deep-analysis-panel-${tab}`}
         aria-labelledby={`deep-analysis-tab-${tab}`}
-        className="relative min-h-0 flex-1 overflow-y-auto bg-[#fafbfc] p-5 md:p-6"
+        className={`relative min-h-0 flex-1 bg-white p-4 ${isReportPanelOpen ? 'overflow-hidden' : 'overflow-y-auto'}`}
       >
-        {tab === 'progress' ? variant === 'report' && selectedActivityId === 'draft-report'
+        {tab === 'progress' ? isRealtimeReportOpen
           ? <ReportPanel resultMessage={resultMessage} />
           : <ActivityDetailPanel processMessage={processMessage} resultMessage={resultMessage} stage={stage} activityId={selectedActivityId} variant={variant} onRetry={stage === 'interrupted' && onRegenerate ? () => onRegenerate((resultMessage ?? processMessage).id) : undefined} />
           : null}
@@ -1347,13 +1498,20 @@ export function DeepAnalysisWorkbench({
         {tab === 'files' ? isFilesPreviewOpen ? (
           <ReportPanel
             resultMessage={resultMessage}
-            onBack={() => onPreviewedFileMessageIdChange(null)}
+            format={previewedFileFormat}
+            onBack={() => {
+              setPreviewedFileFormat('html');
+              onPreviewedFileMessageIdChange(null);
+            }}
           />
         ) : (
           <FilesPanel
             resultMessage={resultMessage}
             variant={variant}
-            onPreview={() => onPreviewedFileMessageIdChange(resultMessage?.id ?? null)}
+            onPreview={(format) => {
+              setPreviewedFileFormat(format);
+              onPreviewedFileMessageIdChange(resultMessage?.id ?? null);
+            }}
           />
         ) : null}
       </div>

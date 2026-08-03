@@ -1,14 +1,15 @@
-import { LogOut, UserRound } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { clearDemoAuthSession, getDemoAuthUsername } from '../utils/demoAuth';
+import userFillIcon from '../../assets/figma-header/user-5-fill.svg';
+import userLineIcon from '../../assets/figma-header/user-5-line.svg';
+import logoutLineIcon from '../../assets/figma-header/logout-box-r-line.svg';
+import { clearDemoAuthSession } from '../utils/demoAuth';
 import { BrandLogo } from './BrandLogo';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 
@@ -21,8 +22,6 @@ export function AppHeader({ onLogoutClick }: AppHeaderProps) {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const accountMenuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const accountMenuOpenedByHover = useRef(false);
-  const username = getDemoAuthUsername();
-
   const cancelAccountMenuClose = () => {
     if (accountMenuCloseTimer.current) {
       clearTimeout(accountMenuCloseTimer.current);
@@ -77,10 +76,12 @@ export function AppHeader({ onLogoutClick }: AppHeaderProps) {
             onKeyDown={() => {
               accountMenuOpenedByHover.current = false;
             }}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#e5e6eb] bg-white/80 text-[#4e5969] shadow-[0_1px_2px_rgba(29,33,41,0.06)] transition-colors hover:text-[#165dff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#f7f8fa] transition-colors hover:bg-[#f2f3f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25 data-[state=open]:bg-[#f2f3f5]"
             aria-label="打开账号菜单"
           >
-            <UserRound className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
+            <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full" aria-hidden="true">
+              <img src={userFillIcon} alt="" className="h-5 w-4" />
+            </span>
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
@@ -95,24 +96,21 @@ export function AppHeader({ onLogoutClick }: AppHeaderProps) {
             if (accountMenuOpenedByHover.current) event.preventDefault();
             accountMenuOpenedByHover.current = false;
           }}
-          className="w-[196px] rounded-[8px] border-[#ebedf0] bg-white p-1.5 text-[#1d2129] shadow-[0_6px_18px_rgba(29,33,41,0.07)]"
+          className="w-[119px] min-w-[119px] rounded-[8px] border-[1.5px] border-[#edeff1] bg-white p-0 text-[#1d2129] shadow-[0_14px_14.1px_rgba(0,0,0,0.11)]"
         >
-          <DropdownMenuLabel className="flex h-10 min-w-0 items-center gap-2 px-2.5 py-0 text-[14px] font-medium leading-[22px] text-[#1d2129]">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#e8f3ff] text-[#165dff]">
-              <UserRound className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+          <DropdownMenuLabel className="flex h-[39px] min-w-0 items-center gap-1 border-b border-[#f2f3f5] px-3 py-0 text-[14px] font-normal leading-[22px] text-[#1d2129]">
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
+              <img src={userLineIcon} alt="" className="h-[13.3333px] w-[10.6667px]" />
             </span>
-            <span className="min-w-0 truncate">{username}</span>
+            <span className="whitespace-nowrap">平台管理员</span>
           </DropdownMenuLabel>
-          <DropdownMenuSeparator className="mx-1 my-1 bg-[#f5f6f7]" />
           <DropdownMenuItem
             onSelect={handleLogout}
-            className="group h-9 cursor-pointer rounded-md px-2.5 text-[14px] font-normal text-[#f53f3f] hover:bg-[#f2f3f5] hover:text-[#f53f3f] focus:bg-[#f2f3f5] focus:text-[#f53f3f]"
+            className="h-[38px] cursor-pointer gap-1 rounded-none px-3 py-0 text-[14px] font-normal leading-[22px] text-[#1d2129] hover:bg-[#f7f8fa] hover:text-[#1d2129] focus:bg-[#f7f8fa] focus:text-[#1d2129]"
           >
-            <LogOut
-              className="h-4 w-4 text-[#f53f3f]"
-              strokeWidth={1.8}
-              aria-hidden="true"
-            />
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
+              <img src={logoutLineIcon} alt="" className="h-[13.3333px] w-[12.6667px]" />
+            </span>
             <span>退出登录</span>
           </DropdownMenuItem>
         </DropdownMenuContent>

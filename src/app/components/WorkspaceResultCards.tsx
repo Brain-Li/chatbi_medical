@@ -601,7 +601,7 @@ function FigmaChip({
         tone === 'skill'
           ? 'bg-[#f2f3f5] text-[#4e5969]'
           : tone === 'mcp'
-            ? 'bg-[#e8f3ff] text-[#165dff]'
+            ? 'bg-[#f2f3f5] text-[#4e5969]'
             : 'bg-[#f7f8fa] text-[#1d2129]'
       }`}
     >
@@ -942,7 +942,6 @@ function WorkspaceActivityItem({
   state,
   icon,
   isSelected,
-  isLast,
   onSelect,
 }: {
   id: DeepAnalysisActivityId;
@@ -966,39 +965,36 @@ function WorkspaceActivityItem({
   }, [isSelected, state]);
 
   return (
-    <div ref={itemRef} className="relative pb-1.5 last:pb-0">
-      {!isLast ? (
-        <span
-          aria-hidden="true"
-          className={`pointer-events-none absolute bottom-[-11px] left-[15.5px] top-[27px] z-10 w-px ${
-            state === 'completed' ? 'bg-[#bedaff]' : 'bg-[#e5e6eb]'
-          }`}
-        />
-      ) : null}
+    <div ref={itemRef}>
       <button
         type="button"
         onClick={() => onSelect(id)}
         aria-current={isSelected ? 'step' : undefined}
         aria-label={`${title}，${stateLabel}，查看步骤详情`}
-        className={`flex w-full min-w-0 items-start gap-2 rounded-[8px] p-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
-          isSelected ? 'bg-[#e8f3ff]' : 'hover:bg-[#f7f8fa]'
+        className={`flex w-full min-w-0 flex-col items-start gap-2 rounded-[8px] p-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
+          isSelected ? 'bg-[#f7f8fa]' : 'hover:bg-[#f7f8fa]'
         }`}
       >
-        <span className={`flex h-[22px] w-4 shrink-0 items-center justify-center ${
-          state === 'completed' || state === 'running' ? 'text-[#165dff]' : state === 'interrupted' ? 'text-[#f53f3f]' : 'text-[#86909c]'
-        }`}>
-          {state === 'completed' ? <CheckCircle2 className="h-4 w-4" /> : state === 'running' ? <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : state === 'interrupted' ? <CircleX className="h-4 w-4" /> : icon}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="flex min-w-0 items-center gap-1">
-            <span className={`min-w-0 text-sm font-medium leading-[22px] ${isSelected ? 'text-[#165dff]' : 'text-[#1d2129]'}`}>{title}</span>
-            {state === 'completed' || state === 'running' || state === 'interrupted' ? (
-              <span className="sr-only">，{stateLabel}</span>
-            ) : (
-              <span className="shrink-0 text-xs leading-[18px] text-[#86909c]">{stateLabel}</span>
-            )}
+        <span className="flex min-w-0 items-center gap-2">
+          <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${
+            state === 'completed'
+              ? 'border-[0.667px] border-[#165dff] bg-[#e8f3ff] text-[#165dff]'
+              : state === 'running'
+                ? 'border-transparent bg-transparent'
+                : state === 'interrupted'
+                  ? 'border-transparent bg-transparent text-[#f53f3f]'
+                  : 'text-[#86909c]'
+          }`}>
+            {state === 'completed' ? <Check className="h-[11px] w-[11px]" strokeWidth={2} /> : state === 'running' ? <span className="h-4 w-4 shrink-0 rounded-full border border-[#165dff] border-r-[#e8f3ff] animate-spin motion-reduce:animate-none" /> : state === 'interrupted' ? <CircleX className="h-4 w-4" /> : icon}
           </span>
-          <span className={`mt-0.5 block truncate text-sm font-normal leading-[22px] ${isSelected ? 'text-[#4e5969]' : 'text-[#86909c]'}`}>
+          <span className={`min-w-0 truncate text-[16px] font-medium leading-6 ${isSelected ? 'text-[#165dff]' : 'text-[#1d2129]'}`}>{title}</span>
+          <span className="sr-only">，{stateLabel}</span>
+        </span>
+        <span className="flex min-h-11 w-full min-w-0 items-center gap-2">
+          <span className="flex w-4 self-stretch justify-center" aria-hidden="true">
+            <span className="h-full w-px bg-[#e5e6eb]" />
+          </span>
+          <span className="min-w-0 flex-1 text-sm font-normal leading-[22px] text-[#4e5969]">
             {summary}
           </span>
         </span>
@@ -1268,7 +1264,7 @@ function InlineDeepAnalysisResult({
 }
 
 function WorkspaceReportFileCard({
-  fileName,
+  reportTitle,
   state,
   feedback,
   isSelected,
@@ -1276,7 +1272,7 @@ function WorkspaceReportFileCard({
   onFeedbackChange,
   onRegenerate,
 }: {
-  fileName: string;
+  reportTitle: string;
   state: Extract<WorkspaceActivityState, 'running' | 'completed' | 'interrupted'>;
   feedback?: 'like' | 'dislike';
   isSelected: boolean;
@@ -1322,7 +1318,7 @@ function WorkspaceReportFileCard({
           type="button"
           onClick={() => onSelect('draft-report')}
           aria-current={isSelected ? 'page' : undefined}
-          aria-label={`${fileName}，${stateLabel}，查看报告文件`}
+          aria-label={`${reportTitle}，${stateLabel}，包含 HTML 和 Markdown 两种格式，查看报告`}
           className="flex min-h-[68px] w-full min-w-0 items-center gap-3 px-4 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#165dff]/20"
         >
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] bg-[#e8f3ff] text-[#165dff]">
@@ -1330,9 +1326,11 @@ function WorkspaceReportFileCard({
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-normal leading-[22px] text-[#1d2129]">
-              {fileName}
+              {reportTitle}
             </span>
-            {state !== 'completed' ? (
+            {state === 'completed' ? (
+              <span className="mt-1 block text-xs font-normal leading-[18px] text-[#86909c]">已生成 HTML 和 Markdown 文件</span>
+            ) : (
               <span className="mt-1.5 flex min-w-0 items-center gap-3">
                 <span
                   className="h-1 w-full max-w-[220px] overflow-hidden rounded-full bg-[#e5e6eb]"
@@ -1352,7 +1350,7 @@ function WorkspaceReportFileCard({
                   {state === 'running' ? '生成中' : '已中断'}
                 </span>
               </span>
-            ) : null}
+            )}
           </span>
           <span className="flex h-9 w-7 shrink-0 items-center justify-end text-[#86909c]">
             <ChevronRight className="h-4 w-4" />
@@ -1427,7 +1425,7 @@ export function WorkspaceAnalysisProcessContent({
   analysisResultInterrupted,
   analysisFeedback,
   reportState,
-  reportFileName,
+  reportTitle,
   reportFeedback,
   selectedActivityId,
   onActivitySelect,
@@ -1446,7 +1444,7 @@ export function WorkspaceAnalysisProcessContent({
   analysisResultInterrupted?: boolean;
   analysisFeedback?: 'like' | 'dislike';
   reportState?: Extract<WorkspaceActivityState, 'running' | 'completed' | 'interrupted'>;
-  reportFileName?: string;
+  reportTitle?: string;
   reportFeedback?: 'like' | 'dislike';
   selectedActivityId?: DeepAnalysisActivityId;
   onActivitySelect?: (id: DeepAnalysisActivityId) => void;
@@ -1565,9 +1563,9 @@ export function WorkspaceAnalysisProcessContent({
             onFeedbackChange={onAnalysisFeedbackChange}
             onRegenerate={onAnalysisRegenerate}
           />
-        ) : reportState && reportFileName ? (
+        ) : reportState && reportTitle ? (
           <WorkspaceReportFileCard
-            fileName={reportFileName}
+            reportTitle={reportTitle}
             state={reportState}
             feedback={reportFeedback}
             isSelected={selectedActivityId === 'draft-report'}

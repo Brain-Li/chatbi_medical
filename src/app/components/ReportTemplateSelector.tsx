@@ -59,7 +59,7 @@ type ReportTemplateSelectorProps = {
 };
 
 export function ReportTemplateSelector({
-  templates,
+  templates = [],
   selectedId,
   onSelect,
   onClear,
@@ -89,6 +89,10 @@ export function ReportTemplateSelector({
       template.name.toLocaleLowerCase('zh-CN').includes(normalizedQuery),
     );
   }, [availableTemplates, normalizedQuery]);
+
+  useEffect(() => {
+    if (!open) setQuery('');
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -174,7 +178,7 @@ export function ReportTemplateSelector({
     <div ref={rootRef} className="relative inline-flex max-w-full shrink-0">
       {selectedTemplate ? (
         <div
-          className="flex h-8 max-w-[240px] items-center overflow-hidden rounded-lg border border-[#e5e6eb] bg-white text-[#1d2129] transition-colors hover:border-[#c9cdd4]"
+          className="flex h-8 max-w-[240px] items-center overflow-hidden rounded-lg border border-[#e5e6eb] bg-[#f2f3f5] text-[#1d2129] transition-colors hover:border-[#c9cdd4]"
         >
           <button
             ref={buttonRef}
@@ -209,7 +213,7 @@ export function ReportTemplateSelector({
           aria-expanded={open}
           aria-controls={listboxId}
           aria-haspopup="listbox"
-          className="flex h-8 items-center gap-1 rounded-lg border border-[#e5e6eb] bg-white px-[13px] text-[14px] font-normal leading-[22px] text-[#1d2129] outline-none transition-colors hover:border-[#c9cdd4] focus-visible:border-[#165dff] focus-visible:ring-2 focus-visible:ring-[#165dff]/15"
+          className="flex h-8 items-center gap-1 rounded-lg border border-[#e5e6eb] bg-[#f2f3f5] px-[13px] text-[14px] font-normal leading-[22px] text-[#1d2129] outline-none transition-colors hover:border-[#c9cdd4] focus-visible:border-[#165dff] focus-visible:ring-2 focus-visible:ring-[#165dff]/15"
         >
           <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
             <img className="h-[13.333px] w-3" src={templateBillIcon} alt="" />
@@ -283,7 +287,7 @@ export function ReportTemplateSelector({
                     align="start"
                     sideOffset={8}
                     arrowClassName="bg-[#1d2129] fill-[#1d2129]"
-                    className="z-[120] w-[320px] max-w-[calc(100vw-32px)] whitespace-normal rounded-[6px] bg-[#1d2129] px-3 py-2.5 text-left text-[13px] font-normal leading-5 text-white text-wrap shadow-[0_6px_16px_rgba(29,33,41,0.16)]"
+                    className="z-[120] w-fit min-w-[220px] max-w-[min(320px,calc(100vw-32px))] whitespace-normal rounded-[6px] bg-[#1d2129] px-3 py-2.5 text-left text-[13px] font-normal leading-5 text-white text-wrap shadow-[0_6px_16px_rgba(29,33,41,0.16)]"
                   >
                     <p className="m-0">{template.description}</p>
                   </TooltipContent>

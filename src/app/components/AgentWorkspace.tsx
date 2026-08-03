@@ -25,7 +25,7 @@ import { inferPromptMode } from '../utils/promptMode';
 import { buildAnalysisReportFileName } from '../utils/reportFileName';
 import { Agent, AgentClarificationOption, AgentRuntimeConfig, AgentType, AnalysisCandidateOption, AnalysisMcpMatch, AnalysisProcessData, AnalysisProcessStep, AnalysisResultData, AskQuestionIntentClassification, Conversation, DeepAnalysisActivityId, McpCapability, Message, ReportResultData, ReportTemplateUsage, ResultScope, Skill, WorkspaceAutoSubmitPayload } from '../types';
 import { HistorySidebarToggle } from './HistorySidebarToggle';
-import { PromptModeBar, type PromptModeSelection } from './PromptModeBar';
+import { PromptModeBar, type PromptModeBarSelection } from './PromptModeBar';
 import { PromptComposerFrame } from './PromptComposerFrame';
 import { ReportTemplateSelector } from './ReportTemplateSelector';
 import {
@@ -223,7 +223,7 @@ type SlashMatch = {
   end: number;
 };
 
-type WorkspaceSwitchMode = PromptModeSelection;
+type WorkspaceSwitchMode = PromptModeBarSelection;
 
 type QuestionThread = {
   userMessage: Message;
@@ -611,7 +611,6 @@ export default function AgentWorkspace({
     useState<DeepAnalysisActivityId>('understand-intent');
   const [reportPreviewedFileMessageId, setReportPreviewedFileMessageId] =
     useState<string | null>(null);
-  const [isFollowingReportActivity, setIsFollowingReportActivity] = useState(true);
   const [reportFeedbackByMessageId, setReportFeedbackByMessageId] =
     useState<Record<string, DeepAnalysisFeedback | undefined>>({});
   const timersRef = useRef<number[]>([]);
@@ -775,6 +774,9 @@ export default function AgentWorkspace({
   const currentDeepAnalysisActivityId = activeDeepAnalysisProcessMessage && activeDeepAnalysisStage
     ? getCurrentDeepAnalysisActivityId(activeDeepAnalysisProcessMessage, activeDeepAnalysisStage, 'deep-analysis')
     : null;
+  const currentReportActivityId = activeReportProcessMessage && activeReportStage
+    ? getCurrentDeepAnalysisActivityId(activeReportProcessMessage, activeReportStage, 'report')
+    : null;
   const isDeepAnalysisWorkspace =
     mode === 'ask' &&
     Boolean(activeQuestionThread) &&
@@ -786,11 +788,13 @@ export default function AgentWorkspace({
 
   const newConversationLabel = newConversationLabels[mode];
   const inputPlaceholder =
-    selectedComposerMode === 'ask'
-      ? '查询指标、走势、异常等各类数据问题...'
-      : selectedComposerMode === 'report'
-        ? '描述报告主题、统计周期、分析重点...'
-        : '输入数据问题，或描述要生成的报告...';
+    selectedComposerMode === 'smart'
+      ? '输入问题或需求，智能分析、解答或生成报告...'
+      : selectedComposerMode === 'qa'
+        ? '咨询专业知识、业务相关问题...'
+        : selectedComposerMode === 'ask'
+          ? '查询指标、走势、异常等各类数据问题...'
+          : '描述报告主题、统计周期、分析重点...';
   const resolveExecutionMode = (forceDeepAnalysis?: boolean): AgentType => {
     if (mode !== 'ask') return mode;
 
@@ -925,33 +929,23 @@ export default function AgentWorkspace({
   ]);
 
   useEffect(() => {
-    const shouldFocusDraftingReport = activeReportStage === 'drafting';
     if (
-      !activeReportProcessMessage ||
-      !activeReportStage ||
+      !currentReportActivityId ||
       !activeQuestionId ||
-      (!isFollowingReportActivity && !shouldFocusDraftingReport)
+      !activeReportStage
     ) return;
 
-    if (shouldFocusDraftingReport) setIsFollowingReportActivity(true);
-    setSelectedReportActivityId(
-      getCurrentDeepAnalysisActivityId(activeReportProcessMessage, activeReportStage, 'report'),
-    );
-    setReportDockTab(
-      getWorkbenchTabForActivity(
-        getCurrentDeepAnalysisActivityId(activeReportProcessMessage, activeReportStage, 'report'),
-      ),
-    );
+    setSelectedReportActivityId(currentReportActivityId);
+    setReportDockTab(getWorkbenchTabForActivity(currentReportActivityId));
     setReportMobilePane(
-      getCurrentDeepAnalysisActivityId(activeReportProcessMessage, activeReportStage, 'report') === 'understand-intent'
+      currentReportActivityId === 'understand-intent'
         ? 'activity'
         : 'workbench',
     );
   }, [
     activeQuestionId,
-    activeReportProcessMessage,
     activeReportStage,
-    isFollowingReportActivity,
+    currentReportActivityId,
   ]);
 
   useEffect(() => {
@@ -994,7 +988,6 @@ export default function AgentWorkspace({
     setIsReportWorkbenchOpen(true);
     setSelectedReportActivityId('understand-intent');
     setReportPreviewedFileMessageId(null);
-    setIsFollowingReportActivity(true);
     resetManualSkillState();
   }, [currentConversation?.id, currentConversation?.deepAnalysisEnabled, mode]);
 
@@ -1698,7 +1691,11 @@ export default function AgentWorkspace({
 
     const targetMode = inferPromptMode(
       cleanedQuestion,
-      selectedComposerMode === 'smart' ? null : selectedComposerMode,
+      selectedComposerMode === 'smart'
+        ? null
+        : selectedComposerMode === 'qa'
+          ? 'ask'
+          : selectedComposerMode,
     );
 
     if (mode === 'ask' && selectedComposerMode === 'ask' && targetMode === 'report') {
@@ -2548,20 +2545,45 @@ export default function AgentWorkspace({
       </div>
 
       <div className="flex min-h-10 flex-wrap items-center gap-3">
-        <PromptModeBar
-          onSelect={selectComposerMode}
-          selectedMode={selectedComposerMode}
-          disabled={isGenerating}
-        />
-        <div className="ml-auto min-w-0 text-xs text-gray-400">
-          {selectedComposerMode === 'report' ? (
+        <div className="flex min-w-0 items-center gap-2">
+          <PromptModeBar
+            onSelect={selectComposerMode}
+            onQaSelect={() => selectComposerMode('qa')}
+            selectedMode={selectedComposerMode}
+            disabled={isGenerating}
+            showQa
+          />
+          {(selectedComposerMode === 'ask' || selectedComposerMode === 'qa') && (
+            <button
+              type="button"
+              onClick={handleToggleDeepAnalysis}
+              disabled={isGenerating}
+              className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-[20px] border px-[13px] text-[14px] font-normal leading-[22px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25 disabled:cursor-not-allowed disabled:opacity-50 ${
+                isDeepAnalysisEnabled
+                  ? 'border-[#94bfff] bg-[#e8f3ff] text-[#165dff]'
+                  : 'border-[#e5e6eb] bg-[#f2f3f5] text-[#1d2129] hover:bg-[#e8eaed]'
+              }`}
+              aria-pressed={isDeepAnalysisEnabled}
+            >
+              <img
+                alt=""
+                src={isDeepAnalysisEnabled ? globalLineSelected : globalLine}
+                className="h-4 w-4"
+              />
+              深度分析
+            </button>
+          )}
+          {selectedComposerMode === 'report' && (
             <ReportTemplateSelector
               templates={reportTemplates}
               selectedId={selectedReportTemplateId}
               onSelect={(template) => setSelectedReportTemplateId(template.id)}
               onClear={() => setSelectedReportTemplateId(null)}
             />
-          ) : selectedManualSkills.length > 0 ? (
+          )}
+        </div>
+        <div className="ml-auto min-w-0 text-xs text-gray-400">
+          {selectedManualSkills.length > 0 ? (
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className="text-gray-600">本次指定分析能力：{manualSkillSummary}</span>
               {hasTemporaryUnboundSkills && (
@@ -2569,29 +2591,7 @@ export default function AgentWorkspace({
               )}
             </div>
           ) : (
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              {selectedComposerMode === 'ask' ? (
-                <button
-                  type="button"
-                  onClick={handleToggleDeepAnalysis}
-                  className={`inline-flex h-9 items-center gap-1.5 rounded-[10px] px-3.5 text-[14px] font-normal leading-[22px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25 ${
-                    isDeepAnalysisEnabled
-                      ? 'bg-[#e8f3ff] text-[#165dff]'
-                      : 'bg-[#f2f3f5] text-[#1d2129] hover:bg-[#e8eaed]'
-                  }`}
-                  aria-pressed={isDeepAnalysisEnabled}
-                >
-                  <img
-                    alt=""
-                    src={isDeepAnalysisEnabled ? globalLineSelected : globalLine}
-                    className="h-4 w-4"
-                  />
-                  深度分析
-                </button>
-              ) : (
-                <span aria-hidden="true" />
-              )}
-            </div>
+            <span aria-hidden="true" />
           )}
         </div>
         <div className="flex shrink-0 items-center gap-3">
@@ -2622,7 +2622,7 @@ export default function AgentWorkspace({
                 ? '停止生成'
                 : selectedComposerMode === 'report'
                   ? '生成报告'
-                  : selectedComposerMode === 'ask'
+                  : selectedComposerMode === 'ask' || selectedComposerMode === 'qa'
                     ? '发送问题'
                     : '智能识别并发送'
             }
@@ -2631,7 +2631,7 @@ export default function AgentWorkspace({
                 ? '停止生成'
                 : selectedComposerMode === 'report'
                   ? '生成报告'
-                  : selectedComposerMode === 'ask'
+                  : selectedComposerMode === 'ask' || selectedComposerMode === 'qa'
                     ? '发送问题'
                     : '智能识别并发送'
             }
@@ -2779,11 +2779,11 @@ export default function AgentWorkspace({
     };
     return (
       <div
-        className="flex min-h-0 flex-1 overflow-hidden rounded-tl-[20px] rounded-tr-[20px] bg-white px-3 pt-3 sm:px-4 lg:px-5"
+        className="flex min-h-0 flex-1 overflow-hidden rounded-tl-[20px] rounded-tr-[20px] bg-white"
         style={{ fontFamily: '"PingFang SC", "PingFang_SC", "Microsoft YaHei", Arial, sans-serif' }}
       >
-        <div className="mx-auto flex h-full min-h-0 w-full max-w-[1520px] flex-col gap-3">
-          <div className="workspace-compact-only grid h-10 shrink-0 grid-cols-2 rounded-[10px] bg-[#f2f3f5] p-1" role="group" aria-label="深度分析视图切换">
+        <div className="mx-auto flex h-full min-h-0 w-full max-w-[1520px] flex-col">
+          <div className="workspace-compact-only mx-3 mt-3 grid h-10 shrink-0 grid-cols-2 rounded-[10px] bg-[#f2f3f5] p-1" role="group" aria-label="深度分析视图切换">
             <button
               type="button"
               onClick={() => setDeepAnalysisMobilePane('activity')}
@@ -2802,20 +2802,17 @@ export default function AgentWorkspace({
             </button>
           </div>
 
-          <div className={`workspace-analysis-grid relative grid min-h-0 flex-1 grid-cols-1 ${isDeepAnalysisWorkbenchOpen ? 'workspace-analysis-grid-split gap-4' : ''}`}>
-            <section className={`${deepAnalysisMobilePane === 'activity' ? 'flex' : 'hidden'} workspace-wide-flex min-h-0 flex-col overflow-hidden bg-transparent ${isDeepAnalysisWorkbenchOpen ? '' : 'workspace-single-activity'}`}>
-              <div className={`shrink-0 py-3 pl-4 pr-4 md:px-5 ${isDeepAnalysisWorkbenchOpen ? '' : 'workspace-single-activity-header'}`}>
+          <div className={`workspace-analysis-grid workspace-analysis-grid-figma relative grid min-h-0 flex-1 grid-cols-1 ${isDeepAnalysisWorkbenchOpen ? 'workspace-analysis-grid-split' : ''}`}>
+            <section className={`${deepAnalysisMobilePane === 'activity' ? 'flex' : 'hidden'} workspace-wide-flex min-h-0 flex-col overflow-hidden bg-white ${isDeepAnalysisWorkbenchOpen ? '' : 'workspace-single-activity'}`}>
+              <div className={`shrink-0 px-4 pb-4 pt-10 ${isDeepAnalysisWorkbenchOpen ? '' : 'workspace-single-activity-header'}`}>
                 <div className="flex justify-end">
-                  <div className="inline-flex max-w-[720px] flex-wrap items-center justify-end gap-1.5 rounded-[18px] bg-[#f2f4f7] px-3 py-2 text-sm font-normal leading-[22px] text-[#1d2129]">
-                    <span className="inline-flex h-[22px] shrink-0 items-center rounded-full bg-[#e8f3ff] px-2 text-xs font-normal leading-[18px] text-[#165dff]">
-                      深度分析
-                    </span>
+                  <div className="inline-flex max-w-[720px] flex-wrap items-center justify-end rounded-[24px] bg-[#f2f4f7] px-4 py-2 text-[16px] font-normal leading-6 text-[#1d2129]">
                     <span className="whitespace-pre-wrap break-words">{activeQuestionThread.userMessage.content}</span>
                   </div>
                 </div>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-y-auto bg-white px-4 py-4 md:px-5">
+              <div className="min-h-0 flex-1 overflow-y-auto bg-white px-4 pb-4">
                 {analysisMessages.length ? (
                   <div key="deep-analysis-process-v3" className="space-y-4">
                     {analysisMessages.map((message) =>
@@ -2892,7 +2889,7 @@ export default function AgentWorkspace({
               />
             ) : null}
 
-            <div className={`${deepAnalysisMobilePane === 'workbench' ? 'block' : 'hidden'} workspace-wide-workbench h-full min-h-0 pb-2 ${isDeepAnalysisWorkbenchOpen ? 'workspace-wide-workbench-open' : ''}`}>
+            <div className={`${deepAnalysisMobilePane === 'workbench' ? 'block' : 'hidden'} workspace-wide-workbench h-full min-h-0 border-l border-[#e5e6eb] ${isDeepAnalysisWorkbenchOpen ? 'workspace-wide-workbench-open' : ''}`}>
               <DeepAnalysisWorkbench
                 processMessage={activeDeepAnalysisProcessMessage}
                 resultMessage={activeDeepAnalysisResultMessage}
@@ -2934,19 +2931,21 @@ export default function AgentWorkspace({
       return renderStandardWorkspace();
     }
 
-    const analysisMessages = activeQuestionThread.assistantMessages.filter(
-      (message) => message.kind === 'analysis',
-    );
-    const selectActivity = (activityId: DeepAnalysisActivityId) => {
+    const selectThreadActivity = (
+      questionId: string,
+      threadStage: DeepAnalysisStage | null,
+      threadResultMessage: Message | null,
+      activityId: DeepAnalysisActivityId,
+    ) => {
       const shouldPreviewCompletedReport =
         activityId === 'draft-report' &&
-        activeReportStage === 'completed' &&
-        Boolean(activeReportResultMessage?.markdownArtifact);
+        threadStage === 'completed' &&
+        Boolean(threadResultMessage?.markdownArtifact);
 
+      setSelectedQuestionId(questionId);
       setSelectedReportActivityId(activityId);
-      setIsFollowingReportActivity(false);
       setReportPreviewedFileMessageId(
-        shouldPreviewCompletedReport ? activeReportResultMessage?.id ?? null : null,
+        shouldPreviewCompletedReport ? threadResultMessage?.id ?? null : null,
       );
       setReportDockTab(
         shouldPreviewCompletedReport ? 'files' : getWorkbenchTabForActivity(activityId),
@@ -2954,7 +2953,6 @@ export default function AgentWorkspace({
       setIsReportWorkbenchOpen(true);
       setReportMobilePane('workbench');
     };
-
     return (
       <div
         className="flex min-h-0 flex-1 overflow-hidden rounded-tl-[20px] rounded-tr-[20px] bg-white px-3 pt-3 sm:px-4 lg:px-5"
@@ -2980,67 +2978,111 @@ export default function AgentWorkspace({
             </button>
           </div>
 
-          <div className={`workspace-analysis-grid relative grid min-h-0 flex-1 grid-cols-1 ${isReportWorkbenchOpen ? 'workspace-analysis-grid-split gap-4' : ''}`}>
+          <div className={`workspace-analysis-grid relative grid min-h-0 flex-1 grid-cols-1 ${isReportWorkbenchOpen ? 'workspace-analysis-grid-split' : ''}`}>
             <section className={`${reportMobilePane === 'activity' ? 'flex' : 'hidden'} workspace-wide-flex min-h-0 flex-col overflow-hidden bg-transparent ${isReportWorkbenchOpen ? '' : 'workspace-single-activity'}`}>
-              <div className={`shrink-0 py-3 pl-4 pr-4 md:px-5 ${isReportWorkbenchOpen ? '' : 'workspace-single-activity-header'}`}>
-                <div className="flex justify-end">
-                  <div className="inline-flex max-w-[720px] flex-wrap items-center justify-end gap-1.5 rounded-[18px] bg-[#f2f4f7] px-3 py-2 text-sm font-normal leading-[22px] text-[#1d2129]">
-                    <span className="whitespace-pre-wrap break-words">{activeQuestionThread.userMessage.content}</span>
-                  </div>
-                </div>
-              </div>
+              <div
+                ref={conversationScrollRegionRef}
+                data-testid="report-conversation-scroll-region"
+                onScroll={handleConversationScroll}
+                className="min-h-0 flex-1 overflow-y-auto bg-white px-4 py-4 md:px-5"
+              >
+                <div className="space-y-6">
+                  {questionThreads.map((thread) => {
+                    const threadAnalysisMessages = thread.assistantMessages.filter(
+                      (message) => message.kind === 'analysis',
+                    );
+                    const threadProcessMessage = [...threadAnalysisMessages]
+                      .reverse()
+                      .find((message) => message.routingTrace?.agentType === 'report') ?? null;
+                    const rawThreadResultMessage = [...thread.assistantMessages]
+                      .reverse()
+                      .find((message) => message.kind === 'report-result' && Boolean(message.reportResult)) ?? null;
+                    let threadResultMessage = rawThreadResultMessage;
 
-              <div className="min-h-0 flex-1 overflow-y-auto bg-white px-4 py-4 md:px-5">
-                {analysisMessages.length ? (
-                  <div key="report-generation-process-v1" className="space-y-4">
-                    {analysisMessages.map((message) =>
-                      message.analysisProcess ? (
-                        <WorkspaceAnalysisProcessContent
-                          key={`report-process-${message.id}`}
-                          processData={message.analysisProcess}
-                          variant="report"
-                          reportState={message.id === activeReportProcessMessage.id && activeReportResultMessage?.markdownArtifact
-                            ? activeReportStage === 'completed'
-                              ? 'completed'
-                              : activeReportStage === 'interrupted'
-                                ? 'interrupted'
-                                : 'running'
-                            : undefined}
-                          reportFileName={message.id === activeReportProcessMessage.id
-                            ? activeReportResultMessage?.markdownArtifact?.fileName
-                            : undefined}
-                          reportFeedback={message.id === activeReportProcessMessage.id && activeReportResultMessage
-                            ? reportFeedbackByMessageId[activeReportResultMessage.id]
-                            : undefined}
-                          selectedActivityId={isReportWorkbenchOpen ? selectedReportActivityId : undefined}
-                          onActivitySelect={selectActivity}
-                          onReportFeedbackChange={message.id === activeReportProcessMessage.id && activeReportResultMessage
-                            ? (feedback) => handleReportFeedbackChange(activeReportResultMessage.id, feedback)
-                            : undefined}
-                          onReportRegenerate={message.id === activeReportProcessMessage.id && activeReportResultMessage
-                            ? () => handleRegenerate(activeReportResultMessage.id)
-                            : undefined}
-                        />
-                      ) : (
-                        <AssistantMessageCard
-                          key={message.id}
-                          message={message}
-                          onQuestionClick={executeQuestion}
-                          onRegenerate={handleRegenerate}
-                          onRerunSkill={handleSkillRerun}
-                          onClarificationSelect={handleClarificationSelect}
-                          onAnalysisCandidateSelect={handleAnalysisCandidateSelect}
-                          forceAnalysisExpanded
-                          analysisProcessVariant="workspace"
-                        />
-                      ),
-                    )}
-                  </div>
-                ) : (
-                  <div className="rounded-[12px] border border-dashed border-[#c9cdd4] bg-white px-5 py-12 text-center text-sm text-[#86909c]">
-                    正在准备报告生成过程
-                  </div>
-                )}
+                    if (rawThreadResultMessage?.reportResult && !rawThreadResultMessage.markdownArtifact) {
+                      const markdownContent = buildReportMarkdown(rawThreadResultMessage.reportResult);
+                      threadResultMessage = {
+                        ...rawThreadResultMessage,
+                        markdownArtifact: {
+                          fileName: buildAnalysisReportFileName(thread.userMessage.content),
+                          content: markdownContent,
+                        },
+                        visibleMarkdownLineCount: markdownContent.split('\n').length,
+                      };
+                    }
+
+                    const threadStage = threadProcessMessage
+                      ? getDeepAnalysisStage(threadProcessMessage, threadResultMessage, 'report')
+                      : null;
+                    const isActiveThread = thread.userMessage.id === activeQuestionThread.userMessage.id;
+
+                    return (
+                      <div key={thread.userMessage.id} className="space-y-4">
+                        <div className="flex justify-end">
+                          <div className="inline-flex max-w-[720px] flex-wrap items-center justify-end gap-1.5 rounded-[18px] bg-[#f2f4f7] px-3 py-2 text-sm font-normal leading-[22px] text-[#1d2129]">
+                            <span className="whitespace-pre-wrap break-words">{thread.userMessage.content}</span>
+                          </div>
+                        </div>
+
+                        {threadAnalysisMessages.length ? (
+                          <div className="space-y-4">
+                            {threadAnalysisMessages.map((message) =>
+                              message.analysisProcess ? (
+                                <WorkspaceAnalysisProcessContent
+                                  key={`report-process-${message.id}`}
+                                  processData={message.analysisProcess}
+                                  variant="report"
+                                  reportState={message.id === threadProcessMessage?.id && threadResultMessage?.markdownArtifact && threadStage
+                                    ? threadStage === 'completed'
+                                      ? 'completed'
+                                      : threadStage === 'interrupted'
+                                        ? 'interrupted'
+                                        : 'running'
+                                    : undefined}
+                                  reportTitle={message.id === threadProcessMessage?.id
+                                    ? threadResultMessage?.reportResult?.title
+                                    : undefined}
+                                  reportFeedback={isActiveThread && threadResultMessage
+                                    ? reportFeedbackByMessageId[threadResultMessage.id]
+                                    : undefined}
+                                  selectedActivityId={isActiveThread && isReportWorkbenchOpen ? selectedReportActivityId : undefined}
+                                  onActivitySelect={(activityId) => selectThreadActivity(
+                                    thread.userMessage.id,
+                                    threadStage,
+                                    threadResultMessage,
+                                    activityId,
+                                  )}
+                                  onReportFeedbackChange={isActiveThread && threadResultMessage
+                                    ? (feedback) => handleReportFeedbackChange(threadResultMessage.id, feedback)
+                                    : undefined}
+                                  onReportRegenerate={isActiveThread && threadResultMessage
+                                    ? () => handleRegenerate(threadResultMessage.id)
+                                    : undefined}
+                                />
+                              ) : (
+                                <AssistantMessageCard
+                                  key={message.id}
+                                  message={message}
+                                  onQuestionClick={executeQuestion}
+                                  onRegenerate={handleRegenerate}
+                                  onRerunSkill={handleSkillRerun}
+                                  onClarificationSelect={handleClarificationSelect}
+                                  onAnalysisCandidateSelect={handleAnalysisCandidateSelect}
+                                  forceAnalysisExpanded
+                                  analysisProcessVariant="workspace"
+                                />
+                              ),
+                            )}
+                          </div>
+                        ) : (
+                          <div className="rounded-[12px] border border-dashed border-[#c9cdd4] bg-white px-5 py-12 text-center text-sm text-[#86909c]">
+                            正在准备报告生成过程
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="shrink-0 bg-white px-4 pb-2 pt-1">
@@ -3055,7 +3097,7 @@ export default function AgentWorkspace({
               />
             ) : null}
 
-            <div className={`${reportMobilePane === 'workbench' ? 'block' : 'hidden'} workspace-wide-workbench h-full min-h-0 pb-2 ${isReportWorkbenchOpen ? 'workspace-wide-workbench-open' : ''}`}>
+            <div className={`${reportMobilePane === 'workbench' ? 'block' : 'hidden'} workspace-wide-workbench h-full min-h-0 border-l border-[#e5e6eb] pb-2 ${isReportWorkbenchOpen ? 'workspace-wide-workbench-open' : ''}`}>
               <DeepAnalysisWorkbench
                 processMessage={activeReportProcessMessage}
                 resultMessage={activeReportResultMessage}
@@ -3069,6 +3111,7 @@ export default function AgentWorkspace({
                 onClose={() => {
                   setIsReportWorkbenchOpen(false);
                   setReportMobilePane('activity');
+                  setReportPreviewedFileMessageId(null);
                 }}
                 onTabChange={(nextTab) => {
                   setReportDockTab(nextTab);
