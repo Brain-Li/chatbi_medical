@@ -18,6 +18,7 @@ import {
   mcpServers as initialMcpServers,
   metricSemantics as initialMetricSemantics,
   reportTemplates as initialReportTemplates,
+  defaultTemplateBindings as initialDefaultTemplateBindings,
   reportSubscriptions as initialReportSubscriptions,
   semanticDatasets as initialSemanticDatasets,
   skills as initialSkills,
@@ -39,6 +40,7 @@ import {
   MetricSemantic,
   ReportSubscription,
   ReportTemplate,
+  DefaultTemplateBinding,
   SemanticDataset,
   Skill,
 } from '../types';
@@ -52,6 +54,7 @@ interface WorkspaceContextValue {
   knowledgeDocuments: KnowledgeDocument[];
   metricSemantics: MetricSemantic[];
   reportTemplates: ReportTemplate[];
+  defaultTemplateBindings: DefaultTemplateBinding[];
   reportSubscriptions: ReportSubscription[];
   dimensionSemantics: DimensionSemantic[];
   dimensionMembers: DimensionMember[];
@@ -82,6 +85,7 @@ interface WorkspaceContextValue {
   addReportTemplate: (template: ReportTemplate) => void;
   updateReportTemplate: (templateId: string, updates: Partial<ReportTemplate>) => void;
   deleteReportTemplate: (templateId: string) => void;
+  updateDefaultTemplateBinding: (industry: string, category: DefaultTemplateBinding['category'], templateId: string) => void;
   addReportSubscription: (subscription: ReportSubscription) => void;
   updateReportSubscription: (subscriptionId: string, updates: Partial<ReportSubscription>) => void;
   deleteReportSubscription: (subscriptionId: string) => void;
@@ -279,6 +283,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     useState<KnowledgeDocument[]>(initialKnowledgeDocuments);
   const [metricSemantics] = useState<MetricSemantic[]>(initialMetricSemantics);
   const [reportTemplates, setReportTemplates] = useState<ReportTemplate[]>(initialReportTemplates);
+  const [defaultTemplateBindings, setDefaultTemplateBindings] = useState<DefaultTemplateBinding[]>(initialDefaultTemplateBindings);
   const [reportSubscriptions, setReportSubscriptions] =
     useState<ReportSubscription[]>(initialReportSubscriptions);
   const [dimensionSemantics, setDimensionSemantics] = useState<DimensionSemantic[]>(initialDimensionSemantics);
@@ -324,6 +329,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       knowledgeDocuments,
       metricSemantics,
       reportTemplates,
+      defaultTemplateBindings,
       reportSubscriptions,
       dimensionSemantics,
       dimensionMembers,
@@ -592,6 +598,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setReportTemplates((current) => [template, ...current]);
       },
       updateReportTemplate: (templateId, updates) => {
+        if (updates.status === 'disabled') {
+          setDefaultTemplateBindings((current) => current.filter((binding) => binding.templateId !== templateId));
+        }
         setReportTemplates((current) =>
           current.map((template) =>
             template.id === templateId
@@ -605,6 +614,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       },
       deleteReportTemplate: (templateId) => {
         setReportTemplates((current) => current.filter((template) => template.id !== templateId));
+        setDefaultTemplateBindings((current) => current.filter((binding) => binding.templateId !== templateId));
         setReportSubscriptions((current) =>
           current.map((subscription) =>
             subscription.reportTemplateId === templateId
@@ -762,6 +772,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       addMcpServer: (server) => {
         setMcpServers((current) => [server, ...current]);
       },
+      updateDefaultTemplateBinding: (industry, category, templateId) => {
+        setDefaultTemplateBindings((current) => {
+          const updatedAt = new Date().toLocaleString('zh-CN', { hour12: false });
+          const existing = current.find((binding) => binding.industry === industry && binding.category === category);
+          if (existing) {
+            return current.map((binding) => binding.id === existing.id ? { ...binding, templateId, updatedAt } : binding);
+          }
+          return [...current, { id: `default-binding-${industry}-${category}`, industry, category, templateId, updatedAt }];
+        });
+      },
       deleteMcpServer: (serverId) => {
         setMcpServers((current) => current.filter((server) => server.id !== serverId));
       },
@@ -869,6 +889,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       metricSemantics,
       mcpServers,
       reportTemplates,
+      defaultTemplateBindings,
       reportSubscriptions,
       semanticDatasets,
       skills,

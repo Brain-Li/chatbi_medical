@@ -495,7 +495,7 @@ export default function HomePage() {
                         </button>
                       ))}
                     </div>
-                    <FeaturedCases className="-mt-4" />
+                    {selectedMode === 'report' && <FeaturedCases className="-mt-4" />}
                   </div>
                 </div>
               </section>

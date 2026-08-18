@@ -182,9 +182,8 @@ type DatabaseConnectionForm = {
 
 type SkillForm = {
   name: string;
-  scene: string;
+  kind: NonNullable<Skill['kind']>;
   description: string;
-  triggerPhrases: string;
   skillMarkdown: string;
   applicableAgentTypes: AgentType[];
   status: Skill['status'];
@@ -201,9 +200,8 @@ type KnowledgeDocumentForm = {
 
 const emptySkillForm: SkillForm = {
   name: '',
-  scene: '',
+  kind: 'analysis',
   description: '',
-  triggerPhrases: '',
   skillMarkdown: '',
   applicableAgentTypes: ['ask'],
   status: '已启用',
@@ -602,9 +600,8 @@ export default function SystemSettings() {
     setEditingSkillId(skill.id);
     setSkillForm({
       name: skill.name,
-      scene: skill.scene,
+      kind: skill.kind ?? 'analysis',
       description: skill.description,
-      triggerPhrases: skill.triggerPhrases.join(' / '),
       skillMarkdown: skill.skillMarkdown,
       applicableAgentTypes: skill.applicableAgentTypes,
       status: skill.status,
@@ -718,20 +715,26 @@ export default function SystemSettings() {
 
   const submitSkill = () => {
     const name = skillForm.name.trim();
-    const scene = skillForm.scene.trim();
     const description = skillForm.description.trim();
     const skillMarkdown = skillForm.skillMarkdown.trim();
-
-    if (!name || !scene || !description || !skillMarkdown) return;
-
     const existingSkill = editingSkillId
       ? skills.find((skill) => skill.id === editingSkillId)
       : null;
+    const scene = existingSkill?.scene ?? (
+      skillForm.kind === 'narrative'
+        ? '报告结构'
+        : skillForm.kind === 'style'
+          ? '视觉风格'
+          : '数据分析'
+    );
+
+    if (!name || !scene || !description || !skillMarkdown) return;
+
     const updates: Omit<Skill, 'id'> = {
       name,
       scene,
       description,
-      triggerPhrases: splitSkillList(skillForm.triggerPhrases),
+      triggerPhrases: existingSkill?.triggerPhrases ?? [],
       skillMarkdown,
       applicableAgentTypes: skillForm.applicableAgentTypes,
       builtin: existingSkill?.builtin ?? false,
@@ -739,6 +742,7 @@ export default function SystemSettings() {
       version: existingSkill?.version ?? `draft-${Date.now().toString().slice(-4)}`,
       debugState: existingSkill?.debugState ?? '待调试',
       tags: existingSkill?.tags ?? [],
+      kind: skillForm.kind,
       metricIds: existingSkill?.metricIds,
       dimensionIds: existingSkill?.dimensionIds,
       analysisRules: existingSkill?.analysisRules ?? [],
@@ -1772,16 +1776,19 @@ export default function SystemSettings() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="skill-scene" className={databaseDialogLabelClass}>
-                  <span className="text-red-500">*</span> 场景
+                <Label htmlFor="skill-kind" className={databaseDialogLabelClass}>
+                  <span className="text-red-500">*</span> Skill 类型
                 </Label>
-                <Input
-                  id="skill-scene"
-                  value={skillForm.scene}
-                  onChange={(event) => updateSkillForm('scene', event.target.value)}
-                  placeholder="例如：门诊运营"
-                  className={databaseDialogInputClass}
-                />
+                <select
+                  id="skill-kind"
+                  value={skillForm.kind}
+                  onChange={(event) => updateSkillForm('kind', event.target.value as SkillForm['kind'])}
+                  className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="analysis">数据分析</option>
+                  <option value="narrative">报告结构</option>
+                  <option value="style">视觉风格</option>
+                </select>
               </div>
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="skill-description" className={databaseDialogLabelClass}>
@@ -1792,18 +1799,6 @@ export default function SystemSettings() {
                   value={skillForm.description}
                   onChange={(event) => updateSkillForm('description', event.target.value)}
                   placeholder="简要说明 Skill 能力"
-                  className={databaseDialogInputClass}
-                />
-              </div>
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="skill-trigger-phrases" className={databaseDialogLabelClass}>
-                  触发词
-                </Label>
-                <Input
-                  id="skill-trigger-phrases"
-                  value={skillForm.triggerPhrases}
-                  onChange={(event) => updateSkillForm('triggerPhrases', event.target.value)}
-                  placeholder="可用 /、逗号或换行分隔"
                   className={databaseDialogInputClass}
                 />
               </div>
@@ -1849,9 +1844,11 @@ export default function SystemSettings() {
                 </select>
               </div>
               <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="skill-markdown" className={databaseDialogLabelClass}>
-                  <span className="text-red-500">*</span> Skill 内容
-                </Label>
+                <div className="flex items-center justify-between gap-3">
+                  <Label htmlFor="skill-markdown" className={databaseDialogLabelClass}>
+                    <span className="text-red-500">*</span> Skill 内容
+                  </Label>
+                </div>
                 <textarea
                   id="skill-markdown"
                   value={skillForm.skillMarkdown}
@@ -1875,7 +1872,6 @@ export default function SystemSettings() {
               onClick={submitSkill}
               disabled={
                 !skillForm.name.trim() ||
-                !skillForm.scene.trim() ||
                 !skillForm.description.trim() ||
                 !skillForm.skillMarkdown.trim()
               }

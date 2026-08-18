@@ -343,6 +343,7 @@ export interface ReportTemplateSection {
   title: string;
   required: boolean;
   description: string;
+  metricIds?: string[];
 }
 
 export interface ReportTemplateMetricBlock {
@@ -373,9 +374,19 @@ export interface ReportTemplate {
   status: ReportTemplateStatus;
   triggerPhrases: string[];
   templatePrompt: string;
+  narrativeMode?: 'skill' | 'adjusted' | 'custom';
+  customNarrativePrompt?: string;
+  narrativeAdjustmentPrompt?: string;
+  narrativeOverridePrompt?: string;
+  styleMode?: 'skill' | 'adjusted' | 'custom';
+  customStylePrompt?: string;
+  styleAdjustmentPrompt?: string;
+  styleOverridePrompt?: string;
   applicableAgentIds: string[];
   datasetIds: string[];
   skillIds: string[];
+  narrativeSkillId?: string;
+  styleSkillId?: string;
   parameters: ReportTemplateParameter[];
   analysisSteps: string[];
   comparisonMethods: string[];
@@ -389,7 +400,17 @@ export interface ReportTemplate {
   complianceNotes: string[];
 }
 
-export type ReportTemplateSource = 'user-selected' | 'library-matched' | 'agent-generated';
+export type ReportTemplateCategory = '专题' | '日报' | '周报' | '月报';
+
+export interface DefaultTemplateBinding {
+  id: string;
+  industry: string;
+  category: ReportTemplateCategory;
+  templateId: string;
+  updatedAt: string;
+}
+
+export type ReportTemplateSource = 'user-selected' | 'library-matched' | 'industry-default' | 'agent-generated';
 
 export interface ReportTemplateUsage {
   templateId: string;
@@ -609,6 +630,7 @@ export interface Skill {
   version: string;
   debugState: '已验证' | '待调试' | '调试中';
   tags: string[];
+  kind?: 'analysis' | 'narrative' | 'style';
   metricIds?: string[];
   dimensionIds?: string[];
   analysisRules?: string[];
@@ -617,6 +639,7 @@ export interface Skill {
 
 export interface AgentReportConfig {
   theme: string;
+  industry?: string;
   metrics: string[];
   scheduleEnabled: boolean;
   boundTemplateIds?: string[];

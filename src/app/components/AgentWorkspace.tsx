@@ -560,6 +560,7 @@ export default function AgentWorkspace({
     semanticDatasets,
     indicatorAssets,
     reportTemplates,
+    defaultTemplateBindings,
     createConversation,
     appendMessages,
     updateMessage,
@@ -1463,6 +1464,7 @@ export default function AgentWorkspace({
             reportTemplateId: options?.reportTemplateId,
             reportTemplateUsage: options?.reportTemplateUsage,
             reportTemplates,
+            defaultTemplateBindings,
             manualSkillIds: effectiveManualSkillIds,
           })
         : undefined;
@@ -2088,6 +2090,7 @@ export default function AgentWorkspace({
         ? preservedReportTemplateUsage ?? resolveReportTemplateUsage(routing.agent, baseQuestion, {
             manualSkillIds: effectiveManualSkillIds,
             reportTemplates,
+            defaultTemplateBindings,
           })
         : undefined;
     const pendingDeepAnalysisProcess = usingAnalysisWorkspace

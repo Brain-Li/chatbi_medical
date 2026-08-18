@@ -760,6 +760,8 @@ function ActivityDetailPanel({
     ? `使用你选择的“${reportTemplateUsage.name}”模板`
     : reportTemplateUsage?.source === 'library-matched'
       ? `已匹配“${reportTemplateUsage.name}”模板`
+      : reportTemplateUsage?.source === 'industry-default'
+        ? `已使用行业默认模板“${reportTemplateUsage.name}”`
       : reportTemplateUsage
         ? `已为“${reportTemplateUsage.name}”定制分析结构`
         : '';

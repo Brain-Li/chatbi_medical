@@ -22,7 +22,7 @@ type SkillManagementSectionProps = {
 };
 
 const gridColumns = {
-  gridTemplateColumns: '30.72% 10.17% 21.01% 21.01% 6.55% 10.54%',
+  gridTemplateColumns: '34% 16% 20% 14% 16%',
 };
 
 const primaryTabs = [
@@ -51,10 +51,6 @@ const figmaDescriptions: Record<string, string> = {
   'skill-department-revenue': '按科室细分收入、检查、治疗及患者流量，助力精准管理。',
   'skill-abnormal-fee': '自动识别异常费用群组，提供潜在根因分析支持。',
   'skill-patient-flow': '基于时间和人群层级，动态监测患者流量变化趋势。',
-};
-
-const figmaScenes: Record<string, string> = {
-  'skill-outpatient-ops': '问数 Agent',
 };
 
 function ActionIconButton({
@@ -101,7 +97,7 @@ export default function SkillManagementSection({
       skills.filter((skill) => {
         if (!normalizedQuery) return true;
         const description = figmaDescriptions[skill.id] ?? skill.description;
-        return `${skill.name} ${description} ${skill.triggerPhrases.join(' ')}`
+        return `${skill.name} ${description}`
           .toLowerCase()
           .includes(normalizedQuery);
       }),
@@ -128,7 +124,7 @@ export default function SkillManagementSection({
                   setQuery(event.target.value);
                   onPageChange(1);
                 }}
-                placeholder="输入模板名称或触发词"
+                placeholder="输入 Skill 名称或描述"
                 className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm leading-[22px] text-[#1d2129] outline-none placeholder:text-[#86909c]"
               />
             </label>
@@ -190,7 +186,7 @@ export default function SkillManagementSection({
           className="grid h-12 border-b border-[#e5e6eb] bg-[#f7f8fa] text-sm font-medium leading-6 text-[#4e5969]"
           style={gridColumns}
         >
-          {['Skill 名称', '场景', '适用 Agent', '触发词', '状态', '操作'].map((label) => (
+          {['Skill 名称', '类型', '适用 Agent', '状态', '操作'].map((label) => (
             <div key={label} className="flex min-w-0 items-center whitespace-nowrap px-4">
               {label}
             </div>
@@ -212,14 +208,17 @@ export default function SkillManagementSection({
                     {figmaDescriptions[skill.id] ?? skill.description}
                   </div>
                 </div>
-                <div className="flex min-w-0 items-center overflow-hidden px-4 text-[#1d2129]">
-                  <span className="truncate">{figmaScenes[skill.id] ?? skill.scene}</span>
+                <div className="flex min-w-0 flex-col justify-center gap-1 overflow-hidden px-4">
+                  <span className={`w-fit rounded px-2 py-0.5 text-xs ${
+                    skill.kind === 'narrative'
+                      ? 'bg-[#e8f3ff] text-[#165dff]'
+                      : 'bg-[#f2f3f5] text-[#4e5969]'
+                  }`}>
+                    {skill.kind === 'narrative' ? '报告结构' : skill.kind === 'style' ? '视觉风格' : '数据分析'}
+                  </span>
                 </div>
                 <div className="flex min-w-0 items-center overflow-hidden px-4">
                   <span className="line-clamp-2">{skill.applicableAgentTypes.map((type) => agentTypeLabel[type]).join('、')}</span>
-                </div>
-                <div className="flex min-w-0 items-center overflow-hidden px-4">
-                  <span className="line-clamp-2">{skill.triggerPhrases.join(' / ') || '-'}</span>
                 </div>
                 <div className="flex min-w-0 items-center px-4">
                   <button

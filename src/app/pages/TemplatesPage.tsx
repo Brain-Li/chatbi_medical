@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, Settings2, X } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { ReportTemplate, ReportTemplateSection, ReportTemplateStatus } from '../types';
 import templateModalChevronDown from '../../assets/figma-report-template/template-modal-chevron-down.svg';
 import templateModalClose from '../../assets/figma-report-template/template-modal-close.svg';
-import templateModalResizer from '../../assets/figma-report-template/template-modal-resizer.svg';
 import templateDeleteIcon from '../../assets/figma-report-template/template-delete.svg';
 import templateEditIcon from '../../assets/figma-report-template/template-edit.svg';
 import templatePageLeftIcon from '../../assets/figma-report-template/template-page-left.svg';
@@ -34,11 +34,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/toolti
 const templatePageSizeOptions = [10, 20, 50] as const;
 const templateDescriptionMaxLength = 50;
 const defaultTemplateIndustry = '医疗';
-const templateIndustryCategories: Record<string, string[]> = {
-  医疗: ['日报', '月报', '专题'],
-  汽车: ['销售日报', '经营月报', '售后专题'],
-  云管: ['资源日报', '运营月报', '成本专题'],
-};
+const templateIndustries = ['医疗', '汽车', '云管'];
+const templateCategories = ['专题', '日报', '周报', '月报'];
 
 type TemplateFormState = {
   name: string;
@@ -46,8 +43,17 @@ type TemplateFormState = {
   category: string;
   status: ReportTemplateStatus;
   description: string;
-  templatePrompt: string;
-  sections: Array<Pick<ReportTemplateSection, 'title' | 'description' | 'required'>>;
+  narrativeMode: 'skill' | 'adjusted' | 'custom';
+  customNarrativePrompt: string;
+  narrativeAdjustmentPrompt: string;
+  narrativeOverridePrompt: string;
+  narrativeSkillId: string;
+  styleMode: 'skill' | 'adjusted' | 'custom';
+  customStylePrompt: string;
+  styleAdjustmentPrompt: string;
+  styleOverridePrompt: string;
+  styleSkillId: string;
+  sections: Array<Pick<ReportTemplateSection, 'title' | 'description' | 'required' | 'metricIds'>>;
   outputFormats: string;
 };
 
@@ -57,11 +63,20 @@ const emptyTemplateForm: TemplateFormState = {
   category: '专题',
   status: 'published',
   description: '',
-  templatePrompt: '',
+  narrativeMode: 'skill',
+  customNarrativePrompt: '',
+  narrativeAdjustmentPrompt: '',
+  narrativeOverridePrompt: '',
+  narrativeSkillId: 'skill-data-storytelling',
+  styleMode: 'skill',
+  customStylePrompt: '',
+  styleAdjustmentPrompt: '',
+  styleOverridePrompt: '',
+  styleSkillId: 'skill-clean-executive-style',
   sections: [
-    { title: '核心摘要', description: '概括报告核心结论。', required: true },
-    { title: '趋势分析', description: '说明关键指标变化。', required: true },
-    { title: '行动建议', description: '给出后续管理动作。', required: false },
+    { title: '核心摘要', description: '概括报告核心结论。', required: true, metricIds: [] },
+    { title: '趋势分析', description: '说明关键指标变化。', required: true, metricIds: [] },
+    { title: '行动建议', description: '给出后续管理动作。', required: false, metricIds: [] },
   ],
   outputFormats: 'PDF, PNG',
 };
@@ -71,6 +86,11 @@ function splitList(value: string) {
     .split(/[,，、/\n]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function normalizeTemplateCategory(value: string) {
+  const category = value.trim();
+  return templateCategories.find((option) => category === option || category.endsWith(option)) ?? '专题';
 }
 
 function formatTemplateCreatedAt(date: Date) {
@@ -91,52 +111,6 @@ function getTemplateCreatedAtTime(template: ReportTemplate) {
 
 function getTemplateCreatedAtLabel(template: ReportTemplate) {
   return template.createdAt?.trim() || '-';
-}
-
-function getTemplatePrompt(template: ReportTemplate) {
-  if (template.templatePrompt?.trim()) return template.templatePrompt;
-
-  if (template.name.includes('日报')) {
-    return [
-      '你是医院经营分析负责人，请按“日报”方式生成报告。',
-      '报告先输出 3 条以内的管理层摘要，再展开关键指标、趋势对比、异常提示和行动建议。',
-      '分析时重点关注收入、门诊量/住院量、药占比、耗占比、检查收入和重点科室贡献变化。',
-      '结论必须先说业务影响，再说明可能原因；如果缺少口径或周期，请在报告开头标注默认假设。',
-    ].join('\n');
-  }
-
-  if (template.name.includes('月报')) {
-    return [
-      '你是科室运营分析专家，请按“月报”方式生成结构化报告。',
-      '报告结构包含：科室总览、同比环比趋势、收入/流量/费用结构拆解、异常科室或病种提示、下月管理建议。',
-      '分析时优先解释趋势背后的结构变化，不只罗列数字；需要突出对科室负责人的可执行动作。',
-      '输出语气面向经营管理场景，结论清晰、证据充分、建议具体。',
-    ].join('\n');
-  }
-
-  if (template.name.includes('药耗') || template.name.includes('费用结构')) {
-    return [
-      '你是药耗结构专题分析专家，请围绕药占比、耗占比和费用结构变化生成专题报告。',
-      '报告先判断总体是否异常，再拆解到费用组、科室、病种或项目，并说明主要贡献项。',
-      '对异常项要给出可复核线索，例如变化幅度、连续期数、贡献排名和建议复核方向。',
-      '最后输出控费、结构优化或进一步核查建议，避免直接给出临床诊断结论。',
-    ].join('\n');
-  }
-
-  if (template.name.includes('异常')) {
-    return [
-      '你是异常费用复核分析专家，请按“异常概览 -> 异常聚类 -> 证据链 -> 复核建议”的结构生成报告。',
-      '先界定观察期、影响范围和异常等级，再列出主要异常费用组及其贡献。',
-      '分析中要区分经营异常、结构变化和可能的数据口径问题；每个结论都要附带可复核的数据线索。',
-      '报告末尾给出下一步人工复核路径和优先级。',
-    ].join('\n');
-  }
-
-  return [
-    `你是医院经营分析专家，请围绕“${template.name || template.category}”生成报告。`,
-    '报告需要先给结论摘要，再按章节展开关键指标、趋势变化、异常原因和行动建议。',
-    '如果用户问题缺少周期、范围或对象，请使用模板默认假设并在报告中说明。',
-  ].join('\n');
 }
 
 function TemplateDescription({ description }: { description: string }) {
@@ -169,15 +143,25 @@ function toTemplateForm(template: ReportTemplate): TemplateFormState {
   return {
     name: template.name,
     industry: template.industry || defaultTemplateIndustry,
-    category: template.category,
+    category: normalizeTemplateCategory(template.category),
     status: template.status === 'disabled' ? 'disabled' : 'published',
     description: template.description.slice(0, templateDescriptionMaxLength),
-    templatePrompt: getTemplatePrompt(template),
+    narrativeMode: template.narrativeMode ?? (template.narrativeSkillId ? 'skill' : 'custom'),
+    customNarrativePrompt: template.customNarrativePrompt ?? '',
+    narrativeAdjustmentPrompt: template.narrativeAdjustmentPrompt ?? '',
+    narrativeOverridePrompt: template.narrativeOverridePrompt ?? '',
+    narrativeSkillId: template.narrativeSkillId ?? '',
+    styleMode: template.styleMode ?? 'skill',
+    customStylePrompt: template.customStylePrompt ?? '',
+    styleAdjustmentPrompt: template.styleAdjustmentPrompt ?? '',
+    styleOverridePrompt: template.styleOverridePrompt ?? '',
+    styleSkillId: template.styleSkillId ?? 'skill-clean-executive-style',
     sections: template.sections.length
-      ? template.sections.map((section) => ({
+      ? template.sections.map((section, index) => ({
           title: section.title,
           description: section.description,
           required: section.required,
+          metricIds: section.metricIds ?? (index === 0 ? template.metricBlocks.map((block) => block.metricId) : []),
         }))
       : emptyTemplateForm.sections,
     outputFormats: template.outputFormats.join(', '),
@@ -193,6 +177,7 @@ function createTemplateFromForm(form: TemplateFormState, existing?: ReportTempla
       title: section.title.trim(),
       description: section.description.trim(),
       required: section.required,
+      metricIds: section.metricIds ?? [],
     }))
     .filter((section) => section.title);
 
@@ -201,15 +186,25 @@ function createTemplateFromForm(form: TemplateFormState, existing?: ReportTempla
     name: form.name.trim() || '未命名报告模板',
     description: (form.description ?? '').trim().slice(0, templateDescriptionMaxLength),
     industry: form.industry.trim() || defaultTemplateIndustry,
-    category: form.category.trim() || '专题',
+    category: normalizeTemplateCategory(form.category),
     version: existing?.version ?? 'v1.0',
     createdAt: existing?.createdAt ?? formatTemplateCreatedAt(createdAt),
     status: form.status,
     triggerPhrases: existing?.triggerPhrases ?? [],
-    templatePrompt: form.templatePrompt.trim(),
+    templatePrompt: '',
+    narrativeMode: form.narrativeMode,
+    customNarrativePrompt: form.narrativeMode === 'custom' ? form.customNarrativePrompt.trim() : undefined,
+    narrativeAdjustmentPrompt: form.narrativeMode === 'adjusted' ? form.narrativeAdjustmentPrompt.trim() : undefined,
+    narrativeOverridePrompt: form.narrativeMode === 'adjusted' ? form.narrativeOverridePrompt.trim() : undefined,
     applicableAgentIds: existing?.applicableAgentIds ?? [],
     datasetIds: existing?.datasetIds ?? [],
     skillIds: existing?.skillIds ?? [],
+    narrativeSkillId: form.narrativeMode === 'skill' || form.narrativeMode === 'adjusted' ? form.narrativeSkillId || undefined : undefined,
+    styleMode: form.styleMode,
+    customStylePrompt: form.styleMode === 'custom' ? form.customStylePrompt.trim() : undefined,
+    styleAdjustmentPrompt: form.styleMode === 'adjusted' ? form.styleAdjustmentPrompt.trim() : undefined,
+    styleOverridePrompt: form.styleMode === 'adjusted' ? form.styleOverridePrompt.trim() : undefined,
+    styleSkillId: form.styleMode === 'skill' || form.styleMode === 'adjusted' ? form.styleSkillId || undefined : undefined,
     parameters: existing?.parameters ?? [],
     analysisSteps: existing?.analysisSteps ?? [],
     comparisonMethods: existing?.comparisonMethods ?? [],
@@ -227,9 +222,12 @@ function createTemplateFromForm(form: TemplateFormState, existing?: ReportTempla
 export default function TemplatesPage() {
   const {
     reportTemplates,
+    defaultTemplateBindings,
+    skills,
     addReportTemplate,
     updateReportTemplate,
     deleteReportTemplate,
+    updateDefaultTemplateBinding,
   } = useWorkspace();
   const [query, setQuery] = useState('');
   const [selectedIndustry, setSelectedIndustry] = useState('all');
@@ -240,7 +238,35 @@ export default function TemplatesPage() {
   const [viewingTemplate, setViewingTemplate] = useState<ReportTemplate | null>(null);
   const [pendingDeleteTemplate, setPendingDeleteTemplate] = useState<ReportTemplate | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [editorStep, setEditorStep] = useState<'basic' | 'structure' | 'style'>('basic');
+  const [showDefaultTemplateManager, setShowDefaultTemplateManager] = useState(false);
+  const [defaultTemplateIndustry, setDefaultTemplateIndustry] = useState(templateIndustries[0]);
+  const [defaultTemplateDraft, setDefaultTemplateDraft] = useState<Record<string, string>>({});
   const [form, setForm] = useState<TemplateFormState>(emptyTemplateForm);
+  const editorContentRef = useRef<HTMLDivElement>(null);
+  const templateNameRef = useRef<HTMLInputElement>(null);
+  const templateDescriptionRef = useRef<HTMLTextAreaElement>(null);
+  const customNarrativePromptRef = useRef<HTMLTextAreaElement>(null);
+  const customStylePromptRef = useRef<HTMLTextAreaElement>(null);
+  const [basicErrors, setBasicErrors] = useState<{ name?: string; description?: string }>({});
+  const [structureErrors, setStructureErrors] = useState<{ skill?: string; prompt?: string }>({});
+  const [styleErrors, setStyleErrors] = useState<{ skill?: string; prompt?: string }>({});
+
+  const narrativeSkills = useMemo(
+    () => skills.filter((skill) => skill.kind === 'narrative' && skill.status === '已启用'),
+    [skills],
+  );
+  const selectedNarrativeSkill = narrativeSkills.find((skill) => skill.id === form.narrativeSkillId);
+  const styleSkills = useMemo(
+    () => skills.filter((skill) => skill.kind === 'style' && skill.status === '已启用'),
+    [skills],
+  );
+  const selectedStyleSkill = styleSkills.find((skill) => skill.id === form.styleSkillId);
+  const currentEditorStepIndex = ['basic', 'structure', 'style'].indexOf(editorStep);
+
+  useEffect(() => {
+    editorContentRef.current?.scrollTo({ top: 0 });
+  }, [editorStep]);
 
   const filteredTemplates = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -249,7 +275,7 @@ export default function TemplatesPage() {
       .filter((template) => {
         const templateIndustry = template.industry || defaultTemplateIndustry;
         const matchesIndustry = selectedIndustry === 'all' || templateIndustry === selectedIndustry;
-        const matchesCategory = selectedCategory === 'all' || template.category === selectedCategory;
+        const matchesCategory = selectedCategory === 'all' || normalizeTemplateCategory(template.category) === selectedCategory;
         const matchesQuery =
           !normalizedQuery ||
           [
@@ -274,7 +300,7 @@ export default function TemplatesPage() {
   }, [query, selectedCategory, selectedIndustry]);
 
   const industryOptions = useMemo(() => {
-    const industries = new Set(Object.keys(templateIndustryCategories));
+    const industries = new Set(templateIndustries);
 
     reportTemplates.forEach((template) => {
       const industry = (template.industry || defaultTemplateIndustry).trim();
@@ -286,35 +312,6 @@ export default function TemplatesPage() {
 
     return Array.from(industries);
   }, [form.industry, reportTemplates]);
-
-  const categoryOptions = useMemo(() => {
-    const categories = new Set(
-      selectedIndustry === 'all'
-        ? Object.values(templateIndustryCategories).flat()
-        : templateIndustryCategories[selectedIndustry] ?? [],
-    );
-
-    reportTemplates.forEach((template) => {
-      if (selectedIndustry !== 'all' && (template.industry || defaultTemplateIndustry) !== selectedIndustry) return;
-      const category = template.category.trim();
-      if (category) categories.add(category);
-    });
-
-    return Array.from(categories);
-  }, [reportTemplates, selectedIndustry]);
-
-  const formCategoryOptions = useMemo(() => {
-    const categories = new Set(templateIndustryCategories[form.industry] ?? []);
-
-    reportTemplates.forEach((template) => {
-      if ((template.industry || defaultTemplateIndustry) === form.industry && template.category.trim()) {
-        categories.add(template.category.trim());
-      }
-    });
-
-    if (form.category.trim()) categories.add(form.category.trim());
-    return Array.from(categories);
-  }, [form.category, form.industry, reportTemplates]);
 
   const templateTotalPages = Math.max(1, Math.ceil(filteredTemplates.length / templatePageSize));
   const templatePageItems = useMemo<Array<number | string>>(() => {
@@ -349,16 +346,87 @@ export default function TemplatesPage() {
   const openNewTemplateEditor = () => {
     setEditingTemplate(null);
     setForm(emptyTemplateForm);
+    setBasicErrors({});
+    setStructureErrors({});
+    setStyleErrors({});
+    setEditorStep('basic');
     setIsEditorOpen(true);
   };
 
   const openEditTemplateEditor = (template: ReportTemplate) => {
     setEditingTemplate(template);
     setForm(toTemplateForm(template));
+    setBasicErrors({});
+    setStructureErrors({});
+    setStyleErrors({});
+    setEditorStep('basic');
     setIsEditorOpen(true);
   };
 
+  const validateBasicStep = () => {
+    const nextErrors = {
+      name: form.name.trim() ? undefined : '请输入模板名称',
+      description: form.description.trim() ? undefined : '请输入模板描述',
+    };
+    setBasicErrors(nextErrors);
+
+    if (nextErrors.name) {
+      templateNameRef.current?.focus();
+    } else if (nextErrors.description) {
+      templateDescriptionRef.current?.focus();
+    }
+
+    return !nextErrors.name && !nextErrors.description;
+  };
+
+  const validateStructureStep = () => {
+    const nextErrors = form.narrativeMode === 'custom'
+      ? { prompt: form.customNarrativePrompt.trim() ? undefined : '请填写报告结构提示词' }
+      : { skill: form.narrativeSkillId ? undefined : '请选择报告结构' };
+    setStructureErrors(nextErrors);
+
+    if (nextErrors.prompt) {
+      customNarrativePromptRef.current?.focus();
+    }
+
+    return !nextErrors.skill && !nextErrors.prompt;
+  };
+
+  const validateStyleStep = () => {
+    const nextErrors = form.styleMode === 'custom'
+      ? { prompt: form.customStylePrompt.trim() ? undefined : '请填写视觉风格提示词' }
+      : { skill: form.styleSkillId ? undefined : '请选择视觉风格' };
+    setStyleErrors(nextErrors);
+
+    if (nextErrors.prompt) {
+      customStylePromptRef.current?.focus();
+    }
+
+    return !nextErrors.skill && !nextErrors.prompt;
+  };
+
+  const handleEditorStepChange = (nextStep: 'basic' | 'structure' | 'style') => {
+    if (editorStep === 'basic' && nextStep !== 'basic') {
+      if (!validateBasicStep()) return;
+      if (nextStep === 'style') {
+        setEditorStep('structure');
+        return;
+      }
+    }
+    if (editorStep === 'structure' && nextStep === 'style' && !validateStructureStep()) return;
+    setEditorStep(nextStep);
+  };
+
   const handleSaveTemplate = () => {
+    if (!validateBasicStep()) {
+      setEditorStep('basic');
+      return;
+    }
+    if (!validateStructureStep()) {
+      setEditorStep('structure');
+      return;
+    }
+    if (!validateStyleStep()) return;
     const nextTemplate = createTemplateFromForm(form, editingTemplate ?? undefined);
 
     if (editingTemplate) {
@@ -370,6 +438,54 @@ export default function TemplatesPage() {
     setIsEditorOpen(false);
     setEditingTemplate(null);
     setForm(emptyTemplateForm);
+    setBasicErrors({});
+    setStructureErrors({});
+    setStyleErrors({});
+    setEditorStep('basic');
+  };
+
+  const getDefaultTemplate = (industry: string, category: string) => {
+    const binding = defaultTemplateBindings.find((item) => item.industry === industry && item.category === category);
+    return reportTemplates.find((template) => template.id === binding?.templateId && template.status === 'published');
+  };
+
+  const defaultTemplateKey = (industry: string, category: string) => `${industry}:${category}`;
+  const openDefaultTemplateManager = () => {
+    setDefaultTemplateIndustry(templateIndustries[0]);
+    setDefaultTemplateDraft(Object.fromEntries(
+      defaultTemplateBindings.map((binding) => [defaultTemplateKey(binding.industry, binding.category), binding.templateId]),
+    ));
+    setShowDefaultTemplateManager(true);
+  };
+  const saveDefaultTemplateManager = () => {
+    templateIndustries.forEach((industry) => {
+      templateCategories.forEach((category) => {
+        updateDefaultTemplateBinding(
+          industry,
+          category as '专题' | '日报' | '周报' | '月报',
+          defaultTemplateDraft[defaultTemplateKey(industry, category)] ?? '',
+        );
+      });
+    });
+    setShowDefaultTemplateManager(false);
+  };
+
+  const cancelNarrativeAdjustment = () => {
+    setForm((current) => ({
+      ...current,
+      narrativeMode: 'skill',
+      narrativeOverridePrompt: '',
+      narrativeAdjustmentPrompt: '',
+    }));
+  };
+
+  const cancelStyleAdjustment = () => {
+    setForm((current) => ({
+      ...current,
+      styleMode: 'skill',
+      styleOverridePrompt: '',
+      styleAdjustmentPrompt: '',
+    }));
   };
 
   return (
@@ -395,6 +511,16 @@ export default function TemplatesPage() {
               <img aria-hidden="true" className="h-4 w-4" src={templatePlusIcon} alt="" />
               新建模板
             </button>
+            <button
+              type="button"
+              onClick={openDefaultTemplateManager}
+              className={`inline-flex h-10 items-center rounded-[10px] border px-3.5 text-[14px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
+                showDefaultTemplateManager ? 'border-[#165dff] bg-[#e8f3ff] text-[#165dff]' : 'border-[#e5e6eb] bg-white text-[#1d2129] hover:bg-[#f7f8fa]'
+              }`}
+            >
+              <Settings2 aria-hidden="true" className="h-4 w-4" />
+              默认模板管理
+            </button>
           </div>
         </div>
 
@@ -403,7 +529,7 @@ export default function TemplatesPage() {
           aria-label="模板筛选"
         >
           <div className="flex items-center gap-2">
-            <span className="shrink-0 text-[14px] leading-[22px] text-[#4e5969]">业务线</span>
+            <span className="shrink-0 text-[14px] leading-[22px] text-[#4e5969]">行业</span>
             <Select
               value={selectedIndustry}
               onValueChange={(value) => {
@@ -457,7 +583,7 @@ export default function TemplatesPage() {
             >
               全部
             </button>
-            {categoryOptions.map((category) => (
+            {templateCategories.map((category) => (
               <button
                 key={category}
                 type="button"
@@ -475,6 +601,49 @@ export default function TemplatesPage() {
           </div>
         </div>
 
+        <Dialog open={showDefaultTemplateManager} onOpenChange={setShowDefaultTemplateManager}>
+          <DialogContent
+            aria-describedby={undefined}
+            showCloseButton={false}
+            className="!flex !left-auto !right-0 !top-0 !translate-x-0 !translate-y-0 h-full max-h-none w-[560px] max-w-[calc(100vw-32px)] flex-col gap-0 overflow-hidden rounded-l-[16px] rounded-r-none border-0 bg-white p-0 font-['PingFang_SC','Microsoft_YaHei',sans-serif] shadow-[-8px_0_24px_rgba(29,33,41,0.12)]"
+          >
+            <DialogHeader className="flex-row items-center justify-between border-b border-[#e5e6eb] px-6 py-4 text-left">
+              <DialogTitle className="text-[18px] font-semibold leading-7 text-[#1d2129]">默认模板管理</DialogTitle>
+              <DialogClose asChild>
+                <button type="button" aria-label="关闭默认模板管理" className="flex h-8 w-8 items-center justify-center rounded-[8px] text-[#86909c] hover:bg-[#f2f3f5] hover:text-[#1d2129]"><X aria-hidden="true" className="h-4 w-4" /></button>
+              </DialogClose>
+            </DialogHeader>
+            <section className="min-h-0 flex-1 overflow-y-auto px-6 py-5" aria-label="默认模板管理">
+              <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-4">
+                <span className="text-[14px] text-[#4e5969]">配置行业</span>
+                <Select value={defaultTemplateIndustry} onValueChange={setDefaultTemplateIndustry}>
+                  <SelectTrigger className="h-10 w-full rounded-[8px] border-[#e5e6eb] bg-white px-3 text-[14px] shadow-none"><SelectValue /></SelectTrigger>
+                  <SelectContent>{templateIndustries.map((industry) => <SelectItem key={industry} value={industry}>{industry}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="mt-6 space-y-3 border-t border-[#e5e6eb] pt-4">
+                {templateCategories.map((category) => {
+                  const candidates = reportTemplates.filter((template) => template.status === 'published' && (template.industry || defaultTemplateIndustry) === defaultTemplateIndustry && normalizeTemplateCategory(template.category) === category);
+                  const currentValue = defaultTemplateDraft[defaultTemplateKey(defaultTemplateIndustry, category)] ?? getDefaultTemplate(defaultTemplateIndustry, category)?.id ?? 'none';
+                  return (
+                    <div key={category} className="flex items-center gap-4 border-b border-[#e5e6eb] pb-3 last:border-b-0">
+                      <div className="w-14 shrink-0 text-[14px] font-medium text-[#4e5969]">{category}</div>
+                      <Select value={currentValue} onValueChange={(value) => setDefaultTemplateDraft((current) => ({ ...current, [defaultTemplateKey(defaultTemplateIndustry, category)]: value }))}>
+                        <SelectTrigger className="h-10 min-w-0 flex-1 rounded-[8px] border-[#e5e6eb] bg-white px-3 text-[14px] shadow-none"><SelectValue placeholder="未配置" /></SelectTrigger>
+                        <SelectContent><SelectItem value="none">未配置</SelectItem>{candidates.map((template) => <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+            <div className="flex justify-end gap-3 border-t border-[#e5e6eb] px-6 py-3">
+              <DialogClose asChild><button type="button" className="h-9 rounded-[8px] border border-[#e5e6eb] px-4 text-[14px] text-[#4e5969] hover:bg-[#f7f8fa]">取消</button></DialogClose>
+              <button type="button" onClick={saveDefaultTemplateManager} className="h-9 rounded-[8px] bg-[#1d2129] px-4 text-[14px] text-white hover:bg-[#000000]">保存</button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         <section className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden" aria-label="报告模板列表">
           <div className="min-h-0 flex-1 overflow-auto">
             <table className="-mt-2 w-full min-w-[1160px] table-fixed border-separate border-spacing-x-0 border-spacing-y-2">
@@ -489,7 +658,7 @@ export default function TemplatesPage() {
               <thead className="sticky top-0 z-10 bg-[#f7f8fa]">
                 <tr className="h-12 text-left text-[14px] font-medium leading-6 text-[#4e5969]">
                   <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">模板名称</th>
-                  <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">业务线</th>
+                  <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">行业</th>
                   <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">分类</th>
                   <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">创建时间</th>
                   <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">状态</th>
@@ -520,7 +689,7 @@ export default function TemplatesPage() {
                         </td>
                         <td className="border-b border-[#e5e6eb] p-4">
                           <span className="inline-flex items-center justify-center rounded-[8px] bg-[#e8f3ff] px-2 py-1 text-[14px] leading-[22px] text-[#165dff]">
-                            {template.category}
+                            {normalizeTemplateCategory(template.category)}
                           </span>
                         </td>
                         <td className="whitespace-nowrap border-b border-[#e5e6eb] p-4 text-[#1d2129]">
@@ -725,7 +894,18 @@ export default function TemplatesPage() {
         </section>
       </div>
 
-      <Dialog open={isEditorOpen} onOpenChange={setIsEditorOpen}>
+      <Dialog
+        open={isEditorOpen}
+        onOpenChange={(open) => {
+          setIsEditorOpen(open);
+          if (!open) {
+            setBasicErrors({});
+            setStructureErrors({});
+            setStyleErrors({});
+            setEditorStep('basic');
+          }
+        }}
+      >
         <DialogContent
           aria-describedby={undefined}
           showCloseButton={false}
@@ -733,9 +913,9 @@ export default function TemplatesPage() {
             event.preventDefault();
             event.currentTarget.focus();
           }}
-          className="!flex h-[610px] w-[580px] max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] flex-col gap-0 overflow-hidden rounded-[20px] border-0 bg-white p-0 font-['PingFang_SC','Microsoft_YaHei',sans-serif] shadow-[-2px_0_22.1px_rgba(0,0,0,0.01)] sm:max-w-[580px]"
+          className="!flex h-[760px] w-[760px] max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] flex-col gap-0 overflow-hidden rounded-[16px] border-0 bg-white p-0 font-['PingFang_SC','Microsoft_YaHei',sans-serif] shadow-[-2px_0_22.1px_rgba(0,0,0,0.01)] sm:max-w-[760px]"
         >
-          <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-4">
+          <div className="shrink-0 border-b border-[#e5e6eb] px-6 pb-3 pt-4">
             <DialogHeader className="flex-row items-center justify-between gap-0 text-left">
               <DialogTitle className="font-['Login_Figma_Sans','PingFang_SC','Microsoft_YaHei',sans-serif] text-[20px] font-medium leading-7 text-[#1d2129]">
                 {editingTemplate ? '编辑模板' : '新建模板'}
@@ -746,6 +926,63 @@ export default function TemplatesPage() {
               </DialogClose>
             </DialogHeader>
 
+            <nav aria-label="模板配置步骤" className="mt-3">
+              <ol className="grid grid-cols-3">
+                {[
+                  {
+                    value: 'basic' as const,
+                    title: '基本信息',
+                  },
+                  {
+                    value: 'structure' as const,
+                    title: '报告结构',
+                  },
+                  {
+                    value: 'style' as const,
+                    title: '视觉风格',
+                  },
+                ].map((step, index) => {
+                  const isActive = editorStep === step.value;
+                  const isComplete = index < currentEditorStepIndex;
+                  return (
+                    <li key={step.value} className="relative min-w-0">
+                      {index < 2 && (
+                        <span
+                          aria-hidden="true"
+                          className={`absolute left-[calc(50%+18px)] top-3 h-px w-[calc(100%-36px)] ${
+                            index < currentEditorStepIndex ? 'bg-[#165dff]' : 'bg-[#c9cdd4]'
+                          }`}
+                        />
+                      )}
+                      <button
+                        type="button"
+                        aria-current={isActive ? 'step' : undefined}
+                        onClick={() => handleEditorStepChange(step.value)}
+                        className="relative z-10 flex min-h-[48px] w-full min-w-0 flex-col items-center px-1 text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
+                      >
+                        <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[12px] font-medium leading-5 transition-colors ${
+                          isActive
+                            ? 'border-[#165dff] bg-[#165dff] text-white'
+                            : isComplete
+                              ? 'border-[#165dff] bg-[#e8f3ff] text-[#165dff]'
+                              : 'border-[#c9cdd4] bg-white text-[#86909c]'
+                        }`}>
+                          {isComplete ? <Check aria-hidden="true" className="h-3.5 w-3.5" /> : index + 1}
+                        </span>
+                        <span className={`mt-1 block text-[13px] leading-5 ${isActive ? 'font-medium text-[#1d2129]' : 'text-[#4e5969]'}`}>
+                          {step.title}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ol>
+            </nav>
+          </div>
+
+          <div ref={editorContentRef} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-4">
+            {editorStep === 'basic' && <>
+
             <div className="flex flex-col gap-2">
               <label htmlFor="template-name" className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">
                 模板名称
@@ -753,22 +990,29 @@ export default function TemplatesPage() {
               <div className="relative h-10">
                 <input
                   id="template-name"
+                  ref={templateNameRef}
                   maxLength={20}
                   value={form.name}
-                  onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                  aria-invalid={Boolean(basicErrors.name)}
+                  aria-describedby={basicErrors.name ? 'template-name-error' : undefined}
+                  onChange={(event) => {
+                    setForm((current) => ({ ...current, name: event.target.value }));
+                    if (basicErrors.name) setBasicErrors((current) => ({ ...current, name: undefined }));
+                  }}
                   placeholder="请输入模板名称"
-                  className="h-full w-full rounded-[12px] border border-[#e5e6eb] bg-white px-3 pr-14 text-[14px] leading-[22px] tracking-[0.15px] text-[#1d2129] outline-none placeholder:text-[#86909c] focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10"
+                  className={`h-full w-full rounded-[12px] border bg-white px-3 pr-14 text-[14px] leading-[22px] tracking-[0.15px] text-[#1d2129] outline-none placeholder:text-[#86909c] focus:ring-2 focus:ring-[#165dff]/10 ${basicErrors.name ? 'border-[#f53f3f] focus:border-[#f53f3f]' : 'border-[#e5e6eb] focus:border-[#165dff]'}`}
                 />
                 <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[12px] leading-[22px] text-[#86909c]">
                   {form.name.length}/20
                 </span>
               </div>
+              {basicErrors.name && <p id="template-name-error" className="text-[12px] leading-5 text-[#f53f3f]">{basicErrors.name}</p>}
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
                 <label htmlFor="template-industry" className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">
-                  业务线
+                  行业
                 </label>
                 <Select
                   value={form.industry}
@@ -776,7 +1020,7 @@ export default function TemplatesPage() {
                     setForm((current) => ({
                       ...current,
                       industry: value,
-                      category: (templateIndustryCategories[value] ?? [])[0] ?? current.category,
+                      category: normalizeTemplateCategory(current.category),
                     }))
                   }
                 >
@@ -835,7 +1079,7 @@ export default function TemplatesPage() {
                     viewportClassName="h-auto min-h-0 w-full !min-w-0 p-0"
                     className="z-[70] w-[var(--radix-select-trigger-width)] !min-w-0 rounded-[12px] border-[#e5e6eb] bg-white p-1 text-[#1d2129] shadow-[0_4px_12px_rgba(29,33,41,0.08)] data-[side=bottom]:!translate-y-0 data-[side=top]:!translate-y-0"
                   >
-                    {formCategoryOptions.map((category) => (
+                    {templateCategories.map((category) => (
                       <SelectItem
                         key={category}
                         value={category}
@@ -853,45 +1097,323 @@ export default function TemplatesPage() {
               <label htmlFor="template-description" className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">
                 模板描述
               </label>
-              <div className="relative h-10">
-                <input
+              <div className="relative h-20">
+                <textarea
                   id="template-description"
+                  ref={templateDescriptionRef}
                   value={form.description ?? ''}
+                  aria-invalid={Boolean(basicErrors.description)}
+                  aria-describedby={basicErrors.description ? 'template-description-error' : undefined}
                   onChange={(event) => {
                     const description = event.currentTarget.value.slice(0, templateDescriptionMaxLength);
                     setForm((current) => ({ ...current, description }));
+                    if (basicErrors.description) setBasicErrors((current) => ({ ...current, description: undefined }));
                   }}
                   placeholder="请输入模板描述"
                   maxLength={templateDescriptionMaxLength}
-                  className="h-10 w-full rounded-[12px] border border-[#e5e6eb] bg-white py-0 pl-3 pr-14 text-[14px] leading-[22px] tracking-[0.15px] text-[#1d2129] outline-none placeholder:text-[#86909c] focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10"
+                  className={`h-full w-full resize-none rounded-[12px] border bg-white px-3 py-2.5 pr-14 text-[14px] leading-[22px] tracking-[0.15px] text-[#1d2129] outline-none placeholder:text-[#86909c] focus:ring-2 focus:ring-[#165dff]/10 ${basicErrors.description ? 'border-[#f53f3f] focus:border-[#f53f3f]' : 'border-[#e5e6eb] focus:border-[#165dff]'}`}
                 />
-                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[12px] leading-[22px] text-[#86909c]">
+                <span className="pointer-events-none absolute bottom-2 right-3 text-[12px] leading-5 text-[#86909c]">
                   {(form.description ?? '').length}/{templateDescriptionMaxLength}
                 </span>
               </div>
+              {basicErrors.description && <p id="template-description-error" className="text-[12px] leading-5 text-[#f53f3f]">{basicErrors.description}</p>}
             </div>
 
-            <div className="flex flex-col gap-2">
-              <label htmlFor="template-prompt" className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">
-                模板提示词
-              </label>
-              <div className="relative h-24">
-                <textarea
-                  id="template-prompt"
-                  maxLength={500}
-                  value={form.templatePrompt}
-                  onChange={(event) => setForm((current) => ({ ...current, templatePrompt: event.target.value }))}
-                  placeholder="描述这类报告的分析思路、章节顺序、关注指标和输出语气。"
-                  className="h-full w-full resize-none rounded-[12px] border border-[#e5e6eb] bg-white p-3 pb-8 text-[14px] leading-[22px] text-[#1d2129] outline-none placeholder:text-[#86909c] focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10"
-                />
-                <span className="pointer-events-none absolute bottom-[9px] right-3 text-[12px] leading-[22px] text-[#86909c]">
-                  {form.templatePrompt.length}/500
-                </span>
-                <img aria-hidden="true" className="pointer-events-none absolute bottom-[7px] right-[7px] h-2 w-2" src={templateModalResizer} alt="" />
+            </>}
+
+            {editorStep === 'structure' && <div className="flex flex-col gap-3">
+              <div className="text-[14px] leading-[22px] text-[#4e5969]">报告结构</div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {[
+                  { value: 'skill' as const, title: '标准结构', detail: '选择完整的报告结构 Skill，由 Skill 统一定义叙事风格与分析内容。' },
+                  { value: 'custom' as const, title: '自定义结构', detail: '自行填写报告章节顺序和写作要求。' },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-pressed={option.value === 'custom' ? form.narrativeMode === 'custom' : form.narrativeMode !== 'custom'}
+                    onClick={() => {
+                      setForm((current) => ({
+                        ...current,
+                        narrativeMode: option.value,
+                        ...(option.value === 'skill'
+                          ? { narrativeAdjustmentPrompt: '', narrativeOverridePrompt: '' }
+                          : {}),
+                      }));
+                      setStructureErrors({});
+                    }}
+                    className={`rounded-[10px] border p-3 text-left transition-colors ${
+                      (option.value === 'custom' ? form.narrativeMode === 'custom' : form.narrativeMode !== 'custom')
+                        ? 'border-[#165dff] bg-[#e8f3ff]'
+                        : 'border-[#e5e6eb] bg-white hover:bg-[#f7f8fa]'
+                    }`}
+                  >
+                    <div className={`text-[14px] font-medium ${(option.value === 'custom' ? form.narrativeMode === 'custom' : form.narrativeMode !== 'custom') ? 'text-[#165dff]' : 'text-[#1d2129]'}`}>
+                      {option.title}
+                    </div>
+                    <div className="mt-1 text-[12px] leading-5 text-[#86909c]">{option.detail}</div>
+                  </button>
+                ))}
               </div>
-            </div>
 
-            <div className="flex flex-col gap-2">
+              {form.narrativeMode === 'skill' || form.narrativeMode === 'adjusted' ? (
+                <>
+                  <Select
+                    value={form.narrativeSkillId || undefined}
+                    onValueChange={(value) => {
+                      setForm((current) => {
+                        const nextSkillId = value;
+                        return {
+                          ...current,
+                          narrativeSkillId: nextSkillId,
+                          ...(current.narrativeMode === 'adjusted'
+                            ? { narrativeOverridePrompt: skills.find((skill) => skill.id === nextSkillId)?.skillMarkdown ?? '' }
+                            : {}),
+                        };
+                      });
+                      if (structureErrors.skill) setStructureErrors((current) => ({ ...current, skill: undefined }));
+                    }}
+                  >
+                    <div className="flex flex-col gap-2">
+                      <label htmlFor="template-narrative-skill" className="text-[13px] leading-5 text-[#4e5969]">
+                        报告结构 Skill
+                      </label>
+                      <SelectTrigger
+                        id="template-narrative-skill"
+                        aria-invalid={Boolean(structureErrors.skill)}
+                        aria-describedby={structureErrors.skill ? 'template-narrative-skill-error' : undefined}
+                        className={`h-10 w-full rounded-[12px] bg-white px-3 text-[14px] shadow-none focus-visible:ring-2 focus-visible:ring-[#165dff]/10 ${
+                          structureErrors.skill
+                            ? 'border-[#f53f3f] focus-visible:border-[#f53f3f]'
+                            : 'border-[#e5e6eb] focus-visible:border-[#165dff]'
+                        }`}
+                      >
+                        <SelectValue placeholder="请选择报告结构 Skill">{selectedNarrativeSkill?.name}</SelectValue>
+                      </SelectTrigger>
+                      {structureErrors.skill && <p id="template-narrative-skill-error" className="text-[12px] leading-5 text-[#f53f3f]">{structureErrors.skill}</p>}
+                    </div>
+                    <SelectContent className="min-w-[var(--radix-select-trigger-width)]">
+                      {narrativeSkills.map((skill) => (
+                        <SelectItem
+                          key={skill.id}
+                          value={skill.id}
+                          className="h-auto items-start py-2 pr-9"
+                        >
+                          <span className="flex min-w-0 flex-col items-start gap-0.5 py-0.5">
+                            <span className="text-[14px] leading-5 text-[#1d2129]">{skill.name}</span>
+                            <span className="text-[12px] leading-5 text-[#86909c]">{skill.description}</span>
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setForm((current) => ({
+                        ...current,
+                        narrativeMode: 'adjusted',
+                        narrativeOverridePrompt: current.narrativeOverridePrompt
+                          || skills.find((skill) => skill.id === current.narrativeSkillId)?.skillMarkdown
+                          || '',
+                      }))}
+                      className={`shrink-0 text-[12px] leading-5 text-[#165dff] hover:text-[#0e42d2] ${form.narrativeMode === 'adjusted' ? 'hidden' : ''}`}
+                    >
+                      调整报告结构（可选）
+                    </button>
+                  </div>
+                  {form.narrativeMode === 'adjusted' && (
+                    <div className="flex flex-col gap-3 rounded-[10px] border border-[#e5e6eb] bg-[#f7f8fa] p-3">
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <label htmlFor="narrative-override-prompt" className="text-[13px] leading-5 text-[#4e5969]">
+                            报告结构提示词（编辑不影响 Skill）
+                          </label>
+                          <div className="flex shrink-0 items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={cancelNarrativeAdjustment}
+                              className="text-[12px] leading-5 text-[#86909c] hover:text-[#4e5969]"
+                            >
+                              取消调整
+                            </button>
+                          </div>
+                        </div>
+                        <div className="relative">
+                          <textarea
+                            id="narrative-override-prompt"
+                            maxLength={1000}
+                            value={form.narrativeOverridePrompt}
+                            onChange={(event) => setForm((current) => ({ ...current, narrativeOverridePrompt: event.target.value, narrativeAdjustmentPrompt: '' }))}
+                            placeholder="可修改完整报告结构，例如调整章节、顺序或写作要求。"
+                            className="min-h-[260px] w-full resize-y rounded-[8px] border border-[#e5e6eb] bg-white p-3 pb-8 text-[14px] leading-[22px] text-[#1d2129] outline-none placeholder:text-[#86909c] focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10"
+                          />
+                          <span className="pointer-events-none absolute bottom-2 right-3 text-[12px] leading-5 text-[#86909c]">
+                            {form.narrativeOverridePrompt.length}/1000
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="flex flex-col gap-3 rounded-[10px] border border-[#e5e6eb] bg-[#f7f8fa] p-3">
+                  <label htmlFor="custom-narrative-prompt" className="text-[13px] leading-5 text-[#4e5969]">
+                    报告结构提示词
+                  </label>
+                  <div className="relative">
+                    <textarea
+                      id="custom-narrative-prompt"
+                      ref={customNarrativePromptRef}
+                      maxLength={1000}
+                      value={form.customNarrativePrompt}
+                      aria-invalid={Boolean(structureErrors.prompt)}
+                      aria-describedby={structureErrors.prompt ? 'custom-narrative-prompt-error' : undefined}
+                      onChange={(event) => {
+                        setForm((current) => ({ ...current, customNarrativePrompt: event.target.value }));
+                        if (structureErrors.prompt) setStructureErrors((current) => ({ ...current, prompt: undefined }));
+                      }}
+                      placeholder="请填写完整报告结构，包括章节、顺序和写作要求，并说明要分析的指标、问题和时间范围。"
+                      className={`min-h-[260px] w-full resize-y rounded-[8px] border bg-white p-3 pb-8 text-[14px] leading-[22px] text-[#1d2129] outline-none placeholder:text-[#86909c] focus:ring-2 focus:ring-[#165dff]/10 ${
+                        structureErrors.prompt ? 'border-[#f53f3f] focus:border-[#f53f3f]' : 'border-[#e5e6eb] focus:border-[#165dff]'
+                      }`}
+                    />
+                    <span className="pointer-events-none absolute bottom-2 right-3 text-[12px] leading-5 text-[#86909c]">
+                      {(form.customNarrativePrompt ?? '').length}/1000
+                    </span>
+                  </div>
+                  {structureErrors.prompt && <p id="custom-narrative-prompt-error" className="text-[12px] leading-5 text-[#f53f3f]">{structureErrors.prompt}</p>}
+                </div>
+              )}
+            </div>}
+
+            {editorStep === 'style' && <div className="flex flex-col gap-3">
+              <div className="text-[14px] leading-[22px] text-[#4e5969]">视觉风格</div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {[
+                  { value: 'skill' as const, title: '标准风格', detail: '选择常用的视觉风格 Skill，统一颜色、字体和图表表现。' },
+                  { value: 'custom' as const, title: '自定义风格', detail: '自行填写颜色、字体、图表样式和视觉表达要求。' },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-pressed={option.value === 'custom' ? form.styleMode === 'custom' : form.styleMode !== 'custom'}
+                    onClick={() => {
+                      setForm((current) => ({
+                        ...current,
+                        styleMode: option.value,
+                        ...(option.value === 'skill'
+                          ? { styleAdjustmentPrompt: '', styleOverridePrompt: '' }
+                          : { customStylePrompt: '' }),
+                      }));
+                      setStyleErrors({});
+                    }}
+                    className={`rounded-[10px] border p-3 text-left transition-colors ${
+                      (option.value === 'custom' ? form.styleMode === 'custom' : form.styleMode !== 'custom')
+                        ? 'border-[#165dff] bg-[#e8f3ff]'
+                        : 'border-[#e5e6eb] bg-white hover:bg-[#f7f8fa]'
+                    }`}
+                  >
+                    <div className={`text-[14px] font-medium ${(option.value === 'custom' ? form.styleMode === 'custom' : form.styleMode !== 'custom') ? 'text-[#165dff]' : 'text-[#1d2129]'}`}>
+                      {option.title}
+                    </div>
+                    <div className="mt-1 text-[12px] leading-5 text-[#86909c]">{option.detail}</div>
+                  </button>
+                ))}
+              </div>
+
+              {form.styleMode !== 'custom' ? (
+                <>
+                  <Select
+                    value={form.styleSkillId || undefined}
+                    onValueChange={(value) => {
+                      setForm((current) => ({
+                        ...current,
+                        styleSkillId: value,
+                        ...(current.styleMode === 'adjusted'
+                          ? { styleOverridePrompt: skills.find((skill) => skill.id === value)?.skillMarkdown ?? '' }
+                          : {}),
+                      }));
+                      if (styleErrors.skill) setStyleErrors((current) => ({ ...current, skill: undefined }));
+                    }}
+                  >
+                    <div className="flex flex-col gap-2">
+                      <label htmlFor="template-style-skill" className="text-[13px] leading-5 text-[#4e5969]">视觉风格 Skill</label>
+                      <SelectTrigger
+                        id="template-style-skill"
+                        aria-invalid={Boolean(styleErrors.skill)}
+                        aria-describedby={styleErrors.skill ? 'template-style-skill-error' : undefined}
+                        className={`h-10 w-full rounded-[12px] bg-white px-3 text-[14px] shadow-none focus-visible:ring-2 focus-visible:ring-[#165dff]/10 ${
+                          styleErrors.skill
+                            ? 'border-[#f53f3f] focus-visible:border-[#f53f3f]'
+                            : 'border-[#e5e6eb] focus-visible:border-[#165dff]'
+                        }`}
+                      >
+                        <SelectValue placeholder="请选择视觉风格 Skill">{selectedStyleSkill?.name}</SelectValue>
+                      </SelectTrigger>
+                      {styleErrors.skill && <p id="template-style-skill-error" className="text-[12px] leading-5 text-[#f53f3f]">{styleErrors.skill}</p>}
+                    </div>
+                    <SelectContent className="min-w-[var(--radix-select-trigger-width)]">
+                      {styleSkills.map((skill) => (
+                        <SelectItem key={skill.id} value={skill.id} className="h-auto items-start py-2 pr-9">
+                          <span className="flex min-w-0 flex-col items-start gap-0.5 py-0.5">
+                            <span className="text-[14px] leading-5 text-[#1d2129]">{skill.name}</span>
+                            <span className="text-[12px] leading-5 text-[#86909c]">{skill.description}</span>
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {form.styleMode === 'adjusted' ? (
+                    <div className="flex flex-col gap-3 rounded-[10px] border border-[#e5e6eb] bg-[#f7f8fa] p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <label htmlFor="style-override-prompt" className="text-[13px] leading-5 text-[#4e5969]">视觉风格提示词（编辑不影响 Skill）</label>
+                        <div className="flex shrink-0 items-center gap-3">
+                          <button type="button" onClick={cancelStyleAdjustment} className="text-[12px] leading-5 text-[#86909c] hover:text-[#4e5969]">取消调整</button>
+                        </div>
+                      </div>
+                      <div className="relative">
+                        <textarea id="style-override-prompt" maxLength={1000} value={form.styleOverridePrompt} onChange={(event) => setForm((current) => ({ ...current, styleOverridePrompt: event.target.value }))} placeholder="可修改颜色、字体、图表样式和视觉表达要求。" className="min-h-[260px] w-full resize-y rounded-[8px] border border-[#e5e6eb] bg-white p-3 pb-8 text-[14px] leading-[22px] text-[#1d2129] outline-none placeholder:text-[#86909c] focus:border-[#165dff]" />
+                        <span className="pointer-events-none absolute bottom-2 right-3 text-[12px] leading-5 text-[#86909c]">
+                          {form.styleOverridePrompt.length}/1000
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => setForm((current) => ({ ...current, styleMode: 'adjusted', styleOverridePrompt: current.styleOverridePrompt || skills.find((skill) => skill.id === current.styleSkillId)?.skillMarkdown || '' }))} className="self-end text-[12px] leading-5 text-[#165dff]">调整视觉风格（可选）</button>
+                  )}
+                </>
+              ) : (
+                <div className="flex flex-col gap-3 rounded-[10px] border border-[#e5e6eb] bg-[#f7f8fa] p-3">
+                  <label htmlFor="custom-style-prompt" className="text-[13px] leading-5 text-[#4e5969]">视觉风格提示词</label>
+                  <div className="relative">
+                    <textarea
+                      id="custom-style-prompt"
+                      ref={customStylePromptRef}
+                      maxLength={1000}
+                      value={form.customStylePrompt}
+                      aria-invalid={Boolean(styleErrors.prompt)}
+                      aria-describedby={styleErrors.prompt ? 'custom-style-prompt-error' : undefined}
+                      onChange={(event) => {
+                        setForm((current) => ({ ...current, customStylePrompt: event.target.value }));
+                        if (styleErrors.prompt) setStyleErrors((current) => ({ ...current, prompt: undefined }));
+                      }}
+                      placeholder="请填写颜色、字体、图表样式和视觉表达要求。"
+                      className={`min-h-[260px] w-full resize-y rounded-[8px] border bg-white p-3 pb-8 text-[14px] leading-[22px] text-[#1d2129] outline-none placeholder:text-[#86909c] focus:ring-2 focus:ring-[#165dff]/10 ${
+                        styleErrors.prompt ? 'border-[#f53f3f] focus:border-[#f53f3f]' : 'border-[#e5e6eb] focus:border-[#165dff]'
+                      }`}
+                    />
+                    <span className="pointer-events-none absolute bottom-2 right-3 text-[12px] leading-5 text-[#86909c]">
+                      {(form.customStylePrompt ?? '').length}/1000
+                    </span>
+                  </div>
+                  {styleErrors.prompt && <p id="custom-style-prompt-error" className="text-[12px] leading-5 text-[#f53f3f]">{styleErrors.prompt}</p>}
+                </div>
+              )}
+            </div>}
+
+            {editorStep === 'basic' && <div className="flex flex-col gap-2">
               <label htmlFor="template-status" className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">
                 状态
               </label>
@@ -935,24 +1457,45 @@ export default function TemplatesPage() {
                   </SelectItem>
                 </SelectContent>
               </Select>
-            </div>
+            </div>}
           </div>
 
-          <div className="flex h-16 shrink-0 items-center justify-end gap-4 border-t border-[#e5e6eb] bg-[#f7f8fa] px-6 py-3">
-            <button
-              type="button"
-              onClick={() => setIsEditorOpen(false)}
-              className="inline-flex h-10 items-center justify-center rounded-[12px] border border-[#e5e6eb] bg-transparent px-6 text-[14px] leading-[22px] text-[rgba(0,0,0,0.9)] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
-            >
-              取消
-            </button>
-            <button
-              type="button"
-              onClick={handleSaveTemplate}
-              className="inline-flex h-10 items-center justify-center rounded-[12px] border border-[#1d2129] bg-[#1d2129] px-6 text-[14px] leading-[22px] tracking-[0.15px] text-white transition-colors hover:bg-[#2f3339] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
-            >
-              保存
-            </button>
+          <div className="flex h-16 shrink-0 items-center justify-end gap-4 border-t border-[#e5e6eb] bg-[#f7f8fa] px-4 py-3 sm:px-6">
+            <div className="flex items-center gap-3">
+              {editorStep !== 'basic' && (
+                <button
+                  type="button"
+                  onClick={() => setEditorStep(editorStep === 'style' ? 'structure' : 'basic')}
+                  className="inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-[12px] border border-[#e5e6eb] bg-transparent px-3 text-[14px] leading-[22px] text-[#4e5969] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 sm:px-5"
+                >
+                  上一步
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsEditorOpen(false)}
+                className="inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-[12px] border border-[#e5e6eb] bg-transparent px-3 text-[14px] leading-[22px] text-[rgba(0,0,0,0.9)] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 sm:px-5"
+              >
+                取消
+              </button>
+              {editorStep !== 'style' ? (
+                <button
+                  type="button"
+                  onClick={() => handleEditorStepChange(editorStep === 'basic' ? 'structure' : 'style')}
+                  className="inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-[12px] border border-[#1d2129] bg-[#1d2129] px-4 text-[14px] leading-[22px] tracking-[0.15px] text-white transition-colors hover:bg-[#2f3339] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 sm:px-6"
+                >
+                  下一步
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleSaveTemplate}
+                  className="inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-[12px] border border-[#1d2129] bg-[#1d2129] px-4 text-[14px] leading-[22px] tracking-[0.15px] text-white transition-colors hover:bg-[#2f3339] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 sm:px-6"
+                >
+                  保存
+                </button>
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -997,14 +1540,70 @@ export default function TemplatesPage() {
                   </div>
                   <div className="flex items-center gap-3">
                     <dt className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">分类</dt>
-                    <dd className="text-[14px] leading-[22px] text-[#1d2129]">{viewingTemplate.category}</dd>
+                    <dd className="text-[14px] leading-[22px] text-[#1d2129]">{normalizeTemplateCategory(viewingTemplate.category)}</dd>
                   </div>
                 </div>
 
-                <div className="flex min-h-0 flex-1 flex-col gap-2">
-                  <dt className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">模板提示词</dt>
-                  <dd className="min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words rounded-[12px] border border-[#e5e6eb] bg-[#f7f8fa] px-3 py-2.5 text-[14px] leading-[22px] text-[#1d2129]">
-                    {viewingTemplate.templatePrompt.trim() || '未配置'}
+                <div className="flex items-start border-b border-[#e5e6eb] pb-4">
+                  <dt className="w-28 shrink-0 text-[14px] leading-[22px] text-[#4e5969]">报告结构</dt>
+                  <dd className="min-w-0 flex-1 text-[14px] leading-[22px] text-[#1d2129]">
+                    {viewingTemplate.narrativeMode === 'custom'
+                      ? '自定义报告结构'
+                      : `使用标准报告结构 · ${skills.find((skill) => skill.id === viewingTemplate.narrativeSkillId)?.name ?? '未绑定报告结构 Skill'}`}
+                  </dd>
+                </div>
+
+                {viewingTemplate.narrativeMode === 'custom' && (
+                  <div className="flex flex-col gap-2 border-b border-[#e5e6eb] pb-4">
+                    <dt className="text-[14px] leading-[22px] text-[#4e5969]">自定义报告组织要求</dt>
+                    <dd className="whitespace-pre-wrap break-words rounded-[10px] border border-[#e5e6eb] bg-[#f7f8fa] px-3 py-2.5 text-[14px] leading-[22px] text-[#1d2129]">
+                      {viewingTemplate.customNarrativePrompt?.trim() || '未配置'}
+                    </dd>
+                  </div>
+                )}
+
+                {viewingTemplate.narrativeMode === 'adjusted' && (
+                  <div className="flex flex-col gap-2 border-b border-[#e5e6eb] pb-4">
+                    <dt className="text-[14px] leading-[22px] text-[#4e5969]">本模板的报告结构提示词</dt>
+                    <dd className="whitespace-pre-wrap break-words rounded-[10px] border border-[#e5e6eb] bg-[#f7f8fa] px-3 py-2.5 text-[14px] leading-[22px] text-[#1d2129]">
+                      {viewingTemplate.narrativeOverridePrompt?.trim() || viewingTemplate.narrativeAdjustmentPrompt?.trim() || '未配置'}
+                    </dd>
+                  </div>
+                )}
+
+                <div className="flex items-start border-b border-[#e5e6eb] pb-4">
+                  <dt className="w-28 shrink-0 text-[14px] leading-[22px] text-[#4e5969]">视觉风格</dt>
+                  <dd className="min-w-0 flex-1 text-[14px] leading-[22px] text-[#1d2129]">
+                    {viewingTemplate.styleMode === 'custom'
+                      ? '自定义视觉风格'
+                      : `使用标准视觉风格 · ${skills.find((skill) => skill.id === viewingTemplate.styleSkillId)?.name ?? '未绑定视觉风格 Skill'}`}
+                  </dd>
+                </div>
+
+                {viewingTemplate.styleMode === 'custom' && (
+                  <div className="flex flex-col gap-2 border-b border-[#e5e6eb] pb-4">
+                    <dt className="text-[14px] leading-[22px] text-[#4e5969]">视觉风格提示词</dt>
+                    <dd className="whitespace-pre-wrap break-words rounded-[10px] border border-[#e5e6eb] bg-[#f7f8fa] px-3 py-2.5 text-[14px] leading-[22px] text-[#1d2129]">
+                      {viewingTemplate.customStylePrompt?.trim() || '未配置'}
+                    </dd>
+                  </div>
+                )}
+
+                {viewingTemplate.styleMode === 'adjusted' && (
+                  <div className="flex flex-col gap-2 border-b border-[#e5e6eb] pb-4">
+                    <dt className="text-[14px] leading-[22px] text-[#4e5969]">视觉风格提示词（编辑不影响 Skill）</dt>
+                    <dd className="whitespace-pre-wrap break-words rounded-[10px] border border-[#e5e6eb] bg-[#f7f8fa] px-3 py-2.5 text-[14px] leading-[22px] text-[#1d2129]">
+                      {viewingTemplate.styleOverridePrompt?.trim() || viewingTemplate.styleAdjustmentPrompt?.trim() || '未配置'}
+                    </dd>
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-2 border-b border-[#e5e6eb] pb-4">
+                  <dt className="text-[14px] leading-[22px] text-[#4e5969]">章节与指标</dt>
+                  <dd className="space-y-2">
+                    <div className="rounded-[8px] bg-[#f7f8fa] px-3 py-2 text-[13px] leading-5 text-[#4e5969]">
+                      当前由所选报告结构 Skill 统一组织叙事风格与分析内容。
+                    </div>
                   </dd>
                 </div>
               </dl>
@@ -1060,6 +1659,7 @@ export default function TemplatesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
     </div>
   );
 }

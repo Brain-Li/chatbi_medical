@@ -30,6 +30,8 @@
   ReportResultData,
   ReportSubscription,
   ReportTemplate,
+  DefaultTemplateBinding,
+  ReportTemplateCategory,
   ReportTemplateUsage,
   RootCauseResultData,
   ResultScope,
@@ -42,6 +44,134 @@ import { buildAnalysisReportFileName } from './utils/reportFileName';
 import { summarizeReportTopic } from './utils/reportTopic';
 
 export const skills: Skill[] = [
+  {
+    id: 'skill-clean-executive-style',
+    name: '简洁管理看板风格',
+    scene: '视觉风格',
+    description: '使用简洁、清晰的视觉层级，突出重点数字和行动建议。',
+    triggerPhrases: ['管理看板风格', '简洁报告风格', '经营看板'],
+    skillMarkdown: `# 简洁管理看板风格
+
+1. 使用简洁、克制的视觉层级，优先突出关键数字。
+2. 图表标题、单位和结论保持清晰，避免装饰性元素。
+3. 重点异常使用明确的颜色提示，行动建议放在对应结论之后。`,
+    applicableAgentTypes: ['report'],
+    builtin: true,
+    status: '已启用',
+    version: 'v1.0',
+    debugState: '已验证',
+    tags: ['报告', '风格', '管理看板'],
+    kind: 'style',
+    outputArtifacts: ['指标卡', '趋势图', '行动建议'],
+  },
+  {
+    id: 'skill-data-storytelling',
+    name: 'Data Storytelling',
+    scene: '报告结构',
+    description: '明确分析对象、指标口径和观察范围，并将结果组织为结论、背景、洞察和行动建议。',
+    triggerPhrases: ['数据叙事', '报告叙事', '管理层报告'],
+    skillMarkdown: `# Data Storytelling
+
+1. 先明确分析对象、核心指标、统计口径、观察周期和对比基准；信息缺失时标注默认假设。
+2. 先给出关键结论，再补充背景与数据证据。
+3. 按“背景 -> 冲突或机会 -> 洞察 -> 建议”组织报告。
+4. 先判断总体趋势和同比/环比变化，再按科室、费用组、病种或项目下钻，定位主要贡献项和异常项。
+5. 每个结论说明指标值、变化幅度、对比基准和数据范围，并区分已确认事实、推断和待验证原因。
+6. 明确说明不确定性，并以具体行动收尾。`,
+    applicableAgentTypes: ['report'],
+    builtin: true,
+    status: '已启用',
+    version: 'v1.0',
+    debugState: '已验证',
+    tags: ['报告', '叙事', '写作'],
+    kind: 'narrative',
+    analysisRules: ['指标口径与范围', '趋势与对比', '维度下钻', '异常与贡献识别', '事实与假设分离'],
+    outputArtifacts: ['管理层摘要', '指标分析', '数据洞察', '行动建议'],
+  },
+  {
+    id: 'skill-management-report-narrative',
+    name: '管理层经营报告',
+    scene: '报告结构',
+    description: '突出经营摘要、关键变化和管理动作，适合院级管理层报告。',
+    triggerPhrases: ['管理层报告', '经营汇报', '院级经营报告'],
+    skillMarkdown: `# 管理层经营报告
+
+1. 先输出经营摘要和需要管理层关注的结论。
+2. 按“关键变化 -> 影响范围 -> 原因线索 -> 管理动作”组织报告。
+3. 每条建议明确责任方向和优先级。`,
+    applicableAgentTypes: ['report'],
+    builtin: true,
+    status: '已启用',
+    version: 'v1.0',
+    debugState: '已验证',
+    tags: ['报告', '叙事', '管理层'],
+    kind: 'narrative',
+    analysisRules: ['摘要前置', '影响范围', '行动优先级'],
+    outputArtifacts: ['经营摘要', '关键变化', '管理动作'],
+  },
+  {
+    id: 'skill-trend-report-narrative',
+    name: '趋势分析报告',
+    scene: '报告结构',
+    description: '围绕时间趋势、同比环比和变化原因组织报告。',
+    triggerPhrases: ['趋势报告', '趋势分析', '同比环比报告'],
+    skillMarkdown: `# 趋势分析报告
+
+1. 先说明观察周期和总体趋势。
+2. 按“趋势判断 -> 同比环比 -> 关键拐点 -> 变化原因”组织报告。
+3. 对明显变化标注数据证据和后续关注方向。`,
+    applicableAgentTypes: ['report'],
+    builtin: true,
+    status: '已启用',
+    version: 'v1.0',
+    debugState: '已验证',
+    tags: ['报告', '叙事', '趋势'],
+    kind: 'narrative',
+    analysisRules: ['趋势先行', '同比环比', '拐点识别'],
+    outputArtifacts: ['趋势结论', '变化证据', '关注方向'],
+  },
+  {
+    id: 'skill-abnormal-report-narrative',
+    name: '异常诊断报告',
+    scene: '报告结构',
+    description: '按异常概览、影响范围、原因线索和复核建议组织报告。',
+    triggerPhrases: ['异常诊断报告', '异常复核报告', '经营异常报告'],
+    skillMarkdown: `# 异常诊断报告
+
+1. 先概述异常程度、影响范围和优先级。
+2. 按“异常概览 -> 影响范围 -> 原因线索 -> 复核建议”组织报告。
+3. 区分已确认事实、候选原因和待验证问题。`,
+    applicableAgentTypes: ['report'],
+    builtin: true,
+    status: '已启用',
+    version: 'v1.0',
+    debugState: '已验证',
+    tags: ['报告', '叙事', '异常'],
+    kind: 'narrative',
+    analysisRules: ['异常分级', '事实与假设分离', '复核闭环'],
+    outputArtifacts: ['异常概览', '证据链', '复核建议'],
+  },
+  {
+    id: 'skill-special-topic-narrative',
+    name: '专题汇报结构',
+    scene: '报告结构',
+    description: '按专题背景、核心发现、数据证据和行动建议组织报告。',
+    triggerPhrases: ['专题汇报', '专题报告', '专项分析报告'],
+    skillMarkdown: `# 专题汇报结构
+
+1. 先交代专题背景、分析范围和需要回答的问题。
+2. 按“核心发现 -> 数据证据 -> 影响判断 -> 行动建议”组织报告。
+3. 结尾总结待跟进事项和下一步计划。`,
+    applicableAgentTypes: ['report'],
+    builtin: true,
+    status: '已启用',
+    version: 'v1.0',
+    debugState: '已验证',
+    tags: ['报告', '叙事', '专题'],
+    kind: 'narrative',
+    analysisRules: ['背景交代', '发现与证据', '行动计划'],
+    outputArtifacts: ['核心发现', '数据证据', '行动计划'],
+  },
   {
     id: 'skill-outpatient-ops',
     name: '门诊经营分析',
@@ -58,6 +188,7 @@ export const skills: Skill[] = [
     version: 'v1.2',
     debugState: '已验证',
     tags: ['门诊', '经营', '日报'],
+    kind: 'analysis',
     metricIds: ['metric-outpatient-revenue', 'metric-outpatient-visits', 'metric-drug-ratio', 'metric-inspection-revenue'],
     dimensionIds: ['dim-visit-date', 'dim-department', 'dim-doctor', 'dim-fee-group'],
     analysisRules: ['同比/环比对比', '科室贡献拆分', '药耗结构提示'],
@@ -79,6 +210,7 @@ export const skills: Skill[] = [
     version: 'v1.1',
     debugState: '已验证',
     tags: ['药占比', '耗占比', '异常'],
+    kind: 'analysis',
     metricIds: ['metric-drug-ratio', 'metric-consumable-ratio', 'metric-total-fee', 'metric-high-value-consumable'],
     dimensionIds: ['dim-visit-date', 'dim-discharge-date', 'dim-department', 'dim-disease-group', 'dim-fee-group'],
     analysisRules: ['药耗占比阈值', '费用结构偏移', '异常费用组识别'],
@@ -100,6 +232,7 @@ export const skills: Skill[] = [
     version: 'v1.0',
     debugState: '已验证',
     tags: ['科室', '收入', '结构'],
+    kind: 'analysis',
     metricIds: ['metric-outpatient-revenue', 'metric-inpatient-revenue', 'metric-inspection-revenue'],
     dimensionIds: ['dim-department', 'dim-doctor', 'dim-fee-group', 'dim-disease-group'],
     analysisRules: ['科室贡献度', '收入结构拆分', '重点科室排序'],
@@ -121,6 +254,7 @@ export const skills: Skill[] = [
     version: 'v1.0',
     debugState: '调试中',
     tags: ['异常', '费用', '归因'],
+    kind: 'analysis',
     metricIds: ['metric-total-fee', 'metric-high-value-consumable', 'metric-drug-ratio', 'metric-consumable-ratio'],
     dimensionIds: ['dim-visit-date', 'dim-discharge-date', 'dim-department', 'dim-disease-group', 'dim-fee-group'],
     analysisRules: ['异常波动规则', '费用分组聚类', '候选根因排序'],
@@ -142,6 +276,7 @@ export const skills: Skill[] = [
     version: 'v1.0',
     debugState: '待调试',
     tags: ['患者', '流量', '趋势'],
+    kind: 'analysis',
     metricIds: ['metric-outpatient-visits', 'metric-inpatient-admissions', 'metric-average-length-of-stay'],
     dimensionIds: ['dim-visit-date', 'dim-discharge-date', 'dim-department', 'dim-patient-type'],
     analysisRules: ['峰谷识别', '人群分层', '资源匹配提示'],
@@ -398,6 +533,7 @@ export const agents: Agent[] = [
     capabilitySummary: '支持日报、周报、月报和专题报告自动生成。',
     reportConfig: {
       theme: '门急诊经营分析',
+      industry: '医疗',
       metrics: ['门诊收入', '门诊量', '药占比', '检查收入'],
       scheduleEnabled: true,
       boundTemplateIds: ['template-operation-daily', 'template-dept-monthly'],
@@ -430,6 +566,7 @@ export const agents: Agent[] = [
     capabilitySummary: '支持多图表编排、异常提示和专题导出。',
     reportConfig: {
       theme: '专题经营分析',
+      industry: '医疗',
       metrics: ['药占比', '耗占比', '异常费用组'],
       scheduleEnabled: true,
       boundTemplateIds: ['template-pharmacy-structure', 'template-abnormal-fee'],
@@ -509,11 +646,11 @@ export const reportTemplates: ReportTemplate[] = [
     createdAt: '2026-06-18 09:00',
     status: 'published',
     triggerPhrases: ['经营日报', '日报', '昨天', '今日经营', '门诊经营日报', '住院经营日报'],
-    templatePrompt: `你是医院经营分析负责人，请按“日报”方式生成报告。
-报告先输出 3 条以内的管理层摘要，再展开关键指标、趋势对比、异常提示和行动建议。
-报告正文前部使用 4 个指标卡展示收入、门诊量/住院量、药占比/耗占比等核心结果，并至少提供 1 张趋势或对比图表。
-分析时重点关注收入、门诊量/住院量、药占比、耗占比、检查收入和重点科室贡献变化。
-结论必须先说业务影响，再说明可能原因；如果缺少口径或周期，请在报告开头标注默认假设。`,
+    templatePrompt: `面向院级管理层输出经营日报，默认统计昨天、范围为全院。
+正文前部使用 4 个指标卡，并至少提供 1 张趋势或对比图表。
+缺少口径或周期时，在报告开头标注默认假设；经营统计结论不得作为临床诊断。`,
+    narrativeMode: 'skill',
+    narrativeSkillId: 'skill-data-storytelling',
     applicableAgentIds: ['agent-report-daily'],
     datasetIds: ['semantic-outpatient', 'semantic-inpatient'],
     skillIds: ['skill-outpatient-ops', 'skill-department-revenue', 'skill-patient-flow'],
@@ -526,9 +663,9 @@ export const reportTemplates: ReportTemplate[] = [
     anomalyRules: ['连续两期超过阈值', '收入增速与流量增速偏离', '药耗结构异常抬升'],
     attributionPath: ['全院', '科室', '费用组', '时段'],
     sections: [
-      { id: 'daily-summary', title: '经营摘要', required: true, description: '给出日报核心结论。' },
-      { id: 'daily-metrics', title: '关键指标', required: true, description: '展示收入、流量和结构指标。' },
-      { id: 'daily-alerts', title: '异常提示', required: true, description: '突出需要关注的异常项。' },
+      { id: 'daily-summary', title: '经营摘要', required: true, description: '给出日报核心结论。', metricIds: ['metric-outpatient-revenue', 'metric-outpatient-visits', 'metric-drug-ratio'] },
+      { id: 'daily-metrics', title: '关键指标', required: true, description: '展示收入、流量和结构指标。', metricIds: ['metric-outpatient-revenue', 'metric-outpatient-visits', 'metric-drug-ratio'] },
+      { id: 'daily-alerts', title: '异常提示', required: true, description: '突出需要关注的异常项。', metricIds: ['metric-drug-ratio'] },
       { id: 'daily-actions', title: '管理建议', required: false, description: '给出排班和资源投放建议。' },
     ],
     metricBlocks: [
@@ -553,11 +690,11 @@ export const reportTemplates: ReportTemplate[] = [
     createdAt: '2026-06-17 10:30',
     status: 'published',
     triggerPhrases: ['科室运营月报', '运营月报', '月报', '本月', '上月', '科室经营'],
-    templatePrompt: `你是科室运营分析专家，请按“月报”方式生成结构化报告。
-报告结构包含：科室总览、同比环比趋势、收入/流量/费用结构拆解、异常科室或病种提示、下月管理建议。
-报告正文前部使用 3-4 个指标卡展示本月核心结果，并用折线图呈现同比环比趋势，必要时增加结构占比图。
-分析时优先解释趋势背后的结构变化，不只罗列数字；需要突出对科室负责人的可执行动作。
-输出语气面向经营管理场景，结论清晰、证据充分、建议具体。`,
+    templatePrompt: `面向科室负责人输出月报，默认统计本月并与上月、去年同期对比。
+正文前部使用 3-4 个指标卡，以折线图呈现趋势，必要时增加结构占比图。
+涉及医生组绩效时，必须遵循当前用户的数据权限。`,
+    narrativeMode: 'skill',
+    narrativeSkillId: 'skill-data-storytelling',
     applicableAgentIds: ['agent-report-daily'],
     datasetIds: ['semantic-outpatient', 'semantic-inpatient'],
     skillIds: ['skill-department-revenue', 'skill-patient-flow', 'skill-pharmacy-structure'],
@@ -570,9 +707,9 @@ export const reportTemplates: ReportTemplate[] = [
     anomalyRules: ['科室收入偏离目标', '平均费用异常抬升', '流量与收入趋势背离'],
     attributionPath: ['科室', '医生组', '病种组', '费用组'],
     sections: [
-      { id: 'dept-overview', title: '科室总览', required: true, description: '概览科室月度表现。' },
-      { id: 'dept-trend', title: '趋势对比', required: true, description: '展示同比和环比变化。' },
-      { id: 'dept-structure', title: '结构拆解', required: true, description: '按病种、医生和费用组拆解。' },
+      { id: 'dept-overview', title: '科室总览', required: true, description: '概览科室月度表现。', metricIds: ['metric-inpatient-revenue', 'metric-average-length-of-stay', 'metric-consumable-ratio'] },
+      { id: 'dept-trend', title: '趋势对比', required: true, description: '展示同比和环比变化。', metricIds: ['metric-inpatient-revenue', 'metric-average-length-of-stay'] },
+      { id: 'dept-structure', title: '结构拆解', required: true, description: '按病种、医生和费用组拆解。', metricIds: ['metric-consumable-ratio'] },
       { id: 'dept-suggestion', title: '经营建议', required: true, description: '给出科室管理动作。' },
     ],
     metricBlocks: [
@@ -597,11 +734,11 @@ export const reportTemplates: ReportTemplate[] = [
     createdAt: '2026-06-16 14:20',
     status: 'published',
     triggerPhrases: ['药耗结构', '药占比', '耗占比', '费用结构', '药耗专题'],
-    templatePrompt: `你是药耗结构专题分析专家，请围绕药占比、耗占比和费用结构变化生成专题报告。
-报告先判断总体是否异常，再拆解到费用组、科室、病种或项目，并说明主要贡献项。
-报告正文前部使用指标卡展示药占比、耗占比和异常费用规模，并使用饼图或柱状图呈现费用结构与主要贡献项。
-对异常项要给出可复核线索，例如变化幅度、连续期数、贡献排名和建议复核方向。
-最后输出控费、结构优化或进一步核查建议，避免直接给出临床诊断结论。`,
+    templatePrompt: `默认分析本月全院药耗结构，并与上月、去年同期及管理阈值对比。
+使用指标卡展示核心结果，以饼图或柱状图呈现费用结构和主要贡献项。
+异常提示仅用于经营复核，不得直接形成临床诊断结论。`,
+    narrativeMode: 'skill',
+    narrativeSkillId: 'skill-data-storytelling',
     applicableAgentIds: ['agent-report-special'],
     datasetIds: ['semantic-outpatient', 'semantic-inpatient'],
     skillIds: ['skill-pharmacy-structure', 'skill-abnormal-fee', 'skill-department-revenue'],
@@ -614,9 +751,9 @@ export const reportTemplates: ReportTemplate[] = [
     anomalyRules: ['药占比超过阈值', '耗占比连续抬升', '高值耗材费用组异常'],
     attributionPath: ['费用组', '科室', '病种组', '项目'],
     sections: [
-      { id: 'pharmacy-summary', title: '专题摘要', required: true, description: '总结药耗结构变化。' },
-      { id: 'pharmacy-breakdown', title: '费用结构拆解', required: true, description: '拆解药品和耗材贡献。' },
-      { id: 'pharmacy-alerts', title: '异常费用组', required: true, description: '列出异常费用组和证据。' },
+      { id: 'pharmacy-summary', title: '专题摘要', required: true, description: '总结药耗结构变化。', metricIds: ['metric-drug-ratio', 'metric-consumable-ratio', 'metric-high-value-consumable'] },
+      { id: 'pharmacy-breakdown', title: '费用结构拆解', required: true, description: '拆解药品和耗材贡献。', metricIds: ['metric-drug-ratio', 'metric-consumable-ratio'] },
+      { id: 'pharmacy-alerts', title: '异常费用组', required: true, description: '列出异常费用组和证据。', metricIds: ['metric-high-value-consumable'] },
       { id: 'pharmacy-actions', title: '治理建议', required: true, description: '输出控费和复核建议。' },
     ],
     metricBlocks: [
@@ -641,11 +778,11 @@ export const reportTemplates: ReportTemplate[] = [
     createdAt: '2026-06-15 16:45',
     status: 'published',
     triggerPhrases: ['异常费用', '费用异常', '异常费用专题', '费用波动', '异常组'],
-    templatePrompt: `你是异常费用复核分析专家，请按“异常概览 -> 异常聚类 -> 证据链 -> 复核建议”的结构生成报告。
-先界定观察期、影响范围和异常等级，再列出主要异常费用组及其贡献。
-报告正文前部使用指标卡展示异常数量、异常金额和影响范围，并使用柱状图呈现异常费用组贡献排名。
-分析中要区分经营异常、结构变化和可能的数据口径问题；每个结论都要附带可复核的数据线索。
-报告末尾给出下一步人工复核路径和优先级。`,
+    templatePrompt: `默认观察最近 30 天的异常费用，使用系统阈值并按影响规模排序。
+正文前部展示异常数量、异常金额和影响范围，以柱状图呈现异常费用组贡献。
+病例级明细默认只展示汇总证据，所有异常结论必须经过人工复核。`,
+    narrativeMode: 'skill',
+    narrativeSkillId: 'skill-data-storytelling',
     applicableAgentIds: ['agent-report-special'],
     datasetIds: ['semantic-outpatient', 'semantic-inpatient'],
     skillIds: ['skill-abnormal-fee', 'skill-pharmacy-structure', 'skill-patient-flow'],
@@ -658,9 +795,9 @@ export const reportTemplates: ReportTemplate[] = [
     anomalyRules: ['费用组超过历史区间', '单项目费用异常抬升', '同类病例费用偏离'],
     attributionPath: ['异常费用组', '科室', '病种组', '项目', '病例'],
     sections: [
-      { id: 'abnormal-overview', title: '异常概览', required: true, description: '概览异常数量和影响范围。' },
-      { id: 'abnormal-cluster', title: '异常聚类', required: true, description: '展示异常费用组和记录聚类。' },
-      { id: 'abnormal-evidence', title: '证据链', required: true, description: '列出规则命中和数据证据。' },
+      { id: 'abnormal-overview', title: '异常概览', required: true, description: '概览异常数量和影响范围。', metricIds: ['metric-total-fee', 'metric-high-value-consumable'] },
+      { id: 'abnormal-cluster', title: '异常聚类', required: true, description: '展示异常费用组和记录聚类。', metricIds: ['metric-total-fee', 'metric-high-value-consumable'] },
+      { id: 'abnormal-evidence', title: '证据链', required: true, description: '列出规则命中和数据证据。', metricIds: ['metric-total-fee'] },
       { id: 'abnormal-next', title: '复核建议', required: true, description: '输出后续复核动作。' },
     ],
     metricBlocks: [
@@ -769,6 +906,8 @@ export const reportTemplates: ReportTemplate[] = [
     industry: '医疗',
     version: 'v1.0',
     templatePrompt: `请围绕“${template.name.replace('模板', '')}”生成结构化经营分析报告，包含核心摘要、趋势分析、异常提示和管理建议。报告正文前部使用 3-4 个指标卡展示核心结果，并根据主题至少生成 1 张趋势、对比或结构图表，图表标题和统计口径需清晰。`,
+    narrativeMode: 'skill',
+    narrativeSkillId: 'skill-data-storytelling',
     applicableAgentIds: [template.category === '专题' ? 'agent-report-special' : 'agent-report-daily'],
     datasetIds: ['semantic-outpatient', 'semantic-inpatient'],
     skillIds: ['skill-department-revenue', 'skill-patient-flow'],
@@ -789,6 +928,49 @@ export const reportTemplates: ReportTemplate[] = [
     complianceNotes: ['演示模板仅用于界面与分页效果验证。'],
   })),
 ];
+
+const defaultTemplateCategoryBaseIds: Record<ReportTemplateCategory, string> = {
+  日报: 'template-operation-daily',
+  周报: 'template-operation-daily',
+  月报: 'template-dept-monthly',
+  专题: 'template-pharmacy-structure',
+};
+
+const generatedIndustryDefaultTemplates: ReportTemplate[] = [
+  { industry: '医疗', categories: ['周报'] as ReportTemplateCategory[] },
+  { industry: '汽车', categories: Object.keys(defaultTemplateCategoryBaseIds) as ReportTemplateCategory[] },
+  { industry: '云管', categories: Object.keys(defaultTemplateCategoryBaseIds) as ReportTemplateCategory[] },
+].flatMap(({ industry, categories }) =>
+  categories.map((category) => {
+    const base = reportTemplates.find((template) => template.id === defaultTemplateCategoryBaseIds[category])!;
+    return {
+      ...base,
+      id: `template-default-${industry}-${category}`,
+      name: `${industry}${category}默认模板`,
+      description: `${industry}行业${category}的通用默认报告模板，未明确选择模板时用于兜底。`,
+      industry,
+      category,
+      version: 'v1.0',
+      createdAt: '2026-06-01 09:00',
+      applicableAgentIds: [],
+      triggerPhrases: [`${industry}${category}`, `${category}默认`],
+    };
+  }),
+);
+
+reportTemplates.push(...generatedIndustryDefaultTemplates);
+
+export const defaultTemplateBindings: DefaultTemplateBinding[] = ['医疗', '汽车', '云管'].flatMap((industry) =>
+  (Object.keys(defaultTemplateCategoryBaseIds) as ReportTemplateCategory[]).map((category) => ({
+    id: `default-binding-${industry}-${category}`,
+    industry,
+    category,
+    templateId: industry === '医疗'
+      ? (category === '日报' ? 'template-operation-daily' : category === '月报' ? 'template-dept-monthly' : category === '专题' ? 'template-pharmacy-structure' : `template-default-${industry}-${category}`)
+      : `template-default-${industry}-${category}`,
+    updatedAt: '2026-06-01 09:00',
+  })),
+);
 
 export const reportSubscriptions: ReportSubscription[] = [
   {
@@ -3347,6 +3529,7 @@ type ResultBuildOptions = {
   manualSkillIds?: string[];
   reportTemplateId?: string;
   reportTemplates?: ReportTemplate[];
+  defaultTemplateBindings?: DefaultTemplateBinding[];
   reportTemplateUsage?: ReportTemplateUsage;
 };
 
@@ -3357,7 +3540,37 @@ function includesLoose(source: string, target: string) {
 }
 
 function getReportTemplatePrompt(template: ReportTemplate) {
-  return template.templatePrompt || template.description || template.sections.map((section) => section.description).join(' ');
+  const narrativePrompt = !template.narrativeMode
+    ? template.templatePrompt || template.description || template.sections.map((section) => section.description).join(' ')
+    : template.narrativeMode === 'custom'
+    ? template.customNarrativePrompt ?? ''
+    : template.narrativeMode === 'adjusted' && template.narrativeOverridePrompt?.trim()
+      ? template.narrativeOverridePrompt
+    : skills.find((skill) => skill.id === template.narrativeSkillId)?.skillMarkdown ?? '';
+  const narrativeAdjustmentPrompt = template.narrativeMode === 'adjusted' && !template.narrativeOverridePrompt?.trim()
+    ? template.narrativeAdjustmentPrompt ?? ''
+    : '';
+  const stylePrompt = template.styleMode === 'custom'
+    ? template.customStylePrompt ?? ''
+    : template.styleMode === 'adjusted' && template.styleOverridePrompt?.trim()
+      ? template.styleOverridePrompt
+    : skills.find((skill) => skill.id === (template.styleSkillId ?? 'skill-clean-executive-style'))?.skillMarkdown ?? '';
+  const styleAdjustmentPrompt = template.styleMode === 'adjusted' && !template.styleOverridePrompt?.trim()
+    ? template.styleAdjustmentPrompt ?? ''
+    : '';
+  const sectionPrompt = '';
+
+  return [narrativePrompt, narrativeAdjustmentPrompt, stylePrompt, styleAdjustmentPrompt, sectionPrompt]
+    .filter(Boolean)
+    .join('\n');
+}
+
+function inferReportCategory(question: string): ReportTemplateCategory | undefined {
+  if (/(日报|每日|昨日|今天|今日)/.test(question)) return '日报';
+  if (/(周报|每周|本周|上周|周度)/.test(question)) return '周报';
+  if (/(月报|每月|本月|上月|月度)/.test(question)) return '月报';
+  if (/(专题|专项)/.test(question)) return '专题';
+  return undefined;
 }
 
 function createStableTemplateSuffix(value: string) {
@@ -3490,8 +3703,9 @@ function resolveReportTemplate(agent: Agent, question: string, options: ResultBu
     template.status === 'published'
     && (!template.applicableAgentIds.length || template.applicableAgentIds.includes(agent.id)),
   );
+  const matchableTemplates = candidateTemplates.filter((template) => !template.id.startsWith('template-default-'));
 
-  const scoredTemplates = agent.reportConfig?.autoMatchTemplate === false ? [] : candidateTemplates.map((template) => {
+  const scoredTemplates = agent.reportConfig?.autoMatchTemplate === false ? [] : matchableTemplates.map((template) => {
     let score = 0;
     const reasons: string[] = [];
 
@@ -3544,6 +3758,29 @@ function resolveReportTemplate(agent: Agent, question: string, options: ResultBu
     };
   }
 
+  const inferredCategory = inferReportCategory(question);
+  const defaultIndustry = agent.reportConfig?.industry ?? '医疗';
+  const defaultBinding = (options.defaultTemplateBindings ?? defaultTemplateBindings).find((binding) =>
+    binding.industry === defaultIndustry
+      && binding.category === (inferredCategory ?? '专题'),
+  );
+  const defaultTemplate = defaultBinding
+    ? templatePool.find((template) =>
+        template.id === defaultBinding.templateId
+        && template.status === 'published'
+        && (template.industry || '医疗') === defaultIndustry,
+      )
+    : undefined;
+  if (defaultTemplate) {
+    return {
+      template: defaultTemplate,
+      source: 'industry-default' as const,
+      matchReason: inferredCategory
+        ? `使用${defaultIndustry}行业${inferredCategory}默认模板`
+        : `使用${defaultIndustry}行业通用默认模板`,
+    };
+  }
+
   const generationReason = options.reportTemplateId
     ? '用户选择的模板不可用，已由 Agent 动态生成临时模板'
     : agent.reportConfig?.autoMatchTemplate === false
@@ -3580,10 +3817,15 @@ export function resolveReportTemplateUsage(
     datasetNames: template.datasetIds
       .map((datasetId) => semanticDatasets.find((dataset) => dataset.id === datasetId)?.name)
       .filter(Boolean) as string[],
-    skillNames: template.skillIds
+    skillNames: [...template.skillIds, ...(template.narrativeSkillId ? [template.narrativeSkillId] : [])]
       .map((skillId) => skills.find((skill) => skill.id === skillId)?.name)
       .filter(Boolean) as string[],
-    metricLabels: template.metricBlocks.map((block) => block.label),
+    metricLabels: Array.from(new Set([
+      ...template.metricBlocks.map((block) => block.label),
+      ...template.sections.flatMap((section) => (section.metricIds ?? [])
+        .map((metricId) => indicatorAssets.find((indicator) => indicator.id === metricId)?.name)
+        .filter((name): name is string => Boolean(name))),
+    ])),
     complianceNotes: template.complianceNotes,
     matchReason,
   };
