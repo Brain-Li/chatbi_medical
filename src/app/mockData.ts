@@ -65,6 +65,106 @@ export const skills: Skill[] = [
     outputArtifacts: ['指标卡', '趋势图', '行动建议'],
   },
   {
+    id: 'skill-fresh-data-brief-style',
+    name: '清新数据简报风格',
+    scene: '视觉风格',
+    description: '使用清爽留白与青绿色强调，适合日常经营简报和趋势汇报。',
+    triggerPhrases: ['清新简报风格', '轻量数据报告', '青绿报告'],
+    skillMarkdown: `# 清新数据简报风格
+
+1. 使用大面积白色与浅青色背景，保持清爽、轻量的阅读感受。
+2. 关键指标使用青绿色强调，趋势和对比信息使用蓝色辅助表达。
+3. 图表减少网格线和装饰，仅保留必要标签、单位与结论。`,
+    applicableAgentTypes: ['report'],
+    builtin: true,
+    status: '已启用',
+    version: 'v1.0',
+    debugState: '已验证',
+    tags: ['报告', '风格', '数据简报'],
+    kind: 'style',
+    outputArtifacts: ['简报标题', '轻量指标卡', '趋势图'],
+  },
+  {
+    id: 'skill-dark-operations-cockpit-style',
+    name: '深色运营驾驶舱风格',
+    scene: '视觉风格',
+    description: '使用深色高对比界面强化实时指标、趋势变化和异常预警。',
+    triggerPhrases: ['深色驾驶舱', '运营大屏风格', '深色数据看板'],
+    skillMarkdown: `# 深色运营驾驶舱风格
+
+1. 使用深色背景和高对比文字，突出实时监控与运营驾驶舱氛围。
+2. 核心指标使用高亮蓝绿色，异常和风险使用橙色或红色表达。
+3. 图表保持紧凑，优先展示趋势、排名与告警，避免大段正文。`,
+    applicableAgentTypes: ['report'],
+    builtin: true,
+    status: '已启用',
+    version: 'v1.0',
+    debugState: '已验证',
+    tags: ['报告', '风格', '运营驾驶舱'],
+    kind: 'style',
+    outputArtifacts: ['实时指标卡', '趋势监控', '异常预警'],
+  },
+  {
+    id: 'skill-healthcare-operations-style',
+    name: '医疗运营分析风格',
+    scene: '视觉风格',
+    description: '面向医院经营分析，突出诊疗量、床位效率、费用结构和异常指标。',
+    triggerPhrases: ['医疗运营风格', '医院经营报告', '诊疗分析看板'],
+    skillMarkdown: `# 医疗运营分析风格
+
+1. 使用清晰、克制的医疗运营看板布局，优先展示诊疗量、床位效率和费用结构。
+2. 以青绿色和蓝色表达常规指标，红色仅用于异常、风险和需要复核的项目。
+3. 图表标明统计周期、指标口径和对比基准，管理建议紧随异常结论。`,
+    applicableAgentTypes: ['report'],
+    builtin: true,
+    status: '已启用',
+    version: 'v1.0',
+    debugState: '已验证',
+    tags: ['报告', '风格', '医疗运营'],
+    kind: 'style',
+    outputArtifacts: ['诊疗指标卡', '床位效率图', '异常提示'],
+  },
+  {
+    id: 'skill-automotive-business-style',
+    name: '汽车经营分析风格',
+    scene: '视觉风格',
+    description: '面向汽车销售与经营分析，突出销量、渠道、车型结构和目标达成。',
+    triggerPhrases: ['汽车经营风格', '汽车销量报告', '车型分析看板'],
+    skillMarkdown: `# 汽车经营分析风格
+
+1. 使用现代、利落的经营分析布局，突出销量、目标达成率和车型结构。
+2. 使用橙色强调核心业务指标，蓝色辅助表达渠道和区域对比。
+3. 趋势图与排名图保持高信息密度，异常变化同时标注影响范围和建议动作。`,
+    applicableAgentTypes: ['report'],
+    builtin: true,
+    status: '已启用',
+    version: 'v1.0',
+    debugState: '已验证',
+    tags: ['报告', '风格', '汽车经营'],
+    kind: 'style',
+    outputArtifacts: ['销量指标卡', '车型结构图', '渠道排名'],
+  },
+  {
+    id: 'skill-cloud-resource-management-style',
+    name: '云资源管理风格',
+    scene: '视觉风格',
+    description: '面向云资源运营，突出资源利用率、稳定性、成本和容量风险。',
+    triggerPhrases: ['云资源管理风格', '云资源报告', '资源利用率看板'],
+    skillMarkdown: `# 云资源管理风格
+
+1. 使用清晰的云资源管理视图，优先展示计算、存储、网络和成本指标。
+2. 使用蓝色与青色区分资源类型，绿色表达健康状态，异常容量使用警示色。
+3. 图表突出利用率趋势、成本变化和容量风险，并给出可执行的优化建议。`,
+    applicableAgentTypes: ['report'],
+    builtin: true,
+    status: '已启用',
+    version: 'v1.0',
+    debugState: '已验证',
+    tags: ['报告', '风格', '云资源'],
+    kind: 'style',
+    outputArtifacts: ['资源利用率', '成本趋势', '容量预警'],
+  },
+  {
     id: 'skill-data-storytelling',
     name: 'Data Storytelling',
     scene: '报告结构',

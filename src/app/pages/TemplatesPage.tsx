@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Settings2, X } from 'lucide-react';
+import { Check, PencilLine, Settings2, X } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { ReportTemplate, ReportTemplateSection, ReportTemplateStatus } from '../types';
 import templateModalChevronDown from '../../assets/figma-report-template/template-modal-chevron-down.svg';
@@ -36,6 +36,101 @@ const templateDescriptionMaxLength = 50;
 const defaultTemplateIndustry = '医疗';
 const templateIndustries = ['医疗', '汽车', '云管'];
 const templateCategories = ['专题', '日报', '周报', '月报'];
+const templateEditorSteps = [
+  { value: 'basic', title: '基本信息' },
+  { value: 'structure', title: '报告结构' },
+  { value: 'style', title: '视觉风格' },
+  { value: 'confirm', title: '确认创建' },
+] as const;
+
+const stylePreviewPalettes = [
+  {
+    canvas: '#f2f3f5',
+    surface: '#ffffff',
+    surfaceMuted: '#f7f8fa',
+    accent: '#165dff',
+    secondary: '#14c9c9',
+    signal: '#f53f3f',
+    text: '#1d2129',
+    previewTitle: '经营概览',
+    metrics: ['128.6', '86%', '+8.2%'],
+  },
+  {
+    canvas: '#edf9f6',
+    surface: '#ffffff',
+    surfaceMuted: '#f2fbf8',
+    accent: '#00a870',
+    secondary: '#3491fa',
+    signal: '#ff7d00',
+    text: '#1d2129',
+    previewTitle: '数据简报',
+    metrics: ['96.4', '72%', '+5.6%'],
+  },
+  {
+    canvas: '#111827',
+    surface: '#1f2937',
+    surfaceMuted: '#273449',
+    accent: '#38bdf8',
+    secondary: '#22c55e',
+    signal: '#f59e0b',
+    text: '#f8fafc',
+    previewTitle: '实时监控',
+    metrics: ['3.8k', '94%', '+12%'],
+  },
+  {
+    canvas: '#edf8f7',
+    surface: '#ffffff',
+    surfaceMuted: '#f1faf8',
+    accent: '#0e7c86',
+    secondary: '#165dff',
+    signal: '#f53f3f',
+    text: '#1d2129',
+    previewTitle: '诊疗运营',
+    metrics: ['12.8k', '92%', '-1.6%'],
+  },
+  {
+    canvas: '#f5f6f7',
+    surface: '#ffffff',
+    surfaceMuted: '#f7f8fa',
+    accent: '#ff7d00',
+    secondary: '#165dff',
+    signal: '#00b42a',
+    text: '#1d2129',
+    previewTitle: '销量运营',
+    metrics: ['3.2k', '68%', '+12%'],
+  },
+  {
+    canvas: '#edf6ff',
+    surface: '#ffffff',
+    surfaceMuted: '#f2f7ff',
+    accent: '#4e7cff',
+    secondary: '#14c9c9',
+    signal: '#00b42a',
+    text: '#1d2129',
+    previewTitle: '资源总览',
+    metrics: ['72%', '99.9%', '-8.4%'],
+  },
+] as const;
+
+const stylePreviewPaletteIndex: Record<string, number> = {
+  'skill-clean-executive-style': 0,
+  'skill-fresh-data-brief-style': 1,
+  'skill-dark-operations-cockpit-style': 2,
+  'skill-healthcare-operations-style': 3,
+  'skill-automotive-business-style': 4,
+  'skill-cloud-resource-management-style': 5,
+};
+
+function getStylePreviewPalette(skillId: string) {
+  const knownIndex = stylePreviewPaletteIndex[skillId];
+  if (knownIndex !== undefined) return stylePreviewPalettes[knownIndex];
+
+  const fallbackIndex = Array.from(skillId).reduce((total, character) => total + character.charCodeAt(0), 0)
+    % stylePreviewPalettes.length;
+  return stylePreviewPalettes[fallbackIndex];
+}
+
+type TemplateEditorStep = (typeof templateEditorSteps)[number]['value'];
 
 type TemplateFormState = {
   name: string;
@@ -238,17 +333,16 @@ export default function TemplatesPage() {
   const [viewingTemplate, setViewingTemplate] = useState<ReportTemplate | null>(null);
   const [pendingDeleteTemplate, setPendingDeleteTemplate] = useState<ReportTemplate | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
-  const [editorStep, setEditorStep] = useState<'basic' | 'structure' | 'style'>('basic');
+  const [editorStep, setEditorStep] = useState<TemplateEditorStep>('basic');
   const [showDefaultTemplateManager, setShowDefaultTemplateManager] = useState(false);
   const [defaultTemplateIndustry, setDefaultTemplateIndustry] = useState(templateIndustries[0]);
   const [defaultTemplateDraft, setDefaultTemplateDraft] = useState<Record<string, string>>({});
   const [form, setForm] = useState<TemplateFormState>(emptyTemplateForm);
   const editorContentRef = useRef<HTMLDivElement>(null);
   const templateNameRef = useRef<HTMLInputElement>(null);
-  const templateDescriptionRef = useRef<HTMLTextAreaElement>(null);
   const customNarrativePromptRef = useRef<HTMLTextAreaElement>(null);
   const customStylePromptRef = useRef<HTMLTextAreaElement>(null);
-  const [basicErrors, setBasicErrors] = useState<{ name?: string; description?: string }>({});
+  const [basicErrors, setBasicErrors] = useState<{ name?: string }>({});
   const [structureErrors, setStructureErrors] = useState<{ skill?: string; prompt?: string }>({});
   const [styleErrors, setStyleErrors] = useState<{ skill?: string; prompt?: string }>({});
 
@@ -262,7 +356,16 @@ export default function TemplatesPage() {
     [skills],
   );
   const selectedStyleSkill = styleSkills.find((skill) => skill.id === form.styleSkillId);
-  const currentEditorStepIndex = ['basic', 'structure', 'style'].indexOf(editorStep);
+  const defaultNarrativePrompt = selectedNarrativeSkill?.skillMarkdown ?? '';
+  const displayedNarrativePrompt = form.narrativeMode === 'adjusted'
+    ? form.narrativeOverridePrompt
+      || form.narrativeAdjustmentPrompt
+      || defaultNarrativePrompt
+      || ''
+    : defaultNarrativePrompt;
+  const isNarrativePromptAdjusted = form.narrativeMode === 'adjusted'
+    && displayedNarrativePrompt !== defaultNarrativePrompt;
+  const currentEditorStepIndex = templateEditorSteps.findIndex((step) => step.value === editorStep);
 
   useEffect(() => {
     editorContentRef.current?.scrollTo({ top: 0 });
@@ -366,17 +469,14 @@ export default function TemplatesPage() {
   const validateBasicStep = () => {
     const nextErrors = {
       name: form.name.trim() ? undefined : '请输入模板名称',
-      description: form.description.trim() ? undefined : '请输入模板描述',
     };
     setBasicErrors(nextErrors);
 
     if (nextErrors.name) {
       templateNameRef.current?.focus();
-    } else if (nextErrors.description) {
-      templateDescriptionRef.current?.focus();
     }
 
-    return !nextErrors.name && !nextErrors.description;
+    return !nextErrors.name;
   };
 
   const validateStructureStep = () => {
@@ -405,16 +505,20 @@ export default function TemplatesPage() {
     return !nextErrors.skill && !nextErrors.prompt;
   };
 
-  const handleEditorStepChange = (nextStep: 'basic' | 'structure' | 'style') => {
-    if (editorStep === 'basic' && nextStep !== 'basic') {
-      if (!validateBasicStep()) return;
-      if (nextStep === 'style') {
-        setEditorStep('structure');
-        return;
-      }
+  const handleEditorStepChange = (requestedStep: TemplateEditorStep) => {
+    const requestedStepIndex = templateEditorSteps.findIndex((step) => step.value === requestedStep);
+
+    if (requestedStepIndex <= currentEditorStepIndex) {
+      setEditorStep(requestedStep);
+      return;
     }
-    if (editorStep === 'structure' && nextStep === 'style' && !validateStructureStep()) return;
-    setEditorStep(nextStep);
+
+    if (editorStep === 'basic' && !validateBasicStep()) return;
+    if (editorStep === 'structure' && !validateStructureStep()) return;
+    if (editorStep === 'style' && !validateStyleStep()) return;
+
+    const nextStep = templateEditorSteps[currentEditorStepIndex + 1]?.value;
+    if (nextStep) setEditorStep(nextStep);
   };
 
   const handleSaveTemplate = () => {
@@ -426,7 +530,10 @@ export default function TemplatesPage() {
       setEditorStep('structure');
       return;
     }
-    if (!validateStyleStep()) return;
+    if (!validateStyleStep()) {
+      setEditorStep('style');
+      return;
+    }
     const nextTemplate = createTemplateFromForm(form, editingTemplate ?? undefined);
 
     if (editingTemplate) {
@@ -468,24 +575,6 @@ export default function TemplatesPage() {
       });
     });
     setShowDefaultTemplateManager(false);
-  };
-
-  const cancelNarrativeAdjustment = () => {
-    setForm((current) => ({
-      ...current,
-      narrativeMode: 'skill',
-      narrativeOverridePrompt: '',
-      narrativeAdjustmentPrompt: '',
-    }));
-  };
-
-  const cancelStyleAdjustment = () => {
-    setForm((current) => ({
-      ...current,
-      styleMode: 'skill',
-      styleOverridePrompt: '',
-      styleAdjustmentPrompt: '',
-    }));
   };
 
   return (
@@ -913,7 +1002,7 @@ export default function TemplatesPage() {
             event.preventDefault();
             event.currentTarget.focus();
           }}
-          className="!flex h-[760px] w-[760px] max-h-[calc(100vh-32px)] max-w-[calc(100vw-32px)] flex-col gap-0 overflow-hidden rounded-[16px] border-0 bg-white p-0 font-['PingFang_SC','Microsoft_YaHei',sans-serif] shadow-[-2px_0_22.1px_rgba(0,0,0,0.01)] sm:max-w-[760px]"
+          className="!flex h-[760px] w-[760px] max-h-[calc(100vh-32px)] !max-w-[calc(100vw-32px)] flex-col gap-0 overflow-hidden rounded-[16px] border-0 bg-white p-0 font-['PingFang_SC','Microsoft_YaHei',sans-serif] shadow-[-2px_0_22.1px_rgba(0,0,0,0.01)] lg:!max-w-[760px]"
         >
           <div className="shrink-0 border-b border-[#e5e6eb] px-6 pb-3 pt-4">
             <DialogHeader className="flex-row items-center justify-between gap-0 text-left">
@@ -927,26 +1016,13 @@ export default function TemplatesPage() {
             </DialogHeader>
 
             <nav aria-label="模板配置步骤" className="mt-3">
-              <ol className="grid grid-cols-3">
-                {[
-                  {
-                    value: 'basic' as const,
-                    title: '基本信息',
-                  },
-                  {
-                    value: 'structure' as const,
-                    title: '报告结构',
-                  },
-                  {
-                    value: 'style' as const,
-                    title: '视觉风格',
-                  },
-                ].map((step, index) => {
+              <ol className="grid grid-cols-4">
+                {templateEditorSteps.map((step, index) => {
                   const isActive = editorStep === step.value;
                   const isComplete = index < currentEditorStepIndex;
                   return (
                     <li key={step.value} className="relative min-w-0">
-                      {index < 2 && (
+                      {index < templateEditorSteps.length - 1 && (
                         <span
                           aria-hidden="true"
                           className={`absolute left-[calc(50%+18px)] top-3 h-px w-[calc(100%-36px)] ${
@@ -970,7 +1046,7 @@ export default function TemplatesPage() {
                           {isComplete ? <Check aria-hidden="true" className="h-3.5 w-3.5" /> : index + 1}
                         </span>
                         <span className={`mt-1 block text-[13px] leading-5 ${isActive ? 'font-medium text-[#1d2129]' : 'text-[#4e5969]'}`}>
-                          {step.title}
+                          {step.value === 'confirm' && editingTemplate ? '确认修改' : step.title}
                         </span>
                       </button>
                     </li>
@@ -985,12 +1061,13 @@ export default function TemplatesPage() {
 
             <div className="flex flex-col gap-2">
               <label htmlFor="template-name" className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">
-                模板名称
+                模板名称<span aria-hidden="true" className="ml-0.5 text-[#f53f3f]">*</span>
               </label>
               <div className="relative h-10">
                 <input
                   id="template-name"
                   ref={templateNameRef}
+                  required
                   maxLength={20}
                   value={form.name}
                   aria-invalid={Boolean(basicErrors.name)}
@@ -1095,29 +1172,24 @@ export default function TemplatesPage() {
 
             <div className="flex flex-col gap-2">
               <label htmlFor="template-description" className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">
-                模板描述
+                模板描述<span className="ml-1 text-[12px] text-[#86909c]">（选填）</span>
               </label>
-              <div className="relative h-20">
+              <div className="relative h-32">
                 <textarea
                   id="template-description"
-                  ref={templateDescriptionRef}
                   value={form.description ?? ''}
-                  aria-invalid={Boolean(basicErrors.description)}
-                  aria-describedby={basicErrors.description ? 'template-description-error' : undefined}
                   onChange={(event) => {
                     const description = event.currentTarget.value.slice(0, templateDescriptionMaxLength);
                     setForm((current) => ({ ...current, description }));
-                    if (basicErrors.description) setBasicErrors((current) => ({ ...current, description: undefined }));
                   }}
                   placeholder="请输入模板描述"
                   maxLength={templateDescriptionMaxLength}
-                  className={`h-full w-full resize-none rounded-[12px] border bg-white px-3 py-2.5 pr-14 text-[14px] leading-[22px] tracking-[0.15px] text-[#1d2129] outline-none placeholder:text-[#86909c] focus:ring-2 focus:ring-[#165dff]/10 ${basicErrors.description ? 'border-[#f53f3f] focus:border-[#f53f3f]' : 'border-[#e5e6eb] focus:border-[#165dff]'}`}
+                  className="h-full w-full resize-none rounded-[12px] border border-[#e5e6eb] bg-white px-3 py-2.5 pr-14 text-[14px] leading-[22px] tracking-[0.15px] text-[#1d2129] outline-none placeholder:text-[#86909c] focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10"
                 />
                 <span className="pointer-events-none absolute bottom-2 right-3 text-[12px] leading-5 text-[#86909c]">
                   {(form.description ?? '').length}/{templateDescriptionMaxLength}
                 </span>
               </div>
-              {basicErrors.description && <p id="template-description-error" className="text-[12px] leading-5 text-[#f53f3f]">{basicErrors.description}</p>}
             </div>
 
             </>}
@@ -1162,16 +1234,13 @@ export default function TemplatesPage() {
                   <Select
                     value={form.narrativeSkillId || undefined}
                     onValueChange={(value) => {
-                      setForm((current) => {
-                        const nextSkillId = value;
-                        return {
-                          ...current,
-                          narrativeSkillId: nextSkillId,
-                          ...(current.narrativeMode === 'adjusted'
-                            ? { narrativeOverridePrompt: skills.find((skill) => skill.id === nextSkillId)?.skillMarkdown ?? '' }
-                            : {}),
-                        };
-                      });
+                      setForm((current) => ({
+                        ...current,
+                        narrativeMode: 'skill',
+                        narrativeSkillId: value,
+                        narrativeOverridePrompt: '',
+                        narrativeAdjustmentPrompt: '',
+                      }));
                       if (structureErrors.skill) setStructureErrors((current) => ({ ...current, skill: undefined }));
                     }}
                   >
@@ -1208,54 +1277,72 @@ export default function TemplatesPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <div className="flex items-center justify-end gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setForm((current) => ({
-                        ...current,
-                        narrativeMode: 'adjusted',
-                        narrativeOverridePrompt: current.narrativeOverridePrompt
-                          || skills.find((skill) => skill.id === current.narrativeSkillId)?.skillMarkdown
-                          || '',
-                      }))}
-                      className={`shrink-0 text-[12px] leading-5 text-[#165dff] hover:text-[#0e42d2] ${form.narrativeMode === 'adjusted' ? 'hidden' : ''}`}
-                    >
-                      调整报告结构（可选）
-                    </button>
-                  </div>
-                  {form.narrativeMode === 'adjusted' && (
-                    <div className="flex flex-col gap-3 rounded-[10px] border border-[#e5e6eb] bg-[#f7f8fa] p-3">
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center justify-between gap-3">
-                          <label htmlFor="narrative-override-prompt" className="text-[13px] leading-5 text-[#4e5969]">
-                            报告结构提示词（编辑不影响 Skill）
-                          </label>
-                          <div className="flex shrink-0 items-center gap-3">
-                            <button
-                              type="button"
-                              onClick={cancelNarrativeAdjustment}
-                              className="text-[12px] leading-5 text-[#86909c] hover:text-[#4e5969]"
+                  <div className="flex flex-col gap-3 rounded-[10px] border border-[#e5e6eb] bg-[#f7f8fa] p-3">
+                    <div className="group/prompt flex flex-col gap-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5">
+                          <Tooltip delayDuration={240}>
+                            <TooltipTrigger asChild>
+                              <label
+                                htmlFor="narrative-override-prompt"
+                                className="inline-flex shrink-0 cursor-text items-center gap-1.5 text-[13px] leading-5 text-[#4e5969]"
+                              >
+                                <span>报告结构提示词</span>
+                                <PencilLine
+                                  aria-hidden="true"
+                                  className="h-3.5 w-3.5 shrink-0 text-[#86909c] transition-colors group-focus-within/prompt:text-[#165dff]"
+                                />
+                              </label>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="top"
+                              sideOffset={6}
+                              className="rounded-[6px] border-0 bg-[#1d2129] px-2 py-1 text-[12px] leading-5 text-white shadow-[0_4px_12px_rgba(29,33,41,0.16)]"
                             >
-                              取消调整
-                            </button>
-                          </div>
+                              编辑提示词
+                            </TooltipContent>
+                          </Tooltip>
+                          <span className="text-[12px] leading-5 text-[#86909c]">修改仅对当前模板生效</span>
                         </div>
-                        <div className="relative">
-                          <textarea
-                            id="narrative-override-prompt"
-                            maxLength={1000}
-                            value={form.narrativeOverridePrompt}
-                            onChange={(event) => setForm((current) => ({ ...current, narrativeOverridePrompt: event.target.value, narrativeAdjustmentPrompt: '' }))}
-                            placeholder="可修改完整报告结构，例如调整章节、顺序或写作要求。"
-                            className="min-h-[260px] w-full resize-y rounded-[8px] border border-[#e5e6eb] bg-white p-3 pb-8 text-[14px] leading-[22px] text-[#1d2129] outline-none placeholder:text-[#86909c] focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10"
-                          />
-                          <span className="pointer-events-none absolute bottom-2 right-3 text-[12px] leading-5 text-[#86909c]">
-                            {form.narrativeOverridePrompt.length}/1000
-                          </span>
-                        </div>
+                        {isNarrativePromptAdjusted && (
+                          <button
+                            type="button"
+                            onClick={() => setForm((current) => ({
+                              ...current,
+                              narrativeMode: 'skill',
+                              narrativeOverridePrompt: '',
+                              narrativeAdjustmentPrompt: '',
+                            }))}
+                            className="shrink-0 text-[12px] leading-5 text-[#165dff] hover:text-[#0e42d2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
+                          >
+                            恢复默认
+                          </button>
+                        )}
+                      </div>
+                      <div className="relative">
+                        <textarea
+                          id="narrative-override-prompt"
+                          maxLength={1000}
+                          value={displayedNarrativePrompt}
+                          onChange={(event) => {
+                            const nextPrompt = event.currentTarget.value;
+                            const isDefaultPrompt = nextPrompt === defaultNarrativePrompt;
+                            setForm((current) => ({
+                              ...current,
+                              narrativeMode: isDefaultPrompt ? 'skill' : 'adjusted',
+                              narrativeOverridePrompt: isDefaultPrompt ? '' : nextPrompt,
+                              narrativeAdjustmentPrompt: '',
+                            }));
+                          }}
+                          placeholder="当前 Skill 暂无报告结构提示词"
+                          className="min-h-[260px] w-full cursor-text resize-y rounded-[8px] border border-[#e5e6eb] bg-white p-3 pb-8 text-[14px] leading-[22px] text-[#1d2129] outline-none transition-[border-color,box-shadow] placeholder:text-[#86909c] hover:border-[#c9cdd4] focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10 focus:hover:border-[#165dff]"
+                        />
+                        <span className="pointer-events-none absolute bottom-2 right-3 text-[12px] leading-5 text-[#86909c]">
+                          {displayedNarrativePrompt.length}/1000
+                        </span>
                       </div>
                     </div>
-                  )}
+                  </div>
                 </>
               ) : (
                 <div className="flex flex-col gap-3 rounded-[10px] border border-[#e5e6eb] bg-[#f7f8fa] p-3">
@@ -1289,100 +1376,121 @@ export default function TemplatesPage() {
             </div>}
 
             {editorStep === 'style' && <div className="flex flex-col gap-3">
-              <div className="text-[14px] leading-[22px] text-[#4e5969]">视觉风格</div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {[
-                  { value: 'skill' as const, title: '标准风格', detail: '选择常用的视觉风格 Skill，统一颜色、字体和图表表现。' },
-                  { value: 'custom' as const, title: '自定义风格', detail: '自行填写颜色、字体、图表样式和视觉表达要求。' },
-                ].map((option) => (
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[14px] leading-[22px] text-[#4e5969]">视觉风格</div>
+                <div role="group" aria-label="视觉风格配置方式" className="inline-flex shrink-0 rounded-[8px] bg-[#f2f3f5] p-1">
                   <button
-                    key={option.value}
                     type="button"
-                    aria-pressed={option.value === 'custom' ? form.styleMode === 'custom' : form.styleMode !== 'custom'}
+                    aria-pressed={form.styleMode !== 'custom'}
                     onClick={() => {
                       setForm((current) => ({
                         ...current,
-                        styleMode: option.value,
-                        ...(option.value === 'skill'
-                          ? { styleAdjustmentPrompt: '', styleOverridePrompt: '' }
-                          : { customStylePrompt: '' }),
+                        styleMode: 'skill',
+                        styleOverridePrompt: '',
+                        styleAdjustmentPrompt: '',
                       }));
                       setStyleErrors({});
                     }}
-                    className={`rounded-[10px] border p-3 text-left transition-colors ${
-                      (option.value === 'custom' ? form.styleMode === 'custom' : form.styleMode !== 'custom')
-                        ? 'border-[#165dff] bg-[#e8f3ff]'
-                        : 'border-[#e5e6eb] bg-white hover:bg-[#f7f8fa]'
+                    className={`h-7 rounded-[6px] px-3 text-[12px] leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
+                      form.styleMode !== 'custom' ? 'bg-white font-medium text-[#1d2129] shadow-sm' : 'text-[#4e5969] hover:text-[#1d2129]'
                     }`}
                   >
-                    <div className={`text-[14px] font-medium ${(option.value === 'custom' ? form.styleMode === 'custom' : form.styleMode !== 'custom') ? 'text-[#165dff]' : 'text-[#1d2129]'}`}>
-                      {option.title}
-                    </div>
-                    <div className="mt-1 text-[12px] leading-5 text-[#86909c]">{option.detail}</div>
+                    风格模板
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    aria-pressed={form.styleMode === 'custom'}
+                    onClick={() => {
+                      setForm((current) => ({ ...current, styleMode: 'custom' }));
+                      setStyleErrors({});
+                    }}
+                    className={`h-7 rounded-[6px] px-3 text-[12px] leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
+                      form.styleMode === 'custom' ? 'bg-white font-medium text-[#1d2129] shadow-sm' : 'text-[#4e5969] hover:text-[#1d2129]'
+                    }`}
+                  >
+                    自定义
+                  </button>
+                </div>
               </div>
 
               {form.styleMode !== 'custom' ? (
                 <>
-                  <Select
-                    value={form.styleSkillId || undefined}
-                    onValueChange={(value) => {
-                      setForm((current) => ({
-                        ...current,
-                        styleSkillId: value,
-                        ...(current.styleMode === 'adjusted'
-                          ? { styleOverridePrompt: skills.find((skill) => skill.id === value)?.skillMarkdown ?? '' }
-                          : {}),
-                      }));
-                      if (styleErrors.skill) setStyleErrors((current) => ({ ...current, skill: undefined }));
-                    }}
-                  >
-                    <div className="flex flex-col gap-2">
-                      <label htmlFor="template-style-skill" className="text-[13px] leading-5 text-[#4e5969]">视觉风格 Skill</label>
-                      <SelectTrigger
-                        id="template-style-skill"
-                        aria-invalid={Boolean(styleErrors.skill)}
-                        aria-describedby={styleErrors.skill ? 'template-style-skill-error' : undefined}
-                        className={`h-10 w-full rounded-[12px] bg-white px-3 text-[14px] shadow-none focus-visible:ring-2 focus-visible:ring-[#165dff]/10 ${
-                          styleErrors.skill
-                            ? 'border-[#f53f3f] focus-visible:border-[#f53f3f]'
-                            : 'border-[#e5e6eb] focus-visible:border-[#165dff]'
-                        }`}
-                      >
-                        <SelectValue placeholder="请选择视觉风格 Skill">{selectedStyleSkill?.name}</SelectValue>
-                      </SelectTrigger>
-                      {styleErrors.skill && <p id="template-style-skill-error" className="text-[12px] leading-5 text-[#f53f3f]">{styleErrors.skill}</p>}
+                  <fieldset aria-describedby={styleErrors.skill ? 'template-style-skill-error' : undefined} className="min-w-0">
+                    <legend className="sr-only">选择视觉风格</legend>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      {styleSkills.map((skill) => {
+                        const palette = getStylePreviewPalette(skill.id);
+                        const isSelected = form.styleSkillId === skill.id;
+
+                        return (
+                          <label key={skill.id} className="min-w-0 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="template-style-skill"
+                              value={skill.id}
+                              aria-label={`选择${skill.name}`}
+                              checked={isSelected}
+                              onChange={() => {
+                                setForm((current) => ({
+                                  ...current,
+                                  styleMode: 'skill',
+                                  styleSkillId: skill.id,
+                                  styleOverridePrompt: '',
+                                  styleAdjustmentPrompt: '',
+                                }));
+                                if (styleErrors.skill) setStyleErrors((current) => ({ ...current, skill: undefined }));
+                              }}
+                              className="peer sr-only"
+                            />
+                            <span className={`block h-full overflow-hidden rounded-[8px] border bg-white transition-[border-color,box-shadow,transform] hover:-translate-y-0.5 hover:border-[#c9cdd4] hover:shadow-[0_4px_12px_rgba(29,33,41,0.08)] peer-focus-visible:ring-2 peer-focus-visible:ring-[#165dff]/25 ${
+                              isSelected ? 'border-[#165dff] shadow-[0_0_0_1px_#165dff]' : 'border-[#e5e6eb]'
+                            }`}>
+                              <span className="block h-[108px] p-2.5" style={{ backgroundColor: palette.canvas }}>
+                                <span className="flex h-full flex-col rounded-[5px] p-2 shadow-[0_1px_4px_rgba(29,33,41,0.08)]" style={{ backgroundColor: palette.surface }}>
+                                  <span className="flex items-center justify-between gap-2">
+                                    <span className="h-1.5 w-12 rounded-full" style={{ backgroundColor: palette.accent }} />
+                                    <span className="text-[7px] font-medium leading-none" style={{ color: palette.text }}>{palette.previewTitle}</span>
+                                  </span>
+                                  <span className="mt-2 grid grid-cols-3 gap-1">
+                                    {palette.metrics.map((value, index) => (
+                                      <span key={value} className="rounded-[2px] px-1 py-1" style={{ backgroundColor: palette.surfaceMuted }}>
+                                        <span className="block text-[7px] font-semibold leading-none" style={{ color: index === 2 ? palette.secondary : palette.text }}>{value}</span>
+                                        <span className="mt-1 block h-0.5 w-4 rounded-full opacity-60" style={{ backgroundColor: index === 1 ? palette.signal : palette.accent }} />
+                                      </span>
+                                    ))}
+                                  </span>
+                                  <span className="mt-2 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_44px] gap-1.5">
+                                    <span className="flex items-end gap-1 border-b border-l px-1" style={{ borderColor: `${palette.text}26` }}>
+                                      {[42, 68, 54, 82, 66, 92].map((height, index) => (
+                                        <span key={index} className="flex-1 rounded-t-[1px]" style={{ height: `${height}%`, backgroundColor: index > 3 ? palette.secondary : palette.accent }} />
+                                      ))}
+                                    </span>
+                                    <span className="flex flex-col justify-center gap-1 rounded-[2px] px-1" style={{ backgroundColor: palette.surfaceMuted }}>
+                                      <span className="h-0.5 w-full rounded-full" style={{ backgroundColor: palette.signal }} />
+                                      <span className="h-0.5 w-4/5 rounded-full opacity-50" style={{ backgroundColor: palette.text }} />
+                                      <span className="h-0.5 w-3/5 rounded-full opacity-30" style={{ backgroundColor: palette.text }} />
+                                    </span>
+                                  </span>
+                                </span>
+                              </span>
+                              <span className="block px-2.5 py-2.5">
+                                <span className="flex min-h-10 items-start justify-between gap-2">
+                                  <span className="line-clamp-2 min-w-0 text-[13px] font-medium leading-5 text-[#1d2129]">{skill.name}</span>
+                                  {isSelected && (
+                                    <span className="inline-flex shrink-0 items-center gap-0.5 text-[11px] leading-5 text-[#165dff]">
+                                      <Check aria-hidden="true" className="h-3 w-3" />
+                                      已选
+                                    </span>
+                                  )}
+                                </span>
+                              </span>
+                            </span>
+                          </label>
+                        );
+                      })}
                     </div>
-                    <SelectContent className="min-w-[var(--radix-select-trigger-width)]">
-                      {styleSkills.map((skill) => (
-                        <SelectItem key={skill.id} value={skill.id} className="h-auto items-start py-2 pr-9">
-                          <span className="flex min-w-0 flex-col items-start gap-0.5 py-0.5">
-                            <span className="text-[14px] leading-5 text-[#1d2129]">{skill.name}</span>
-                            <span className="text-[12px] leading-5 text-[#86909c]">{skill.description}</span>
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {form.styleMode === 'adjusted' ? (
-                    <div className="flex flex-col gap-3 rounded-[10px] border border-[#e5e6eb] bg-[#f7f8fa] p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <label htmlFor="style-override-prompt" className="text-[13px] leading-5 text-[#4e5969]">视觉风格提示词（编辑不影响 Skill）</label>
-                        <div className="flex shrink-0 items-center gap-3">
-                          <button type="button" onClick={cancelStyleAdjustment} className="text-[12px] leading-5 text-[#86909c] hover:text-[#4e5969]">取消调整</button>
-                        </div>
-                      </div>
-                      <div className="relative">
-                        <textarea id="style-override-prompt" maxLength={1000} value={form.styleOverridePrompt} onChange={(event) => setForm((current) => ({ ...current, styleOverridePrompt: event.target.value }))} placeholder="可修改颜色、字体、图表样式和视觉表达要求。" className="min-h-[260px] w-full resize-y rounded-[8px] border border-[#e5e6eb] bg-white p-3 pb-8 text-[14px] leading-[22px] text-[#1d2129] outline-none placeholder:text-[#86909c] focus:border-[#165dff]" />
-                        <span className="pointer-events-none absolute bottom-2 right-3 text-[12px] leading-5 text-[#86909c]">
-                          {form.styleOverridePrompt.length}/1000
-                        </span>
-                      </div>
-                    </div>
-                  ) : (
-                    <button type="button" onClick={() => setForm((current) => ({ ...current, styleMode: 'adjusted', styleOverridePrompt: current.styleOverridePrompt || skills.find((skill) => skill.id === current.styleSkillId)?.skillMarkdown || '' }))} className="self-end text-[12px] leading-5 text-[#165dff]">调整视觉风格（可选）</button>
-                  )}
+                    {styleErrors.skill && <p id="template-style-skill-error" className="mt-2 text-[12px] leading-5 text-[#f53f3f]">{styleErrors.skill}</p>}
+                  </fieldset>
                 </>
               ) : (
                 <div className="flex flex-col gap-3 rounded-[10px] border border-[#e5e6eb] bg-[#f7f8fa] p-3">
@@ -1413,51 +1521,53 @@ export default function TemplatesPage() {
               )}
             </div>}
 
-            {editorStep === 'basic' && <div className="flex flex-col gap-2">
-              <label htmlFor="template-status" className="text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969]">
-                状态
-              </label>
-              <Select
-                value={form.status}
-                onValueChange={(value) =>
-                  setForm((current) => ({
-                    ...current,
-                    status: value as ReportTemplateStatus,
-                  }))
-                }
-              >
-                <SelectTrigger
-                  id="template-status"
-                  className="group h-10 w-full rounded-[12px] border-[#e5e6eb] bg-white px-3 text-[14px] leading-[22px] tracking-[0.15px] text-[#4e5969] shadow-none outline-none focus-visible:border-[#165dff] focus-visible:ring-2 focus-visible:ring-[#165dff]/10"
-                  icon={
-                    <span className="relative h-4 w-4 shrink-0 overflow-hidden transition-transform duration-150 group-data-[state=open]:rotate-180">
-                      <img className="absolute left-[3.757px] top-[5.482px] h-[5.186px] w-[8.486px]" src={templateModalChevronDown} alt="" />
-                    </span>
-                  }
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent
-                  position="popper"
-                  sideOffset={4}
-                  viewportClassName="h-auto min-h-0 w-full !min-w-0 p-0"
-                  className="z-[70] w-[var(--radix-select-trigger-width)] !min-w-0 rounded-[12px] border-[#e5e6eb] bg-white p-1 text-[#1d2129] shadow-[0_4px_12px_rgba(29,33,41,0.08)] data-[side=bottom]:!translate-y-0 data-[side=top]:!translate-y-0"
-                >
-                  <SelectItem
-                    value="published"
-                    className="h-10 rounded-[8px] py-0 pl-3 pr-9 text-[14px] leading-[22px] text-[#1d2129] focus:bg-[#f7f8fa] focus:text-[#1d2129] data-[state=checked]:bg-[#f2f3f5] data-[state=checked]:font-medium"
-                  >
-                    已启用
-                  </SelectItem>
-                  <SelectItem
-                    value="disabled"
-                    className="h-10 rounded-[8px] py-0 pl-3 pr-9 text-[14px] leading-[22px] text-[#1d2129] focus:bg-[#f7f8fa] focus:text-[#1d2129] data-[state=checked]:bg-[#f2f3f5] data-[state=checked]:font-medium"
-                  >
-                    已停用
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>}
+            {editorStep === 'confirm' && (
+              <div className="flex min-h-0 flex-col gap-6 py-1">
+                <section aria-labelledby="template-information-heading">
+                  <h3 id="template-information-heading" className="text-[15px] font-medium leading-6 text-[#1d2129]">
+                    模板信息
+                  </h3>
+                  <dl className="mt-3 border-y border-[#e5e6eb] text-[14px] leading-[22px]">
+                    <div className="grid grid-cols-1 sm:grid-cols-2">
+                      <div className="min-w-0 py-3 sm:pr-6">
+                        <dt className="text-[12px] leading-5 text-[#86909c]">模板名称</dt>
+                        <dd className="mt-1 break-words font-medium text-[#1d2129]">{form.name || '未命名模板'}</dd>
+                      </div>
+                      <div className="min-w-0 border-t py-3 sm:border-l sm:border-t-0 sm:pl-6">
+                        <dt className="text-[12px] leading-5 text-[#86909c]">行业与分类</dt>
+                        <dd className="mt-1 break-words text-[#1d2129]">{form.industry} · {form.category}</dd>
+                      </div>
+                    </div>
+                    <div className="border-t border-[#e5e6eb] py-3">
+                      <dt className="text-[12px] leading-5 text-[#86909c]">模板描述</dt>
+                      <dd className={`mt-1 break-words ${form.description.trim() ? 'text-[#1d2129]' : 'text-[#86909c]'}`}>
+                        {form.description.trim() || '未填写'}
+                      </dd>
+                    </div>
+                  </dl>
+                </section>
+
+                <section aria-labelledby="template-generation-heading">
+                  <h3 id="template-generation-heading" className="text-[15px] font-medium leading-6 text-[#1d2129]">
+                    生成配置
+                  </h3>
+                  <dl className="mt-3 divide-y divide-[#e5e6eb] border-y border-[#e5e6eb]">
+                    <div className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-4 py-4 sm:grid-cols-[112px_minmax(0,1fr)]">
+                      <dt className="text-[13px] leading-5 text-[#4e5969]">报告结构</dt>
+                      <dd className="min-w-0 break-words text-[14px] font-medium leading-[22px] text-[#1d2129]">
+                        {form.narrativeMode === 'custom' ? '自定义报告结构' : selectedNarrativeSkill?.name ?? '未选择'}
+                      </dd>
+                    </div>
+                    <div className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-4 py-4 sm:grid-cols-[112px_minmax(0,1fr)]">
+                      <dt className="text-[13px] leading-5 text-[#4e5969]">视觉风格</dt>
+                      <dd className="min-w-0 break-words text-[14px] font-medium leading-[22px] text-[#1d2129]">
+                        {form.styleMode === 'custom' ? '自定义视觉风格' : selectedStyleSkill?.name ?? '未选择'}
+                      </dd>
+                    </div>
+                  </dl>
+                </section>
+              </div>
+            )}
           </div>
 
           <div className="flex h-16 shrink-0 items-center justify-end gap-4 border-t border-[#e5e6eb] bg-[#f7f8fa] px-4 py-3 sm:px-6">
@@ -1465,7 +1575,10 @@ export default function TemplatesPage() {
               {editorStep !== 'basic' && (
                 <button
                   type="button"
-                  onClick={() => setEditorStep(editorStep === 'style' ? 'structure' : 'basic')}
+                  onClick={() => {
+                    const previousStep = templateEditorSteps[currentEditorStepIndex - 1]?.value;
+                    if (previousStep) setEditorStep(previousStep);
+                  }}
                   className="inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-[12px] border border-[#e5e6eb] bg-transparent px-3 text-[14px] leading-[22px] text-[#4e5969] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 sm:px-5"
                 >
                   上一步
@@ -1478,10 +1591,13 @@ export default function TemplatesPage() {
               >
                 取消
               </button>
-              {editorStep !== 'style' ? (
+              {editorStep !== 'confirm' ? (
                 <button
                   type="button"
-                  onClick={() => handleEditorStepChange(editorStep === 'basic' ? 'structure' : 'style')}
+                  onClick={() => {
+                    const nextStep = templateEditorSteps[currentEditorStepIndex + 1]?.value;
+                    if (nextStep) handleEditorStepChange(nextStep);
+                  }}
                   className="inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-[12px] border border-[#1d2129] bg-[#1d2129] px-4 text-[14px] leading-[22px] tracking-[0.15px] text-white transition-colors hover:bg-[#2f3339] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 sm:px-6"
                 >
                   下一步
@@ -1492,7 +1608,7 @@ export default function TemplatesPage() {
                   onClick={handleSaveTemplate}
                   className="inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-[12px] border border-[#1d2129] bg-[#1d2129] px-4 text-[14px] leading-[22px] tracking-[0.15px] text-white transition-colors hover:bg-[#2f3339] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 sm:px-6"
                 >
-                  保存
+                  {editingTemplate ? '保存' : '创建'}
                 </button>
               )}
             </div>
