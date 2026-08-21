@@ -405,7 +405,6 @@ export type ReportTemplateCategory = '专题' | '日报' | '周报' | '月报';
 export interface DefaultTemplateBinding {
   id: string;
   industry: string;
-  category: ReportTemplateCategory;
   templateId: string;
   updatedAt: string;
 }

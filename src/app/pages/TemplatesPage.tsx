@@ -551,31 +551,35 @@ export default function TemplatesPage() {
     setEditorStep('basic');
   };
 
-  const getDefaultTemplate = (industry: string, category: string) => {
-    const binding = defaultTemplateBindings.find((item) => item.industry === industry && item.category === category);
+  const getDefaultTemplate = (industry: string) => {
+    const binding = defaultTemplateBindings.find((item) => item.industry === industry);
     return reportTemplates.find((template) => template.id === binding?.templateId && template.status === 'published');
   };
 
-  const defaultTemplateKey = (industry: string, category: string) => `${industry}:${category}`;
   const openDefaultTemplateManager = () => {
     setDefaultTemplateIndustry(templateIndustries[0]);
     setDefaultTemplateDraft(Object.fromEntries(
-      defaultTemplateBindings.map((binding) => [defaultTemplateKey(binding.industry, binding.category), binding.templateId]),
+      defaultTemplateBindings.map((binding) => [binding.industry, binding.templateId]),
     ));
     setShowDefaultTemplateManager(true);
   };
   const saveDefaultTemplateManager = () => {
     templateIndustries.forEach((industry) => {
-      templateCategories.forEach((category) => {
-        updateDefaultTemplateBinding(
-          industry,
-          category as '专题' | '日报' | '周报' | '月报',
-          defaultTemplateDraft[defaultTemplateKey(industry, category)] ?? '',
-        );
-      });
+      updateDefaultTemplateBinding(industry, defaultTemplateDraft[industry] ?? '');
     });
     setShowDefaultTemplateManager(false);
   };
+
+  const defaultTemplateCandidates = reportTemplates
+    .filter((template) => template.status === 'published' && (template.industry || defaultTemplateIndustry) === defaultTemplateIndustry)
+    .sort((left, right) => left.name.localeCompare(right.name, 'zh-CN'));
+  const currentDefaultTemplateId = defaultTemplateDraft[defaultTemplateIndustry]
+    ?? getDefaultTemplate(defaultTemplateIndustry)?.id
+    ?? 'none';
+  const isDefaultTemplateDraftDirty = templateIndustries.some((industry) => (
+    (defaultTemplateDraft[industry] ?? '')
+    !== (defaultTemplateBindings.find((binding) => binding.industry === industry)?.templateId ?? '')
+  ));
 
   return (
     <div className="h-full min-h-0 flex-1 overflow-hidden bg-white px-4 pb-0 pt-4 font-['PingFang_SC','Microsoft_YaHei',sans-serif] md:px-[22px] md:pt-[22px]">
@@ -694,41 +698,73 @@ export default function TemplatesPage() {
           <DialogContent
             aria-describedby={undefined}
             showCloseButton={false}
-            className="!flex !left-auto !right-0 !top-0 !translate-x-0 !translate-y-0 h-full max-h-none w-[560px] max-w-[calc(100vw-32px)] flex-col gap-0 overflow-hidden rounded-l-[16px] rounded-r-none border-0 bg-white p-0 font-['PingFang_SC','Microsoft_YaHei',sans-serif] shadow-[-8px_0_24px_rgba(29,33,41,0.12)]"
+            className="!flex h-[494px] max-h-[calc(100vh-32px)] w-[680px] !max-w-[calc(100vw-32px)] flex-col gap-0 overflow-hidden rounded-[12px] border-0 bg-white p-0 font-['PingFang_SC','Microsoft_YaHei',sans-serif] shadow-[0_12px_32px_rgba(29,33,41,0.16)] sm:!max-w-[680px]"
           >
-            <DialogHeader className="flex-row items-center justify-between border-b border-[#e5e6eb] px-6 py-4 text-left">
+            <DialogHeader className="h-[60px] shrink-0 flex-row items-center justify-between border-b border-[#e5e6eb] px-6 text-left">
               <DialogTitle className="text-[18px] font-semibold leading-7 text-[#1d2129]">默认模板管理</DialogTitle>
               <DialogClose asChild>
                 <button type="button" aria-label="关闭默认模板管理" className="flex h-8 w-8 items-center justify-center rounded-[8px] text-[#86909c] hover:bg-[#f2f3f5] hover:text-[#1d2129]"><X aria-hidden="true" className="h-4 w-4" /></button>
               </DialogClose>
             </DialogHeader>
-            <section className="min-h-0 flex-1 overflow-y-auto px-6 py-5" aria-label="默认模板管理">
-              <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-4">
-                <span className="text-[14px] text-[#4e5969]">配置行业</span>
-                <Select value={defaultTemplateIndustry} onValueChange={setDefaultTemplateIndustry}>
-                  <SelectTrigger className="h-10 w-full rounded-[8px] border-[#e5e6eb] bg-white px-3 text-[14px] shadow-none"><SelectValue /></SelectTrigger>
-                  <SelectContent>{templateIndustries.map((industry) => <SelectItem key={industry} value={industry}>{industry}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div className="mt-6 space-y-3 border-t border-[#e5e6eb] pt-4">
-                {templateCategories.map((category) => {
-                  const candidates = reportTemplates.filter((template) => template.status === 'published' && (template.industry || defaultTemplateIndustry) === defaultTemplateIndustry && normalizeTemplateCategory(template.category) === category);
-                  const currentValue = defaultTemplateDraft[defaultTemplateKey(defaultTemplateIndustry, category)] ?? getDefaultTemplate(defaultTemplateIndustry, category)?.id ?? 'none';
-                  return (
-                    <div key={category} className="flex items-center gap-4 border-b border-[#e5e6eb] pb-3 last:border-b-0">
-                      <div className="w-14 shrink-0 text-[14px] font-medium text-[#4e5969]">{category}</div>
-                      <Select value={currentValue} onValueChange={(value) => setDefaultTemplateDraft((current) => ({ ...current, [defaultTemplateKey(defaultTemplateIndustry, category)]: value }))}>
-                        <SelectTrigger className="h-10 min-w-0 flex-1 rounded-[8px] border-[#e5e6eb] bg-white px-3 text-[14px] shadow-none"><SelectValue placeholder="未配置" /></SelectTrigger>
-                        <SelectContent><SelectItem value="none">未配置</SelectItem>{candidates.map((template) => <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>)}</SelectContent>
-                      </Select>
-                    </div>
-                  );
-                })}
+            <section className="min-h-0 flex-1 overflow-y-auto px-6 py-6" aria-label="默认模板管理">
+              <div className="space-y-5">
+                <div className="grid gap-2">
+                  <span className="text-[14px] font-medium leading-[22px] text-[#1d2129]">行业</span>
+                  <div className="flex flex-wrap items-center gap-2" role="group" aria-label="选择配置行业">
+                    {templateIndustries.map((industry) => {
+                      const isSelected = defaultTemplateIndustry === industry;
+                      return (
+                        <button
+                          key={industry}
+                          type="button"
+                          aria-pressed={isSelected}
+                          onClick={() => setDefaultTemplateIndustry(industry)}
+                          className={`h-9 min-w-[72px] rounded-[18px] px-4 text-[14px] font-normal leading-9 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
+                            isSelected
+                              ? 'bg-[#1d2129] text-white'
+                              : 'bg-[#f2f3f5] text-[#4e5969] hover:bg-[#e5e6eb]'
+                          }`}
+                        >
+                          {industry}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <label className="grid gap-2">
+                  <span className="text-[14px] font-medium leading-[22px] text-[#1d2129]">默认模板</span>
+                  <Select
+                    value={currentDefaultTemplateId}
+                    onValueChange={(value) => setDefaultTemplateDraft((current) => ({ ...current, [defaultTemplateIndustry]: value === 'none' ? '' : value }))}
+                  >
+                    <SelectTrigger aria-label={`选择${defaultTemplateIndustry}行业默认模板`} className="h-10 w-full rounded-[8px] border-[#e5e6eb] bg-white px-3 text-[14px] shadow-none focus-visible:border-[#165dff] focus-visible:ring-2 focus-visible:ring-[#165dff]/10">
+                      <SelectValue placeholder="未配置" />
+                    </SelectTrigger>
+                    <SelectContent
+                      sideOffset={4}
+                      collisionPadding={24}
+                      className="max-h-[240px] w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-80px)] rounded-[8px] border-[#e5e6eb] shadow-[0_8px_24px_rgba(29,33,41,0.12)] [&_[data-slot=select-scroll-down-button]]:hidden [&_[data-slot=select-scroll-up-button]]:hidden"
+                      viewportClassName="!h-auto max-h-[238px] !overflow-y-auto ![scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                    >
+                      <SelectItem value="none">未配置</SelectItem>
+                      {defaultTemplateCandidates.map((template) => (
+                        <SelectItem key={template.id} value={template.id}>
+                          <span className="min-w-0 truncate">{template.name}</span>
+                          <span className="shrink-0 rounded-[4px] bg-[#f2f3f5] px-1.5 py-0.5 text-[12px] text-[#86909c]">
+                            {normalizeTemplateCategory(template.category)}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </label>
+
               </div>
             </section>
-            <div className="flex justify-end gap-3 border-t border-[#e5e6eb] px-6 py-3">
+            <div className="flex h-14 shrink-0 items-center justify-end gap-3 border-t border-[#e5e6eb] bg-[#f7f8fa] px-6">
               <DialogClose asChild><button type="button" className="h-9 rounded-[8px] border border-[#e5e6eb] px-4 text-[14px] text-[#4e5969] hover:bg-[#f7f8fa]">取消</button></DialogClose>
-              <button type="button" onClick={saveDefaultTemplateManager} className="h-9 rounded-[8px] bg-[#1d2129] px-4 text-[14px] text-white hover:bg-[#000000]">保存</button>
+              <button type="button" disabled={!isDefaultTemplateDraftDirty} onClick={saveDefaultTemplateManager} className="h-9 rounded-[8px] bg-[#1d2129] px-4 text-[14px] text-white hover:bg-[#000000] disabled:cursor-not-allowed disabled:bg-[#c9cdd4]">保存设置</button>
             </div>
           </DialogContent>
         </Dialog>

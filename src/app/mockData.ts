@@ -921,22 +921,6 @@ export const reportTemplates: ReportTemplate[] = [
       triggerPhrases: ['门诊量日报', '门诊趋势', '今日门诊', '门诊波动'],
     },
     {
-      id: 'template-bed-operation-daily',
-      name: '住院床位运营日报模板',
-      category: '日报',
-      createdAt: '2026-06-13 08:45',
-      status: 'published',
-      triggerPhrases: ['床位日报', '床位使用率', '住院运营', '空床情况'],
-    },
-    {
-      id: 'template-medical-tech-monthly',
-      name: '医技科室效率月报模板',
-      category: '月报',
-      createdAt: '2026-06-12 15:10',
-      status: 'published',
-      triggerPhrases: ['医技月报', '检查效率', '医技科室', '设备利用率'],
-    },
-    {
       id: 'template-surgery-operation-monthly',
       name: '手术运营月报模板',
       category: '月报',
@@ -945,60 +929,12 @@ export const reportTemplates: ReportTemplate[] = [
       triggerPhrases: ['手术月报', '手术运营', '手术量', '手术效率'],
     },
     {
-      id: 'template-drg-operation-monthly',
-      name: 'DRG运营分析月报模板',
-      category: '月报',
-      createdAt: '2026-06-10 10:05',
-      status: 'disabled',
-      triggerPhrases: ['DRG月报', 'DRG运营', '病组分析', '病例组合'],
-    },
-    {
       id: 'template-patient-flow-special',
       name: '患者流量专题模板',
       category: '专题',
       createdAt: '2026-06-09 16:30',
       status: 'published',
       triggerPhrases: ['患者流量', '就诊流量', '流量专题', '患者来源'],
-    },
-    {
-      id: 'template-average-los-special',
-      name: '平均住院日专题模板',
-      category: '专题',
-      createdAt: '2026-06-08 14:15',
-      status: 'published',
-      triggerPhrases: ['平均住院日', '住院日专题', '住院效率', '出院周期'],
-    },
-    {
-      id: 'template-high-value-consumable-special',
-      name: '高值耗材专题模板',
-      category: '专题',
-      createdAt: '2026-06-07 13:40',
-      status: 'published',
-      triggerPhrases: ['高值耗材', '耗材专题', '耗材费用', '重点耗材'],
-    },
-    {
-      id: 'template-medical-revenue-structure-special',
-      name: '医疗收入结构专题模板',
-      category: '专题',
-      createdAt: '2026-06-06 10:50',
-      status: 'published',
-      triggerPhrases: ['收入结构', '医疗收入', '收入专题', '收入构成'],
-    },
-    {
-      id: 'template-outpatient-peak-special',
-      name: '门急诊高峰专题模板',
-      category: '专题',
-      createdAt: '2026-06-05 09:35',
-      status: 'disabled',
-      triggerPhrases: ['门急诊高峰', '高峰时段', '门诊排队', '急诊流量'],
-    },
-    {
-      id: 'template-department-performance-monthly',
-      name: '科室绩效趋势月报模板',
-      category: '月报',
-      createdAt: '2026-06-04 17:20',
-      status: 'published',
-      triggerPhrases: ['科室绩效', '绩效月报', '绩效趋势', '科室对比'],
     },
   ] satisfies Array<Pick<ReportTemplate, 'id' | 'name' | 'category' | 'createdAt' | 'status' | 'triggerPhrases'>>).map<ReportTemplate>((template) => ({
     ...template,
@@ -1060,17 +996,12 @@ const generatedIndustryDefaultTemplates: ReportTemplate[] = [
 
 reportTemplates.push(...generatedIndustryDefaultTemplates);
 
-export const defaultTemplateBindings: DefaultTemplateBinding[] = ['医疗', '汽车', '云管'].flatMap((industry) =>
-  (Object.keys(defaultTemplateCategoryBaseIds) as ReportTemplateCategory[]).map((category) => ({
-    id: `default-binding-${industry}-${category}`,
-    industry,
-    category,
-    templateId: industry === '医疗'
-      ? (category === '日报' ? 'template-operation-daily' : category === '月报' ? 'template-dept-monthly' : category === '专题' ? 'template-pharmacy-structure' : `template-default-${industry}-${category}`)
-      : `template-default-${industry}-${category}`,
-    updatedAt: '2026-06-01 09:00',
-  })),
-);
+export const defaultTemplateBindings: DefaultTemplateBinding[] = ['医疗', '汽车', '云管'].map((industry) => ({
+  id: `default-binding-${industry}`,
+  industry,
+  templateId: industry === '医疗' ? 'template-operation-daily' : `template-default-${industry}-专题`,
+  updatedAt: '2026-06-01 09:00',
+}));
 
 export const reportSubscriptions: ReportSubscription[] = [
   {
@@ -3665,14 +3596,6 @@ function getReportTemplatePrompt(template: ReportTemplate) {
     .join('\n');
 }
 
-function inferReportCategory(question: string): ReportTemplateCategory | undefined {
-  if (/(日报|每日|昨日|今天|今日)/.test(question)) return '日报';
-  if (/(周报|每周|本周|上周|周度)/.test(question)) return '周报';
-  if (/(月报|每月|本月|上月|月度)/.test(question)) return '月报';
-  if (/(专题|专项)/.test(question)) return '专题';
-  return undefined;
-}
-
 function createStableTemplateSuffix(value: string) {
   let hash = 0;
   for (let index = 0; index < value.length; index += 1) {
@@ -3858,11 +3781,9 @@ function resolveReportTemplate(agent: Agent, question: string, options: ResultBu
     };
   }
 
-  const inferredCategory = inferReportCategory(question);
   const defaultIndustry = agent.reportConfig?.industry ?? '医疗';
   const defaultBinding = (options.defaultTemplateBindings ?? defaultTemplateBindings).find((binding) =>
-    binding.industry === defaultIndustry
-      && binding.category === (inferredCategory ?? '专题'),
+    binding.industry === defaultIndustry,
   );
   const defaultTemplate = defaultBinding
     ? templatePool.find((template) =>
@@ -3875,9 +3796,7 @@ function resolveReportTemplate(agent: Agent, question: string, options: ResultBu
     return {
       template: defaultTemplate,
       source: 'industry-default' as const,
-      matchReason: inferredCategory
-        ? `使用${defaultIndustry}行业${inferredCategory}默认模板`
-        : `使用${defaultIndustry}行业通用默认模板`,
+      matchReason: `使用${defaultIndustry}行业默认模板`,
     };
   }
 

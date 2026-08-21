@@ -85,7 +85,7 @@ interface WorkspaceContextValue {
   addReportTemplate: (template: ReportTemplate) => void;
   updateReportTemplate: (templateId: string, updates: Partial<ReportTemplate>) => void;
   deleteReportTemplate: (templateId: string) => void;
-  updateDefaultTemplateBinding: (industry: string, category: DefaultTemplateBinding['category'], templateId: string) => void;
+  updateDefaultTemplateBinding: (industry: string, templateId: string) => void;
   addReportSubscription: (subscription: ReportSubscription) => void;
   updateReportSubscription: (subscriptionId: string, updates: Partial<ReportSubscription>) => void;
   deleteReportSubscription: (subscriptionId: string) => void;
@@ -772,14 +772,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       addMcpServer: (server) => {
         setMcpServers((current) => [server, ...current]);
       },
-      updateDefaultTemplateBinding: (industry, category, templateId) => {
+      updateDefaultTemplateBinding: (industry, templateId) => {
         setDefaultTemplateBindings((current) => {
           const updatedAt = new Date().toLocaleString('zh-CN', { hour12: false });
-          const existing = current.find((binding) => binding.industry === industry && binding.category === category);
+          const existing = current.find((binding) => binding.industry === industry);
+          if (!templateId) {
+            return existing ? current.filter((binding) => binding.id !== existing.id) : current;
+          }
           if (existing) {
             return current.map((binding) => binding.id === existing.id ? { ...binding, templateId, updatedAt } : binding);
           }
-          return [...current, { id: `default-binding-${industry}-${category}`, industry, category, templateId, updatedAt }];
+          return [...current, { id: `default-binding-${industry}`, industry, templateId, updatedAt }];
         });
       },
       deleteMcpServer: (serverId) => {
