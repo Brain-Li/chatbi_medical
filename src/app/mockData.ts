@@ -746,7 +746,8 @@ export const reportTemplates: ReportTemplate[] = [
     createdAt: '2026-06-18 09:00',
     status: 'published',
     triggerPhrases: ['经营日报', '日报', '昨天', '今日经营', '门诊经营日报', '住院经营日报'],
-    templatePrompt: `面向院级管理层输出经营日报，默认统计昨天、范围为全院。
+    templatePrompt: `报告名称：院级经营日报。
+面向院级管理层输出经营日报，默认统计昨天、范围为全院。
 正文前部使用 4 个指标卡，并至少提供 1 张趋势或对比图表。
 缺少口径或周期时，在报告开头标注默认假设；经营统计结论不得作为临床诊断。`,
     narrativeMode: 'skill',
@@ -777,7 +778,7 @@ export const reportTemplates: ReportTemplate[] = [
       { id: 'chart-daily-trend', title: '关键经营指标趋势', type: 'bar', metricIds: ['metric-outpatient-revenue', 'metric-outpatient-visits'], dimensionIds: ['dim-visit-date'], sortBy: 'date' },
     ],
     outputFormats: ['PDF', 'PNG', 'CSV'],
-    pushChannels: ['站内消息', '邮件'],
+    pushChannels: ['邮件'],
     complianceNotes: ['报告仅反映经营统计口径，不用于临床诊断。', '敏感指标需遵循当前用户的数据权限。'],
   },
   {
@@ -790,7 +791,8 @@ export const reportTemplates: ReportTemplate[] = [
     createdAt: '2026-06-17 10:30',
     status: 'published',
     triggerPhrases: ['科室运营月报', '运营月报', '月报', '本月', '上月', '科室经营'],
-    templatePrompt: `面向科室负责人输出月报，默认统计本月并与上月、去年同期对比。
+    templatePrompt: `报告名称：科室运营月报。
+面向科室负责人输出月报，默认统计本月并与上月、去年同期对比。
 正文前部使用 3-4 个指标卡，以折线图呈现趋势，必要时增加结构占比图。
 涉及医生组绩效时，必须遵循当前用户的数据权限。`,
     narrativeMode: 'skill',
@@ -834,7 +836,8 @@ export const reportTemplates: ReportTemplate[] = [
     createdAt: '2026-06-16 14:20',
     status: 'published',
     triggerPhrases: ['药耗结构', '药占比', '耗占比', '费用结构', '药耗专题'],
-    templatePrompt: `默认分析本月全院药耗结构，并与上月、去年同期及管理阈值对比。
+    templatePrompt: `报告名称：药耗结构周报。
+默认分析本月全院药耗结构，并与上月、去年同期及管理阈值对比。
 使用指标卡展示核心结果，以饼图或柱状图呈现费用结构和主要贡献项。
 异常提示仅用于经营复核，不得直接形成临床诊断结论。`,
     narrativeMode: 'skill',
@@ -865,7 +868,7 @@ export const reportTemplates: ReportTemplate[] = [
       { id: 'chart-pharmacy-structure', title: '费用结构分布', type: 'pie', metricIds: ['metric-drug-ratio', 'metric-consumable-ratio'], dimensionIds: ['dim-fee-group'], sortBy: 'value' },
     ],
     outputFormats: ['PDF', 'PNG', 'CSV'],
-    pushChannels: ['邮件', '站内消息'],
+    pushChannels: ['邮件'],
     complianceNotes: ['费用结构报告应说明药品、耗材和治疗费用口径。', '异常提示用于经营复核，不直接作为医疗质量结论。'],
   },
   {
@@ -878,7 +881,8 @@ export const reportTemplates: ReportTemplate[] = [
     createdAt: '2026-06-15 16:45',
     status: 'published',
     triggerPhrases: ['异常费用', '费用异常', '异常费用专题', '费用波动', '异常组'],
-    templatePrompt: `默认观察最近 30 天的异常费用，使用系统阈值并按影响规模排序。
+    templatePrompt: `报告名称：异常费用专题。
+默认观察最近 30 天的异常费用，使用系统阈值并按影响规模排序。
 正文前部展示异常数量、异常金额和影响范围，以柱状图呈现异常费用组贡献。
 病例级明细默认只展示汇总证据，所有异常结论必须经过人工复核。`,
     narrativeMode: 'skill',
@@ -908,7 +912,7 @@ export const reportTemplates: ReportTemplate[] = [
       { id: 'chart-abnormal-fee', title: '异常费用组贡献', type: 'bar', metricIds: ['metric-total-fee', 'metric-high-value-consumable'], dimensionIds: ['dim-fee-group'], sortBy: 'contribution' },
     ],
     outputFormats: ['PDF', 'PNG'],
-    pushChannels: ['站内消息'],
+    pushChannels: ['邮件'],
     complianceNotes: ['异常费用结果需要人工复核后再进入治理流程。', '病例级明细受权限控制，默认只展示汇总证据。'],
   },
   ...([
@@ -941,7 +945,8 @@ export const reportTemplates: ReportTemplate[] = [
     description: `${template.name}演示数据，用于查看模板列表和分页效果。`,
     industry: '医疗',
     version: 'v1.0',
-    templatePrompt: `请围绕“${template.name.replace('模板', '')}”生成结构化经营分析报告，包含核心摘要、趋势分析、异常提示和管理建议。报告正文前部使用 3-4 个指标卡展示核心结果，并根据主题至少生成 1 张趋势、对比或结构图表，图表标题和统计口径需清晰。`,
+    templatePrompt: `报告名称：${template.name.replace('模板', '')}。
+请围绕“${template.name.replace('模板', '')}”生成结构化经营分析报告，包含核心摘要、趋势分析、异常提示和管理建议。报告正文前部使用 3-4 个指标卡展示核心结果，并根据主题至少生成 1 张趋势、对比或结构图表，图表标题和统计口径需清晰。`,
     narrativeMode: 'skill',
     narrativeSkillId: 'skill-data-storytelling',
     applicableAgentIds: [template.category === '专题' ? 'agent-report-special' : 'agent-report-daily'],
@@ -960,7 +965,7 @@ export const reportTemplates: ReportTemplate[] = [
     metricBlocks: [],
     chartBlocks: [],
     outputFormats: ['PDF', 'PNG'],
-    pushChannels: ['站内消息'],
+    pushChannels: ['邮件'],
     complianceNotes: ['演示模板仅用于界面与分页效果验证。'],
   })),
 ];
@@ -1006,7 +1011,7 @@ export const defaultTemplateBindings: DefaultTemplateBinding[] = ['医疗', '汽
 export const reportSubscriptions: ReportSubscription[] = [
   {
     id: 'sub-operation-daily',
-    name: '院级经营日报推送',
+    name: '院级经营日报及重点科室异常指标自动订阅任务',
     reportTemplateId: 'template-operation-daily',
     agentId: 'agent-report-daily',
     reportTheme: '门急诊与住院经营日报',
@@ -1015,8 +1020,8 @@ export const reportSubscriptions: ReportSubscription[] = [
     runTime: '08:00',
     timezone: 'Asia/Shanghai',
     holidayPolicy: 'run',
-    recipients: ['医院经营班子', '经营分析组'],
-    channels: ['站内消息', '邮件'],
+    recipients: ['王建国', '刘芳', '周宁', '李敏', '孙悦', '高远'],
+    channels: ['邮件'],
     outputFormats: ['在线报告链接', 'PDF 附件'],
     permissionPolicy: '按收件人权限自动脱敏，默认仅展示汇总指标。',
     nextRunAt: '2026-07-02 08:00',
@@ -1032,7 +1037,7 @@ export const reportSubscriptions: ReportSubscription[] = [
         id: 'run-operation-daily-20260701',
         subscriptionId: 'sub-operation-daily',
         generatedAt: '2026-07-01 08:00',
-        reportTitle: '2026-06-30 院级经营日报',
+        reportTitle: '院级经营日报',
         status: '成功',
         retryCount: 0,
         link: '/report/preview/report-1',
@@ -1041,7 +1046,8 @@ export const reportSubscriptions: ReportSubscription[] = [
     pushRecords: [
       {
         id: 'push-operation-daily-1',
-        channel: '站内消息',
+        runId: 'run-operation-daily-20260701',
+        channel: '邮件',
         target: '医院经营班子',
         sentAt: '2026-07-01 08:01',
         status: '成功',
@@ -1049,6 +1055,7 @@ export const reportSubscriptions: ReportSubscription[] = [
       },
       {
         id: 'push-operation-daily-2',
+        runId: 'run-operation-daily-20260701',
         channel: '邮件',
         target: '经营分析组',
         sentAt: '2026-07-01 08:02',
@@ -1068,13 +1075,13 @@ export const reportSubscriptions: ReportSubscription[] = [
     runTime: '08:30',
     timezone: 'Asia/Shanghai',
     holidayPolicy: 'next_workday',
-    recipients: ['医务管理组', '药事管理组'],
+    recipients: ['张伟', '林晓', '何涛', '陈静', '吴迪'],
     channels: ['邮件'],
     outputFormats: ['在线报告链接', 'PDF 附件'],
     permissionPolicy: '按用户组过滤科室明细，患者级数据默认不进入报告。',
     nextRunAt: '2026-07-06 08:30',
     lastRunAt: '2026-06-29 08:30',
-    lastStatus: '重试中',
+    lastStatus: '成功',
     status: 'running',
     retryLimit: 3,
     createdBy: 'lxy',
@@ -1086,8 +1093,8 @@ export const reportSubscriptions: ReportSubscription[] = [
         subscriptionId: 'sub-pharmacy-weekly',
         generatedAt: '2026-06-29 08:30',
         reportTitle: '药耗结构周报',
-        status: '重试中',
-        retryCount: 1,
+        status: '成功',
+        retryCount: 0,
         failureReason: '1 个邮箱退信，等待第二次重试。',
         link: '/report/preview/report-2',
       },
@@ -1095,6 +1102,7 @@ export const reportSubscriptions: ReportSubscription[] = [
     pushRecords: [
       {
         id: 'push-pharmacy-weekly-1',
+        runId: 'run-pharmacy-weekly-20260629',
         channel: '邮件',
         target: '药事管理组',
         sentAt: '2026-06-29 08:33',
@@ -1114,8 +1122,8 @@ export const reportSubscriptions: ReportSubscription[] = [
     runTime: '09:00',
     timezone: 'Asia/Shanghai',
     holidayPolicy: 'skip',
-    recipients: ['科室负责人'],
-    channels: ['站内消息'],
+    recipients: ['陈静', '赵磊'],
+    channels: ['邮件'],
     outputFormats: ['在线报告链接'],
     permissionPolicy: '收件人仅查看本人负责科室及汇总对比。',
     nextRunAt: '2026-08-01 09:00',
@@ -1131,7 +1139,7 @@ export const reportSubscriptions: ReportSubscription[] = [
         id: 'run-dept-monthly-20260701',
         subscriptionId: 'sub-dept-monthly-attention',
         generatedAt: '2026-07-01 09:00',
-        reportTitle: '2026-06 科室运营月报',
+        reportTitle: '科室运营月报',
         status: '失败',
         retryCount: 3,
         failureReason: '模板参数“科室”未配置默认值，需要补充订阅参数。',
@@ -1141,7 +1149,8 @@ export const reportSubscriptions: ReportSubscription[] = [
     pushRecords: [
       {
         id: 'push-dept-monthly-1',
-        channel: '站内消息',
+        runId: 'run-dept-monthly-20260701',
+        channel: '邮件',
         target: '科室负责人',
         sentAt: '2026-07-01 09:04',
         status: '失败',
@@ -3654,7 +3663,8 @@ function generateReportTemplate(agent: Agent, question: string, options: ResultB
     createdAt: new Date().toLocaleString('zh-CN', { hour12: false }),
     status: 'draft',
     triggerPhrases: [],
-    templatePrompt: `围绕“${question}”生成结构化分析报告，重点分析${metricSummary}，结论必须基于可访问的数据与指标。`,
+    templatePrompt: `报告名称：${templateName}。
+围绕“${question}”生成结构化分析报告，重点分析${metricSummary}，结论必须基于可访问的数据与指标。`,
     applicableAgentIds: [agent.id],
     datasetIds,
     skillIds: selectedSkillIds,
@@ -3699,7 +3709,7 @@ function generateReportTemplate(agent: Agent, question: string, options: ResultB
       sortBy: primaryDimensionId,
     }] : [],
     outputFormats: ['PDF', 'PNG'],
-    pushChannels: ['站内消息'],
+    pushChannels: ['邮件'],
     complianceNotes: ['报告仅基于当前用户有权限的数据生成。', '涉及患者级数据时默认使用聚合或脱敏结果。'],
   };
 }
@@ -4117,7 +4127,7 @@ function buildSingleSkillReportResult(
         templateUsage,
         pushConfig: {
           frequency: '按需生成',
-          channel: '站内消息',
+          channel: '邮件',
           audience: '当前操作人',
           nextRun: '未设置',
           lastRun: '2026-05-22 08:00',
@@ -4125,7 +4135,7 @@ function buildSingleSkillReportResult(
           records: [
             {
               id: 'push-single-1',
-              channel: '站内消息',
+              channel: '邮件',
               target: '当前操作人',
               sentAt: '2026-05-22 08:00',
               status: '成功',
@@ -4164,7 +4174,7 @@ function buildSingleSkillReportResult(
         templateUsage,
         pushConfig: {
           frequency: '按需生成',
-          channel: '站内消息',
+          channel: '邮件',
           audience: '当前操作人',
           nextRun: '未设置',
           lastRun: '2026-05-22 08:00',
@@ -4172,7 +4182,7 @@ function buildSingleSkillReportResult(
           records: [
             {
               id: 'push-single-2',
-              channel: '站内消息',
+              channel: '邮件',
               target: '当前操作人',
               sentAt: '2026-05-22 08:00',
               status: '成功',
@@ -4208,7 +4218,7 @@ function buildSingleSkillReportResult(
         templateUsage,
         pushConfig: {
           frequency: '按需生成',
-          channel: '站内消息',
+          channel: '邮件',
           audience: '当前操作人',
           nextRun: '未设置',
           lastRun: '2026-05-22 08:00',
@@ -4216,7 +4226,7 @@ function buildSingleSkillReportResult(
           records: [
             {
               id: 'push-single-3',
-              channel: '站内消息',
+              channel: '邮件',
               target: '当前操作人',
               sentAt: '2026-05-22 08:00',
               status: '成功',
@@ -4289,7 +4299,7 @@ export function buildReportResult(
     templateUsage,
     pushConfig: {
       frequency: special ? '每周一 08:30' : '每日 08:00',
-      channel: special ? '邮件' : '站内消息',
+      channel: '邮件',
       audience: special ? '经营分析组' : '医院经营班子',
       nextRun: '2026-05-23 08:00',
       lastRun: '2026-05-22 08:00',
@@ -4297,7 +4307,7 @@ export function buildReportResult(
       records: [
         {
           id: 'push-1',
-          channel: '站内消息',
+          channel: '邮件',
           target: '医院经营班子',
           sentAt: '2026-05-22 08:00',
           status: '成功',

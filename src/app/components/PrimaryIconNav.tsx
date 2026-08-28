@@ -6,6 +6,8 @@ import homeSmile2FillActive from '../../assets/figma-home/home-smile-2-fill-acti
 import homeSmile2Line from '../../assets/figma-home/home-smile-2-line.svg';
 import settingsFill from '../../assets/figma-home/settings-fill.svg';
 import settingsLine from '../../assets/figma-home/settings-line.svg';
+import subscriptionFill from '../../assets/figma-home/subscription-fill.svg';
+import subscriptionLine from '../../assets/figma-home/subscription-line.svg';
 
 type NavItem = {
   label: string;
@@ -27,7 +29,7 @@ const navItems: NavItem[] = [
       pathname === '/ask' ||
       pathname.startsWith('/ask/') ||
       pathname === '/report' ||
-      pathname.startsWith('/report/'),
+      pathname.startsWith('/report/case/'),
   },
   {
     label: '模板库',
@@ -35,6 +37,17 @@ const navItems: NavItem[] = [
     icon: functionLine,
     activeIcon: functionFill,
     isActive: (pathname) => pathname === '/templates' || pathname.startsWith('/templates/'),
+  },
+  {
+    label: '订阅与推送',
+    path: '/reports',
+    icon: subscriptionLine,
+    activeIcon: subscriptionFill,
+    isActive: (pathname) =>
+      pathname === '/reports' ||
+      pathname.startsWith('/reports/') ||
+      pathname.startsWith('/report/preview/') ||
+      pathname === '/report-subscriptions',
   },
   {
     label: '配置中心',

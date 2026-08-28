@@ -1,21 +1,27 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import {
   CalendarClock,
-  CheckCircle2,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Clock3,
   Edit3,
+  Eye,
   FileText,
-  Mail,
   PauseCircle,
   PlayCircle,
-  RefreshCw,
   Search,
-  Send,
   Trash2,
-  TriangleAlert,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useWorkspace } from '../context/WorkspaceContext';
-import { ReportSubscription, ReportSubscriptionStatus } from '../types';
+import {
+  ReportPushRecord,
+  ReportSubscription,
+  ReportSubscriptionRun,
+  ReportTemplate,
+} from '../types';
 import { ConfigActionIconButton } from '../components/ConfigActionIconButton';
 import { ReportSubscriptionDialog } from '../components/ReportSubscriptionDialog';
 import {
@@ -28,6 +34,26 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../components/ui/alert-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
+
+type ReportCenterTab = 'reports' | 'subscriptions';
+type DeliveryStatus = '成功' | '失败';
+
+type ReportRecord = {
+  run: ReportSubscriptionRun;
+  subscription: ReportSubscription;
+  reportName: string;
+  agentName: string;
+  deliveryStatus: DeliveryStatus;
+  pushedAt: string;
+};
 
 const frequencyLabel: Record<ReportSubscription['frequency'], string> = {
   daily: '每日',
@@ -36,22 +62,113 @@ const frequencyLabel: Record<ReportSubscription['frequency'], string> = {
   cron: '自定义',
 };
 
-const statusLabel: Record<ReportSubscriptionStatus, string> = {
-  running: '运行中',
-  paused: '已暂停',
-  needs_attention: '需处理',
+const weekDayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
+const creatorNameById: Record<string, string> = {
+  admin: '系统管理员',
+  lxy: '李晓云',
 };
 
-const statusClass: Record<ReportSubscriptionStatus, string> = {
-  running: 'bg-emerald-50 text-emerald-700',
-  paused: 'bg-gray-100 text-gray-600',
-  needs_attention: 'bg-amber-50 text-amber-700',
+function formatCreatorName(createdBy: string) {
+  const normalizedCreator = createdBy.trim();
+  return creatorNameById[normalizedCreator] ?? (normalizedCreator || '-');
+}
+
+function getTemplateReportName(template: ReportTemplate | undefined, fallback: string) {
+  const prompt = template?.templatePrompt?.trim() ?? '';
+  const configuredName = prompt.match(/报告(?:名称|名)\s*[：:]\s*([^\n。；;]+)/)?.[1]?.trim();
+  if (configuredName) return configuredName;
+
+  const templateName = template?.name?.replace(/模板$/, '').trim();
+  return templateName || fallback;
+}
+
+function formatSubscriptionSchedule(subscription: ReportSubscription) {
+  if (subscription.frequency === 'weekly') {
+    return `每${weekDayLabels[(subscription.runDay ?? 1) - 1] ?? '周一'} ${subscription.runTime}`;
+  }
+  if (subscription.frequency === 'monthly') {
+    const runDay = Math.min(28, Math.max(1, subscription.runDay ?? 1));
+    return `每月${runDay}号 ${subscription.runTime}`;
+  }
+  return `${frequencyLabel[subscription.frequency]} ${subscription.runTime}`;
+}
+
+const deliveryStatusClass: Record<DeliveryStatus, string> = {
+  成功: 'border-[#b7ebc6] bg-[#f0fff4] text-[#00a870]',
+  失败: 'border-[#ffccc7] bg-[#fff1f0] text-[#f53f3f]',
 };
 
-function getLastStatusClass(status: ReportSubscription['lastStatus']) {
-  if (status === '成功') return 'bg-emerald-50 text-emerald-700';
-  if (status === '重试中') return 'bg-blue-50 text-blue-700';
-  return 'bg-red-50 text-red-700';
+function getDeliveryStatus(records: ReportPushRecord[]): DeliveryStatus {
+  return records.length > 0 && records.every((record) => record.status === '成功') ? '成功' : '失败';
+}
+
+function getTimestamp(value: string) {
+  const timestamp = new Date(value.replace(/-/g, '/')).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function getLatestPushTime(records: ReportPushRecord[]) {
+  return records.reduce(
+    (latest, record) => getTimestamp(record.sentAt) > getTimestamp(latest) ? record.sentAt : latest,
+    '',
+  );
+}
+
+function StatusBadge({ label, className }: { label: string; className: string }) {
+  return (
+    <span className={`inline-flex whitespace-nowrap rounded-[6px] border px-2 py-0.5 text-[12px] font-medium leading-5 ${className}`}>
+      {label}
+    </span>
+  );
+}
+
+function IconLink({
+  to,
+  label,
+  icon: Icon,
+  disabledReason,
+}: {
+  to: string;
+  label: string;
+  icon: typeof Eye;
+  disabledReason?: string;
+}) {
+  const disabled = Boolean(disabledReason);
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        {disabled ? (
+          <span
+            tabIndex={0}
+            className="inline-flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-[6px] text-[#c9cdd4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c9cdd4]/60"
+            aria-label={disabledReason}
+          >
+            <button
+              type="button"
+              disabled
+              aria-label={disabledReason}
+              className="inline-flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-[6px] text-[#c9cdd4]"
+            >
+              <Icon aria-hidden="true" className="h-4 w-4" />
+            </button>
+          </span>
+        ) : (
+          <Link
+            to={to}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={label}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-[6px] text-[#165dff] transition-colors hover:bg-[#e8f3ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
+          >
+            <Icon aria-hidden="true" className="h-4 w-4" />
+          </Link>
+        )}
+      </TooltipTrigger>
+      <TooltipContent side="top" sideOffset={6}>{disabledReason ?? label}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 export default function ReportSubscriptionsPage() {
@@ -62,49 +179,87 @@ export default function ReportSubscriptionsPage() {
     updateReportSubscription,
     deleteReportSubscription,
   } = useWorkspace();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab: ReportCenterTab = searchParams.get('tab') === 'reports' ? 'reports' : 'subscriptions';
   const [query, setQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | ReportSubscriptionStatus>('all');
+  const [reportStatusFilter, setReportStatusFilter] = useState<'all' | DeliveryStatus>('all');
   const [editingSubscription, setEditingSubscription] = useState<ReportSubscription | null>(null);
-  const [pendingDeleteSubscription, setPendingDeleteSubscription] =
-    useState<ReportSubscription | null>(null);
+  const [pendingDeleteSubscription, setPendingDeleteSubscription] = useState<ReportSubscription | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [testResultById, setTestResultById] = useState<Record<string, string>>({});
 
-  const filteredSubscriptions = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-
-    return reportSubscriptions.filter((subscription) => {
-      const template = reportTemplates.find((item) => item.id === subscription.reportTemplateId);
-      const agent = agents.find((item) => item.id === subscription.agentId);
-      const matchesStatus = statusFilter === 'all' || subscription.status === statusFilter;
-      const matchesQuery =
-        !normalizedQuery ||
-        [
-          subscription.name,
-          subscription.reportTheme,
-          subscription.period,
-          template?.name,
-          agent?.name,
-          ...subscription.recipients,
-          ...subscription.channels,
-        ]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase()
-          .includes(normalizedQuery);
-
-      return matchesStatus && matchesQuery;
-    });
-  }, [agents, query, reportSubscriptions, reportTemplates, statusFilter]);
-
-  const summary = useMemo(
-    () => ({
-      running: reportSubscriptions.filter((item) => item.status === 'running').length,
-      needsAttention: reportSubscriptions.filter((item) => item.status === 'needs_attention').length,
-      retrying: reportSubscriptions.filter((item) => item.lastStatus === '重试中').length,
-    }),
+  const activeSubscriptions = useMemo(
+    () => reportSubscriptions
+      .filter((subscription) => !subscription.deletedAt)
+      .sort((left, right) => getTimestamp(right.createdAt) - getTimestamp(left.createdAt)),
     [reportSubscriptions],
   );
+
+  const reportRecords = useMemo<ReportRecord[]>(() => {
+    return reportSubscriptions
+      .flatMap((subscription) => {
+        const agentName = agents.find((item) => item.id === subscription.agentId)?.name ?? '未绑定 Agent';
+        const template = reportTemplates.find((item) => item.id === subscription.reportTemplateId);
+
+        return subscription.runs.map((run) => {
+          const pushRecords = subscription.pushRecords.filter((record) => !record.runId || record.runId === run.id);
+          return {
+            run,
+            subscription,
+            reportName: getTemplateReportName(template, run.reportTitle),
+            agentName,
+            deliveryStatus: getDeliveryStatus(pushRecords),
+            pushedAt: getLatestPushTime(pushRecords),
+          };
+        });
+      })
+      .sort((left, right) => {
+        const pushedAtDifference = getTimestamp(right.pushedAt) - getTimestamp(left.pushedAt);
+        return pushedAtDifference || getTimestamp(right.run.generatedAt) - getTimestamp(left.run.generatedAt);
+      });
+  }, [agents, reportSubscriptions, reportTemplates]);
+
+  const filteredReports = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return reportRecords.filter((record) => {
+      const matchesStatus = reportStatusFilter === 'all' || record.deliveryStatus === reportStatusFilter;
+      const matchesQuery = !normalizedQuery || [
+        record.reportName,
+        record.subscription.name,
+        record.subscription.period,
+        ...record.subscription.channels,
+        formatCreatorName(record.subscription.createdBy),
+        record.agentName,
+        record.deliveryStatus,
+      ].join(' ').toLowerCase().includes(normalizedQuery);
+      return matchesStatus && matchesQuery;
+    });
+  }, [query, reportRecords, reportStatusFilter]);
+
+  const filteredSubscriptions = useMemo(() => {
+      const normalizedQuery = query.trim().toLowerCase();
+    return activeSubscriptions.filter((subscription) => {
+      const template = reportTemplates.find((item) => item.id === subscription.reportTemplateId);
+      const agent = agents.find((item) => item.id === subscription.agentId);
+      const matchesQuery = !normalizedQuery || [
+        subscription.name,
+        subscription.reportTheme,
+        subscription.period,
+        template?.name,
+        agent?.name,
+        ...subscription.recipients,
+        ...subscription.channels,
+      ].filter(Boolean).join(' ').toLowerCase().includes(normalizedQuery);
+      return matchesQuery;
+    });
+  }, [activeSubscriptions, agents, query, reportTemplates]);
+
+  const setActiveTab = (tab: ReportCenterTab) => {
+    setQuery('');
+    const nextParams = new URLSearchParams(searchParams);
+    if (tab === 'subscriptions') nextParams.delete('tab');
+    else nextParams.set('tab', 'reports');
+    setSearchParams(nextParams, { replace: true });
+  };
 
   const openEditDialog = (subscription: ReportSubscription) => {
     setEditingSubscription(subscription);
@@ -112,293 +267,256 @@ export default function ReportSubscriptionsPage() {
   };
 
   const toggleSubscriptionStatus = (subscription: ReportSubscription) => {
-    updateReportSubscription(subscription.id, {
-      status: subscription.status === 'paused' ? 'running' : 'paused',
-    });
-  };
-
-  const handleTestSend = (subscription: ReportSubscription) => {
-    const target = subscription.recipients.slice(0, 2).join('、') || '经营分析组';
-    setTestResultById((current) => ({
-      ...current,
-      [subscription.id]: `测试发送成功：通过${subscription.channels.join('、')}发送样例报告给 ${target}。`,
-    }));
+    const nextStatus = subscription.status === 'running' ? 'paused' : 'running';
+    updateReportSubscription(subscription.id, { status: nextStatus });
+    toast.success(nextStatus === 'running' ? '订阅任务已恢复' : '订阅任务已暂停');
   };
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto bg-transparent px-6 py-6">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 text-lg font-semibold text-gray-950">
-                <CalendarClock className="h-5 w-5 text-blue-600" />
-                订阅管理
-              </div>
-              <p className="mt-2 text-sm leading-6 text-gray-500">
-                查看和维护从模板创建的订阅任务，管理定时生成、自动推送、运行记录和失败重试状态。
-              </p>
-            </div>
-            <Link
-              to="/templates"
-              className="inline-flex h-10 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700"
-            >
-              <FileText className="h-4 w-4" />
-              去模板库订阅
-            </Link>
-          </div>
+    <div className="h-full min-h-0 flex-1 overflow-hidden bg-white font-['PingFang_SC','Microsoft_YaHei',sans-serif]">
+      <div className="flex h-full min-h-0 flex-col">
+        <header className="shrink-0 border-b border-[#e5e6eb] px-5 pb-0 pt-4 sm:px-6">
+          <h1 className="text-[20px] font-semibold leading-7 text-[#1d2129]">订阅与推送</h1>
 
-          <div className="mt-5 grid gap-3 md:grid-cols-3">
-            <div className="rounded-lg border border-emerald-100 bg-emerald-50/60 p-4">
-              <div className="flex items-center gap-2 text-sm text-emerald-700">
-                <CheckCircle2 className="h-4 w-4" />
-                运行中
-              </div>
-              <div className="mt-2 text-2xl font-semibold text-emerald-900">{summary.running}</div>
-            </div>
-            <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-4">
-              <div className="flex items-center gap-2 text-sm text-blue-700">
-                <RefreshCw className="h-4 w-4" />
-                重试中
-              </div>
-              <div className="mt-2 text-2xl font-semibold text-blue-900">{summary.retrying}</div>
-            </div>
-            <div className="rounded-lg border border-amber-100 bg-amber-50/60 p-4">
-              <div className="flex items-center gap-2 text-sm text-amber-700">
-                <TriangleAlert className="h-4 w-4" />
-                需处理
-              </div>
-              <div className="mt-2 text-2xl font-semibold text-amber-900">{summary.needsAttention}</div>
-            </div>
-          </div>
+          <nav aria-label="订阅与推送视图" className="mt-3 flex gap-6">
+            {([
+              { value: 'subscriptions', label: '订阅管理' },
+              { value: 'reports', label: '推送记录' },
+            ] as const).map((tab) => {
+              const selected = activeTab === tab.value;
+              return (
+                <button
+                  key={tab.value}
+                  type="button"
+                  aria-current={selected ? 'page' : undefined}
+                  onClick={() => setActiveTab(tab.value)}
+                  className={`relative flex h-10 items-center text-[14px] leading-[22px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${selected ? 'font-medium text-[#165dff]' : 'text-[#4e5969] hover:text-[#1d2129]'}`}
+                >
+                  {tab.label}
+                  {selected && <span aria-hidden="true" className="absolute inset-x-0 bottom-0 h-0.5 bg-[#165dff]" />}
+                </button>
+              );
+            })}
+          </nav>
+        </header>
 
-          <div className="mt-5 flex flex-col gap-3 md:flex-row">
-            <select
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value as 'all' | ReportSubscriptionStatus)}
-              className="h-11 rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-700 focus:border-blue-500 focus:outline-none md:w-40"
-            >
-              <option value="all">全部状态</option>
-              <option value="running">运行中</option>
-              <option value="paused">已暂停</option>
-              <option value="needs_attention">需处理</option>
-            </select>
-            <div className="flex flex-1 items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-              <Search className="h-4 w-4 text-gray-400" />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜索任务、模板、Agent、接收对象"
-                className="w-full bg-transparent text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none"
-              />
-            </div>
-          </div>
-        </section>
-
-        <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1180px] table-fixed">
-              <colgroup>
-                <col className="w-[22%]" />
-                <col className="w-[14%]" />
-                <col className="w-[15%]" />
-                <col className="w-[14%]" />
-                <col className="w-[13%]" />
-                <col className="w-[10%]" />
-                <col className="w-[12%]" />
-              </colgroup>
-              <thead className="bg-gray-50">
-                <tr className="border-b border-gray-200 text-left text-sm text-gray-600">
-                  <th className="px-6 py-3">订阅任务</th>
-                  <th className="px-6 py-3">模板 / Agent</th>
-                  <th className="px-6 py-3">频率</th>
-                  <th className="px-6 py-3">接收对象</th>
-                  <th className="px-6 py-3">下次执行</th>
-                  <th className="px-6 py-3">状态</th>
-                  <th className="px-6 py-3">操作</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {filteredSubscriptions.length ? (
-                  filteredSubscriptions.map((subscription) => {
-                    const template = reportTemplates.find((item) => item.id === subscription.reportTemplateId);
-                    const agent = agents.find((item) => item.id === subscription.agentId);
-
-                    return (
-                      <tr key={subscription.id} className="align-top text-sm text-gray-700 hover:bg-gray-50">
-                        <td className="px-6 py-4">
-                          <div className="font-medium text-gray-900">{subscription.name}</div>
-                          <div className="mt-1 text-xs text-gray-500">{subscription.reportTheme}</div>
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            {subscription.channels.map((channel) => (
-                              <span
-                                key={channel}
-                                className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700"
-                              >
-                                {channel === '邮件' ? <Mail className="h-3 w-3" /> : <Send className="h-3 w-3" />}
-                                {channel}
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="font-medium text-gray-900">{template?.name ?? '模板已删除'}</div>
-                          <div className="mt-1 text-xs text-gray-500">{agent?.name ?? '未绑定 Agent'}</div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div>{frequencyLabel[subscription.frequency]} {subscription.runTime}</div>
-                          <div className="mt-1 text-xs text-gray-500">{subscription.period}</div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="line-clamp-2">{subscription.recipients.join('、')}</div>
-                          <div className="mt-1 text-xs text-gray-500">{subscription.outputFormats.join('、')}</div>
-                        </td>
-                        <td className="whitespace-nowrap px-6 py-4">
-                          <div>{subscription.nextRunAt}</div>
-                          <span
-                            className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-xs ${getLastStatusClass(subscription.lastStatus)}`}
-                          >
-                            最近：{subscription.lastStatus}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span
-                            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusClass[subscription.status]}`}
-                          >
-                            {statusLabel[subscription.status]}
-                          </span>
-                          {testResultById[subscription.id] && (
-                            <div className="mt-2 text-xs leading-5 text-emerald-700">
-                              {testResultById[subscription.id]}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-1 whitespace-nowrap">
-                            <ConfigActionIconButton
-                              onClick={() => toggleSubscriptionStatus(subscription)}
-                              icon={subscription.status === 'paused' ? PlayCircle : PauseCircle}
-                              label={subscription.status === 'paused' ? '启用' : '暂停'}
-                              variant={subscription.status === 'paused' ? 'test' : 'neutral'}
-                            />
-                            <ConfigActionIconButton
-                              onClick={() => handleTestSend(subscription)}
-                              icon={Send}
-                              label="测试发送"
-                              variant="test"
-                            />
-                            <ConfigActionIconButton
-                              onClick={() => openEditDialog(subscription)}
-                              icon={Edit3}
-                              label="编辑"
-                              variant="edit"
-                            />
-                            <ConfigActionIconButton
-                              onClick={() => setPendingDeleteSubscription(subscription)}
-                              icon={Trash2}
-                              label="删除"
-                              variant="delete"
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                ) : (
-                  <tr>
-                    <td colSpan={7} className="px-6 py-14 text-center text-sm text-gray-500">
-                      暂无匹配的订阅任务
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section className="grid gap-4 lg:grid-cols-2">
-          {filteredSubscriptions.map((subscription) => (
-            <div key={`${subscription.id}-records`} className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="font-medium text-gray-900">{subscription.name}</div>
-                  <div className="mt-1 text-sm text-gray-500">运行实例与推送记录</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6">
+          <section aria-label={activeTab === 'reports' ? '推送记录' : '订阅管理'}>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <label className={`flex h-10 min-w-0 flex-1 items-center gap-2 rounded-[8px] border border-[#e5e6eb] bg-white px-3 transition-colors focus-within:border-[#165dff] focus-within:ring-2 focus-within:ring-[#165dff]/10 sm:max-w-[360px] ${activeTab === 'reports' ? 'sm:order-2' : ''}`}>
+                <Search aria-hidden="true" className="h-4 w-4 shrink-0 text-[#86909c]" />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder={activeTab === 'reports' ? '搜索报告名称、订阅任务或创建人' : '搜索订阅任务、报告模板或接收对象'}
+                  className="min-w-0 flex-1 bg-transparent text-[14px] leading-[22px] text-[#1d2129] placeholder:text-[#c9cdd4] focus:outline-none"
+                />
+              </label>
+              {activeTab === 'reports' && (
+                <div className="flex w-full shrink-0 items-center gap-2 sm:order-1 sm:w-auto">
+                  <span className="shrink-0 text-[14px] leading-[22px] text-[#4e5969]">推送结果：</span>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={`筛选报告推送状态：${reportStatusFilter === 'all' ? '全部' : reportStatusFilter}`}
+                        className={`group flex h-10 min-w-0 flex-1 items-center justify-between rounded-[8px] border bg-white px-3 text-[14px] outline-none transition-colors hover:border-[#c9cdd4] focus-visible:border-[#165dff] focus-visible:ring-2 focus-visible:ring-[#165dff]/10 data-[state=open]:border-[#165dff] data-[state=open]:ring-2 data-[state=open]:ring-[#165dff]/10 sm:w-[140px] sm:flex-none ${reportStatusFilter === 'all' ? 'border-[#e5e6eb]' : 'border-[#bedaff] bg-[#f7fbff]'}`}
+                      >
+                        <span className={reportStatusFilter === 'all' ? 'text-[#4e5969]' : 'font-medium text-[#1d2129]'}>
+                          {reportStatusFilter === 'all' ? '全部' : reportStatusFilter}
+                        </span>
+                        <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 text-[#86909c] transition-transform duration-150 group-data-[state=open]:rotate-180" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="start"
+                      sideOffset={6}
+                      className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-[var(--radix-dropdown-menu-trigger-width)] rounded-[8px] border-[#e5e6eb] bg-white p-1 text-[#1d2129] shadow-[0_4px_12px_rgba(29,33,41,0.08)]"
+                    >
+                      <DropdownMenuRadioGroup
+                        value={reportStatusFilter}
+                        onValueChange={(value) => setReportStatusFilter(value as 'all' | DeliveryStatus)}
+                      >
+                        {[
+                          { value: 'all', label: '全部' },
+                          { value: '成功', label: '成功' },
+                          { value: '失败', label: '失败' },
+                        ].map((option) => {
+                          const selected = reportStatusFilter === option.value;
+                          return (
+                            <DropdownMenuRadioItem
+                              key={option.value}
+                              value={option.value}
+                              className="h-10 rounded-[6px] py-0 pl-3 pr-3 text-[14px] focus:bg-[#f7f8fa] focus:text-[#1d2129] data-[state=checked]:bg-[#e8f3ff] data-[state=checked]:font-medium data-[state=checked]:text-[#165dff] [&>span:first-child]:hidden"
+                            >
+                              <span>{option.label}</span>
+                              {selected && <Check aria-hidden="true" className="ml-auto h-4 w-4 text-[#165dff]" />}
+                            </DropdownMenuRadioItem>
+                          );
+                        })}
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
-                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
-                  重试上限 {subscription.retryLimit} 次
-                </span>
-              </div>
-              <div className="mt-4 space-y-3">
-                {subscription.runs.map((run) => (
-                  <div key={run.id} className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-sm font-medium text-gray-900">{run.reportTitle}</div>
-                      <span className={`rounded-full px-2 py-0.5 text-xs ${getLastStatusClass(run.status)}`}>
-                        {run.status}
-                      </span>
-                    </div>
-                    <div className="mt-2 text-xs leading-5 text-gray-500">
-                      生成时间：{run.generatedAt} · 重试：{run.retryCount} 次
-                    </div>
-                    {run.failureReason && (
-                      <div className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">
-                        {run.failureReason}
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {subscription.pushRecords.map((record) => (
-                  <div key={record.id} className="flex items-start gap-3 text-sm">
-                    <span
-                      className={`mt-0.5 h-2 w-2 rounded-full ${
-                        record.status === '成功' ? 'bg-emerald-500' : 'bg-red-500'
-                      }`}
-                    />
-                    <div className="min-w-0">
-                      <div className="text-gray-900">
-                        {record.sentAt} · {record.channel} · {record.target}
-                      </div>
-                      <div className="mt-1 text-gray-500">{record.note}</div>
-                    </div>
-                  </div>
-                ))}
+              )}
+            </div>
+
+            <div className="mt-4 overflow-hidden rounded-[8px] border border-[#e5e6eb]">
+              <div className="overflow-x-auto">
+                {activeTab === 'reports' ? (
+                  <table className="w-full min-w-[960px] table-fixed">
+                    <colgroup><col className="w-[230px]" /><col className="w-[160px]" /><col className="w-[100px]" /><col className="w-[120px]" /><col className="w-[170px]" /><col className="w-[100px]" /><col className="w-[80px]" /></colgroup>
+                    <thead className="bg-[#f7f8fa]">
+                      <tr className="h-11 text-left text-[13px] leading-5 text-[#4e5969]">
+                        <th className="px-4 font-medium">报告名称</th><th className="px-4 font-medium">订阅任务</th><th className="px-4 font-medium">接收渠道</th><th className="px-4 font-medium">创建人</th><th className="px-4 font-medium">推送时间</th><th className="px-4 font-medium">推送结果</th><th className="px-4 font-medium">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#e5e6eb]">
+                      {filteredReports.length ? filteredReports.map((record) => (
+                        <tr key={record.run.id} className="h-16 text-[14px] text-[#1d2129] transition-colors hover:bg-[#f7f8fa]">
+                          <td className="px-4 py-3">
+                            <Tooltip delayDuration={240}>
+                              <TooltipTrigger asChild>
+                                <span
+                                  tabIndex={0}
+                                  aria-label={`报告名称：${record.reportName}`}
+                                  className="block max-w-full truncate rounded-[4px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
+                                >
+                                  {record.reportName}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" sideOffset={6} className="max-w-[min(280px,calc(100vw-32px))] whitespace-normal break-words text-left text-wrap leading-5">
+                                {record.reportName}
+                              </TooltipContent>
+                            </Tooltip>
+                          </td>
+                          <td className="px-4 py-3 text-[#4e5969]"><div className="truncate">{record.subscription.name}</div></td>
+                          <td className="px-4 py-3 text-[#4e5969]">{record.subscription.channels.join('、') || '-'}</td>
+                          <td className="px-4 py-3 text-[#4e5969]">{formatCreatorName(record.subscription.createdBy)}</td>
+                          <td className="whitespace-nowrap px-4 py-3 text-[#4e5969]">{record.pushedAt || '-'}</td>
+                          <td className="px-4 py-3"><StatusBadge label={record.deliveryStatus} className={deliveryStatusClass[record.deliveryStatus]} /></td>
+                          <td className="px-4 py-3">
+                            <IconLink
+                              to={record.run.link}
+                              label="查看报告"
+                              icon={Eye}
+                              disabledReason={record.run.status === '成功' ? undefined : '报告生成失败'}
+                            />
+                          </td>
+                        </tr>
+                      )) : (
+                        <tr><td colSpan={7} className="h-44 px-4 text-center"><FileText aria-hidden="true" className="mx-auto h-8 w-8 text-[#c9cdd4]" /><div className="mt-3 text-[14px] text-[#4e5969]">暂无匹配的报告</div><div className="mt-1 text-[12px] text-[#86909c]">订阅任务执行后，报告会出现在这里</div></td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                ) : (
+                  <table className="w-full min-w-[1160px] table-fixed">
+                    <colgroup><col className="w-[180px]" /><col className="w-[150px]" /><col className="w-[100px]" /><col className="w-[130px]" /><col className="w-[170px]" /><col className="w-[100px]" /><col className="w-[194px]" /><col className="w-[136px]" /></colgroup>
+                    <thead className="bg-[#f7f8fa]">
+                      <tr className="h-11 text-left text-[13px] leading-5 text-[#4e5969]">
+                        <th className="px-4 font-medium">订阅任务</th><th className="px-4 font-medium">报告模板</th><th className="px-4 font-medium">数据周期</th><th className="px-4 font-medium">推送计划</th><th className="px-4 font-medium">接收对象</th><th className="px-4 font-medium">接收渠道</th><th className="px-4 font-medium">创建时间</th><th className="px-4 font-medium">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#e5e6eb]">
+                      {filteredSubscriptions.length ? filteredSubscriptions.map((subscription) => {
+                        const template = reportTemplates.find((item) => item.id === subscription.reportTemplateId);
+                        const visibleRecipients = subscription.recipients.slice(0, 2);
+                        const hiddenRecipientCount = Math.max(0, subscription.recipients.length - visibleRecipients.length);
+                        const channelText = subscription.channels.join('、') || '-';
+                        const subscriptionNameCharacters = Array.from(subscription.name);
+                        const displaySubscriptionName = subscriptionNameCharacters.length > 20
+                          ? `${subscriptionNameCharacters.slice(0, 20).join('')}...`
+                          : subscription.name;
+                        return (
+                          <tr key={subscription.id} className="h-[68px] text-[14px] text-[#1d2129] transition-colors hover:bg-[#f7f8fa]">
+                            <td className="px-4 py-3">
+                              <Tooltip delayDuration={240}>
+                                <TooltipTrigger asChild>
+                                  <span
+                                    tabIndex={0}
+                                    aria-label={`订阅任务：${subscription.name}`}
+                                    className="block max-w-full truncate rounded-[4px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
+                                  >
+                                    {displaySubscriptionName}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" sideOffset={6} className="max-w-[min(280px,calc(100vw-32px))] whitespace-normal break-words text-left text-wrap leading-5">
+                                  {subscription.name}
+                                </TooltipContent>
+                              </Tooltip>
+                            </td>
+                            <td className="px-4 py-3"><div className="truncate text-[#4e5969]">{template?.name ?? '模板已删除'}</div></td>
+                            <td className="px-4 py-3 text-[#4e5969]">{subscription.period || '-'}</td>
+                            <td className="px-4 py-3 text-[#4e5969]">{formatSubscriptionSchedule(subscription)}</td>
+                            <td className="px-4 py-3">
+                              <Tooltip delayDuration={240}>
+                                <TooltipTrigger asChild>
+                                  <div
+                                    tabIndex={0}
+                                    aria-label={`接收对象：${subscription.recipients.join('、') || '暂无'}`}
+                                    className="flex min-w-0 items-center gap-1.5 rounded-[4px] text-[#4e5969] outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
+                                  >
+                                    <span className="truncate">{visibleRecipients.join('、') || '-'}</span>
+                                    {hiddenRecipientCount > 0 && (
+                                      <span className="inline-flex h-5 shrink-0 items-center rounded-full bg-[#f2f3f5] px-1.5 text-[11px] leading-5 text-[#4e5969]">+{hiddenRecipientCount}</span>
+                                    )}
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" sideOffset={6} className="max-w-[280px] text-left">
+                                  {subscription.recipients.length ? (
+                                    <span className="flex flex-wrap">
+                                      {subscription.recipients.map((recipient, index) => (
+                                        <span key={`${recipient}-${index}`} className="whitespace-nowrap">
+                                          {recipient}{index < subscription.recipients.length - 1 ? '、' : ''}
+                                        </span>
+                                      ))}
+                                    </span>
+                                  ) : '暂无接收对象'}
+                                </TooltipContent>
+                              </Tooltip>
+                            </td>
+                            <td className="px-4 py-3">
+                              <Tooltip delayDuration={240}>
+                                <TooltipTrigger asChild>
+                                  <div
+                                    tabIndex={0}
+                                    aria-label={`接收渠道：${channelText}`}
+                                    className="truncate rounded-[4px] text-[#4e5969] outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
+                                  >
+                                    {channelText}
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" sideOffset={6}>
+                                  {channelText === '-' ? '暂无接收渠道' : channelText}
+                                </TooltipContent>
+                              </Tooltip>
+                            </td>
+                            <td className="whitespace-nowrap px-4 py-3 text-[#4e5969]">{subscription.createdAt || '-'}</td>
+                            <td className="px-4 py-3"><div className="flex items-center gap-1 whitespace-nowrap"><ConfigActionIconButton onClick={() => toggleSubscriptionStatus(subscription)} icon={subscription.status === 'running' ? PauseCircle : PlayCircle} label={subscription.status === 'running' ? '暂停任务' : '恢复任务'} variant={subscription.status === 'running' ? 'neutral' : 'test'} /><ConfigActionIconButton onClick={() => openEditDialog(subscription)} icon={Edit3} label="编辑订阅" variant="edit" /><ConfigActionIconButton onClick={() => setPendingDeleteSubscription(subscription)} icon={Trash2} label="删除订阅" variant="delete" /></div></td>
+                          </tr>
+                        );
+                      }) : (
+                        <tr><td colSpan={8} className="h-44 px-4 text-center"><CalendarClock aria-hidden="true" className="mx-auto h-8 w-8 text-[#c9cdd4]" /><div className="mt-3 text-[14px] text-[#4e5969]">暂无匹配的订阅任务</div><Link to="/templates" className="mt-2 inline-flex items-center gap-1 text-[13px] text-[#165dff]">去模板库创建订阅<ChevronRight aria-hidden="true" className="h-4 w-4" /></Link></td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
-          ))}
-        </section>
+          </section>
+        </div>
       </div>
 
       <ReportSubscriptionDialog
         open={isDialogOpen}
-        onOpenChange={setIsDialogOpen}
+        onOpenChange={(open) => { setIsDialogOpen(open); if (!open) setEditingSubscription(null); }}
         subscription={editingSubscription}
       />
 
-      <AlertDialog
-        open={Boolean(pendingDeleteSubscription)}
-        onOpenChange={(open) => {
-          if (!open) setPendingDeleteSubscription(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>删除订阅任务</AlertDialogTitle>
-            <AlertDialogDescription>
-              确认删除「{pendingDeleteSubscription?.name}」？历史运行记录也会从当前工作区移除。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (pendingDeleteSubscription) deleteReportSubscription(pendingDeleteSubscription.id);
-                setPendingDeleteSubscription(null);
-              }}
-              className="bg-red-600 text-white hover:bg-red-700"
-            >
-              删除
-            </AlertDialogAction>
-          </AlertDialogFooter>
+      <AlertDialog open={Boolean(pendingDeleteSubscription)} onOpenChange={(open) => { if (!open) setPendingDeleteSubscription(null); }}>
+        <AlertDialogContent className="max-w-[400px] rounded-[8px] border-[#e5e6eb]">
+          <AlertDialogHeader><AlertDialogTitle>删除订阅任务</AlertDialogTitle><AlertDialogDescription>确认删除「{pendingDeleteSubscription?.name}」？已有报告仍会保留在报告记录中。</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction onClick={() => { if (pendingDeleteSubscription) deleteReportSubscription(pendingDeleteSubscription.id); setPendingDeleteSubscription(null); toast.success('订阅任务已删除'); }} className="bg-[#f53f3f] text-white hover:bg-[#d9363e]">删除</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>

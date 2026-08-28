@@ -38,7 +38,6 @@ export function ConfigActionIconButton({
         <button
           type={type}
           aria-label={label}
-          title={label}
           disabled={disabled}
           className={cn(
             'inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-40',

@@ -645,7 +645,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       },
       deleteReportSubscription: (subscriptionId) => {
         setReportSubscriptions((current) =>
-          current.filter((subscription) => subscription.id !== subscriptionId),
+          current.map((subscription) =>
+            subscription.id === subscriptionId
+              ? {
+                  ...subscription,
+                  status: 'paused',
+                  deletedAt: new Date().toLocaleString('zh-CN', { hour12: false }),
+                  updatedAt: new Date().toLocaleString('zh-CN', { hour12: false }),
+                }
+              : subscription,
+          ),
         );
       },
       addSemanticDataset: (dataset) => {

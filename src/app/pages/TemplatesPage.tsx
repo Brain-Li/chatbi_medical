@@ -30,6 +30,7 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
+import { ReportSubscriptionDialog } from '../components/ReportSubscriptionDialog';
 
 const templatePageSizeOptions = [10, 20, 50] as const;
 const templateDescriptionMaxLength = 50;
@@ -330,6 +331,7 @@ export default function TemplatesPage() {
   const [templatePage, setTemplatePage] = useState(1);
   const [templatePageSize, setTemplatePageSize] = useState<number>(templatePageSizeOptions[0]);
   const [editingTemplate, setEditingTemplate] = useState<ReportTemplate | null>(null);
+  const [subscribingTemplate, setSubscribingTemplate] = useState<ReportTemplate | null>(null);
   const [viewingTemplate, setViewingTemplate] = useState<ReportTemplate | null>(null);
   const [pendingDeleteTemplate, setPendingDeleteTemplate] = useState<ReportTemplate | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -795,7 +797,6 @@ export default function TemplatesPage() {
                   paginatedTemplates.map((template) => {
                     const enabled = template.status !== 'disabled';
                     const templateSummary = template.description.trim();
-
                     return (
                       <tr
                         key={template.id}
@@ -851,11 +852,15 @@ export default function TemplatesPage() {
                           <div className="flex items-center justify-start gap-2 whitespace-nowrap">
                             {[
                               {
-                                tooltipLabel: '订阅功能开发中，敬请期待',
-                                ariaLabel: `订阅${template.name}，功能开发中`,
+                                tooltipLabel: enabled
+                                  ? '订阅'
+                                  : '启用模板后可订阅',
+                                ariaLabel: enabled
+                                  ? `订阅${template.name}`
+                                  : `${template.name}已停用，无法订阅`,
                                 icon: templateSubscriptionIcon,
-                                onClick: undefined,
-                                unavailable: true,
+                                onClick: () => setSubscribingTemplate(template),
+                                unavailable: !enabled,
                               },
                               { tooltipLabel: '编辑', ariaLabel: `编辑${template.name}`, icon: templateEditIcon, onClick: () => openEditTemplateEditor(template), unavailable: false },
                               { tooltipLabel: '查看', ariaLabel: `查看${template.name}`, icon: templateViewIcon, onClick: () => setViewingTemplate(template), unavailable: false },
@@ -874,7 +879,7 @@ export default function TemplatesPage() {
                                     }`}
                                     aria-label={action.ariaLabel}
                                   >
-                                    <img aria-hidden="true" className="h-4 w-4" src={action.icon} alt="" />
+                                    <img aria-hidden="true" className={`h-4 w-4 ${action.unavailable ? 'opacity-30' : ''}`} src={action.icon} alt="" />
                                   </button>
                                 </TooltipTrigger>
                                 <TooltipContent
@@ -1018,6 +1023,16 @@ export default function TemplatesPage() {
           </div>
         </section>
       </div>
+
+      <ReportSubscriptionDialog
+        open={Boolean(subscribingTemplate)}
+        onOpenChange={(open) => {
+          if (!open) setSubscribingTemplate(null);
+        }}
+        template={subscribingTemplate}
+        recipientMode={subscribingTemplate?.id === 'template-operation-daily' ? 'self' : 'admin'}
+        currentUserName="李敏"
+      />
 
       <Dialog
         open={isEditorOpen}

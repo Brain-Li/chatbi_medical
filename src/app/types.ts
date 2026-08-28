@@ -264,7 +264,8 @@ export interface ResultEvidence {
 
 export interface ReportPushRecord {
   id: string;
-  channel: '站内消息' | '邮件';
+  runId?: string;
+  channel: '邮件';
   target: string;
   sentAt: string;
   status: '成功' | '失败';
@@ -273,7 +274,7 @@ export interface ReportPushRecord {
 
 export interface ReportPushConfig {
   frequency: string;
-  channel: '站内消息' | '邮件';
+  channel: '邮件';
   audience: string;
   nextRun: string;
   lastRun: string;
@@ -282,7 +283,7 @@ export interface ReportPushConfig {
 }
 
 export type ReportSubscriptionFrequency = 'daily' | 'weekly' | 'monthly' | 'cron';
-export type ReportSubscriptionChannel = '站内消息' | '邮件';
+export type ReportSubscriptionChannel = '邮件';
 export type ReportSubscriptionStatus = 'running' | 'paused' | 'needs_attention';
 export type ReportRunStatus = '成功' | '失败' | '重试中';
 export type ReportHolidayPolicy = 'skip' | 'run' | 'next_workday';
@@ -307,6 +308,8 @@ export interface ReportSubscription {
   period: string;
   frequency: ReportSubscriptionFrequency;
   cronExpression?: string;
+  /** Weekly: 1-7 (Monday-Sunday); monthly: 1-28. */
+  runDay?: number;
   runTime: string;
   timezone: string;
   holidayPolicy: ReportHolidayPolicy;
@@ -322,6 +325,7 @@ export interface ReportSubscription {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  deletedAt?: string;
   runs: ReportSubscriptionRun[];
   pushRecords: ReportPushRecord[];
 }
@@ -396,7 +400,7 @@ export interface ReportTemplate {
   metricBlocks: ReportTemplateMetricBlock[];
   chartBlocks: ReportTemplateChartBlock[];
   outputFormats: string[];
-  pushChannels: string[];
+  pushChannels: ReportSubscriptionChannel[];
   complianceNotes: string[];
 }
 
