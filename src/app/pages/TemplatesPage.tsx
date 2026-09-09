@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, PencilLine, Settings2, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, PencilLine, Plus, RotateCcw, Settings2, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { useWorkspace } from '../context/WorkspaceContext';
-import { ReportTemplate, ReportTemplateSection, ReportTemplateStatus } from '../types';
+import { GeneratedReportStructure, ReportTemplate, ReportTemplateSection, ReportTemplateStatus } from '../types';
+import {
+  compileStructurePrompt,
+  generateReportStructure,
+  getEffectiveNarrativePrompt,
+  validateGeneratedStructure,
+} from '../utils/reportTemplateStructure';
 import templateModalChevronDown from '../../assets/figma-report-template/template-modal-chevron-down.svg';
 import templateModalClose from '../../assets/figma-report-template/template-modal-close.svg';
 import templateDeleteIcon from '../../assets/figma-report-template/template-delete.svg';
@@ -139,7 +146,16 @@ type TemplateFormState = {
   category: string;
   status: ReportTemplateStatus;
   description: string;
-  narrativeMode: 'skill' | 'adjusted' | 'custom';
+  narrativeMode: 'skill' | 'adjusted' | 'custom' | 'generated';
+  structureRequest: string;
+  generatedStructure?: GeneratedReportStructure;
+  advancedNarrativePrompt: string;
+  advancedNarrativePromptDirty: boolean;
+  sectionsDirty: boolean;
+  legacyCustomNarrativePrompt: boolean;
+  generationStatus: 'idle' | 'generating' | 'success' | 'error';
+  generationError?: string;
+  generationWarnings: string[];
   customNarrativePrompt: string;
   narrativeAdjustmentPrompt: string;
   narrativeOverridePrompt: string;
@@ -160,6 +176,15 @@ const emptyTemplateForm: TemplateFormState = {
   status: 'published',
   description: '',
   narrativeMode: 'skill',
+  structureRequest: '',
+  generatedStructure: undefined,
+  advancedNarrativePrompt: '',
+  advancedNarrativePromptDirty: false,
+  sectionsDirty: false,
+  legacyCustomNarrativePrompt: false,
+  generationStatus: 'idle',
+  generationError: undefined,
+  generationWarnings: [],
   customNarrativePrompt: '',
   narrativeAdjustmentPrompt: '',
   narrativeOverridePrompt: '',
@@ -236,13 +261,47 @@ function TemplateDescription({ description }: { description: string }) {
 }
 
 function toTemplateForm(template: ReportTemplate): TemplateFormState {
+  const narrativeMode = template.narrativeMode ?? (template.narrativeSkillId ? 'skill' : 'custom');
+  const sections = template.sections.length
+    ? template.sections.map((section, index) => ({
+        title: section.title,
+        description: section.description,
+        required: narrativeMode === 'generated' ? true : section.required,
+        metricIds: section.metricIds ?? (index === 0 ? template.metricBlocks.map((block) => block.metricId) : []),
+      }))
+    : emptyTemplateForm.sections.map((section) => (
+      narrativeMode === 'generated' ? { ...section, required: true } : section
+    ));
+  const generatedStructure = narrativeMode === 'generated'
+    ? {
+        ...(template.generatedStructure ?? {
+          schemaVersion: 'v1' as const,
+          requirement: template.structureRequest ?? '',
+          generatedPrompt: template.customNarrativePrompt ?? compileStructurePrompt(template.structureRequest ?? '', sections),
+          generatedAt: template.createdAt ?? new Date().toISOString(),
+          sections,
+        }),
+        sections: sections.map((section) => ({ ...section, required: true })),
+      }
+    : undefined;
+  const generatedPrompt = generatedStructure?.generatedPrompt ?? '';
+
   return {
     name: template.name,
     industry: template.industry || defaultTemplateIndustry,
     category: normalizeTemplateCategory(template.category),
     status: template.status === 'disabled' ? 'disabled' : 'published',
     description: template.description.slice(0, templateDescriptionMaxLength),
-    narrativeMode: template.narrativeMode ?? (template.narrativeSkillId ? 'skill' : 'custom'),
+    narrativeMode,
+    structureRequest: template.structureRequest ?? '',
+    generatedStructure,
+    advancedNarrativePrompt: template.customNarrativePrompt ?? generatedPrompt,
+    advancedNarrativePromptDirty: Boolean(template.customNarrativePrompt && template.customNarrativePrompt !== generatedPrompt),
+    sectionsDirty: false,
+    legacyCustomNarrativePrompt: narrativeMode === 'custom',
+    generationStatus: narrativeMode === 'generated' ? 'success' : 'idle',
+    generationError: undefined,
+    generationWarnings: [],
     customNarrativePrompt: template.customNarrativePrompt ?? '',
     narrativeAdjustmentPrompt: template.narrativeAdjustmentPrompt ?? '',
     narrativeOverridePrompt: template.narrativeOverridePrompt ?? '',
@@ -252,14 +311,7 @@ function toTemplateForm(template: ReportTemplate): TemplateFormState {
     styleAdjustmentPrompt: template.styleAdjustmentPrompt ?? '',
     styleOverridePrompt: template.styleOverridePrompt ?? '',
     styleSkillId: template.styleSkillId ?? 'skill-clean-executive-style',
-    sections: template.sections.length
-      ? template.sections.map((section, index) => ({
-          title: section.title,
-          description: section.description,
-          required: section.required,
-          metricIds: section.metricIds ?? (index === 0 ? template.metricBlocks.map((block) => block.metricId) : []),
-        }))
-      : emptyTemplateForm.sections,
+    sections,
     outputFormats: template.outputFormats.join(', '),
   };
 }
@@ -289,7 +341,13 @@ function createTemplateFromForm(form: TemplateFormState, existing?: ReportTempla
     triggerPhrases: existing?.triggerPhrases ?? [],
     templatePrompt: '',
     narrativeMode: form.narrativeMode,
-    customNarrativePrompt: form.narrativeMode === 'custom' ? form.customNarrativePrompt.trim() : undefined,
+    structureRequest: form.narrativeMode === 'generated' ? form.structureRequest.trim() : existing?.structureRequest,
+    generatedStructure: form.narrativeMode === 'generated' ? form.generatedStructure : existing?.generatedStructure,
+    customNarrativePrompt: form.narrativeMode === 'generated'
+      ? (form.advancedNarrativePromptDirty ? form.advancedNarrativePrompt.trim() : undefined)
+      : form.narrativeMode === 'custom'
+        ? form.customNarrativePrompt.trim()
+        : undefined,
     narrativeAdjustmentPrompt: form.narrativeMode === 'adjusted' ? form.narrativeAdjustmentPrompt.trim() : undefined,
     narrativeOverridePrompt: form.narrativeMode === 'adjusted' ? form.narrativeOverridePrompt.trim() : undefined,
     applicableAgentIds: existing?.applicableAgentIds ?? [],
@@ -340,12 +398,20 @@ export default function TemplatesPage() {
   const [defaultTemplateIndustry, setDefaultTemplateIndustry] = useState(templateIndustries[0]);
   const [defaultTemplateDraft, setDefaultTemplateDraft] = useState<Record<string, string>>({});
   const [form, setForm] = useState<TemplateFormState>(emptyTemplateForm);
+  const [showAdvancedNarrativePrompt, setShowAdvancedNarrativePrompt] = useState(false);
   const editorContentRef = useRef<HTMLDivElement>(null);
   const templateNameRef = useRef<HTMLInputElement>(null);
+  const structureRequestRef = useRef<HTMLTextAreaElement>(null);
+  const sectionTitleRefs = useRef<Record<number, HTMLInputElement | null>>({});
+  const sectionDescriptionRefs = useRef<Record<number, HTMLTextAreaElement | null>>({});
   const customNarrativePromptRef = useRef<HTMLTextAreaElement>(null);
+  const advancedNarrativePromptRef = useRef<HTMLTextAreaElement>(null);
   const customStylePromptRef = useRef<HTMLTextAreaElement>(null);
   const [basicErrors, setBasicErrors] = useState<{ name?: string }>({});
-  const [structureErrors, setStructureErrors] = useState<{ skill?: string; prompt?: string }>({});
+  const [structureErrors, setStructureErrors] = useState<{ skill?: string; prompt?: string; generation?: string; sections?: string }>({});
+  const [sectionTitleErrors, setSectionTitleErrors] = useState<Record<number, string>>({});
+  const [sectionDescriptionErrors, setSectionDescriptionErrors] = useState<Record<number, string>>({});
+  const [showSectionValidation, setShowSectionValidation] = useState(false);
   const [styleErrors, setStyleErrors] = useState<{ skill?: string; prompt?: string }>({});
 
   const narrativeSkills = useMemo(
@@ -367,6 +433,24 @@ export default function TemplatesPage() {
     : defaultNarrativePrompt;
   const isNarrativePromptAdjusted = form.narrativeMode === 'adjusted'
     && displayedNarrativePrompt !== defaultNarrativePrompt;
+  const generatedStructure = form.generatedStructure;
+  const generatedPrompt = generatedStructure?.generatedPrompt ?? '';
+  const effectiveGeneratedPrompt = form.advancedNarrativePromptDirty
+    ? form.advancedNarrativePrompt
+    : generatedPrompt;
+  const generatedStructureValidationErrors = generatedStructure
+    ? [
+        ...validateGeneratedStructure({
+        ...generatedStructure,
+        requirement: form.structureRequest,
+        generatedPrompt: effectiveGeneratedPrompt,
+        sections: form.sections,
+        }),
+        ...(form.sectionsDirty && form.advancedNarrativePromptDirty
+          ? ['章节结构已更新，请同步高级提示词后再保存']
+          : []),
+      ]
+    : ['请先生成报告结构'];
   const currentEditorStepIndex = templateEditorSteps.findIndex((step) => step.value === editorStep);
 
   useEffect(() => {
@@ -454,6 +538,10 @@ export default function TemplatesPage() {
     setBasicErrors({});
     setStructureErrors({});
     setStyleErrors({});
+    setSectionTitleErrors({});
+    setSectionDescriptionErrors({});
+    setShowSectionValidation(false);
+    setShowAdvancedNarrativePrompt(false);
     setEditorStep('basic');
     setIsEditorOpen(true);
   };
@@ -464,6 +552,10 @@ export default function TemplatesPage() {
     setBasicErrors({});
     setStructureErrors({});
     setStyleErrors({});
+    setSectionTitleErrors({});
+    setSectionDescriptionErrors({});
+    setShowSectionValidation(false);
+    setShowAdvancedNarrativePrompt(false);
     setEditorStep('basic');
     setIsEditorOpen(true);
   };
@@ -481,17 +573,117 @@ export default function TemplatesPage() {
     return !nextErrors.name;
   };
 
+  const updateGeneratedSections = (nextSections: TemplateFormState['sections']) => {
+    setForm((current) => {
+      if (current.narrativeMode !== 'generated' || !current.generatedStructure) {
+        return { ...current, sections: nextSections };
+      }
+
+      const nextPrompt = compileStructurePrompt(current.structureRequest, nextSections);
+      const shouldSyncPrompt = !current.advancedNarrativePromptDirty;
+
+      return {
+        ...current,
+        sections: nextSections,
+        sectionsDirty: true,
+        generatedStructure: {
+          ...current.generatedStructure,
+          sections: nextSections,
+          generatedPrompt: nextPrompt,
+        },
+        advancedNarrativePrompt: shouldSyncPrompt ? nextPrompt : current.advancedNarrativePrompt,
+      };
+    });
+  };
+
+  const handleGenerateStructure = async () => {
+    const requirement = form.structureRequest.trim();
+    if (!requirement) {
+      setStructureErrors({ generation: '请先描述报告需求' });
+      structureRequestRef.current?.focus();
+      return;
+    }
+
+    setStructureErrors({});
+    setForm((current) => ({
+      ...current,
+      narrativeMode: 'generated',
+      generationStatus: 'generating',
+      generationError: undefined,
+      generationWarnings: [],
+    }));
+
+    try {
+      const result = await generateReportStructure({
+        requirement,
+        industry: form.industry,
+        category: form.category,
+      });
+
+      setForm((current) => ({
+        ...current,
+        narrativeMode: 'generated',
+        legacyCustomNarrativePrompt: false,
+        structureRequest: requirement,
+        generatedStructure: result.structure,
+        sections: result.structure.sections,
+        advancedNarrativePrompt: result.structure.generatedPrompt,
+        advancedNarrativePromptDirty: false,
+        sectionsDirty: false,
+        customNarrativePrompt: '',
+        generationStatus: 'success',
+        generationError: undefined,
+        generationWarnings: result.warnings,
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '生成报告结构失败，请重试';
+      setForm((current) => ({
+        ...current,
+        generationStatus: 'error',
+        generationError: message,
+      }));
+      structureRequestRef.current?.focus();
+      toast.error(message, { duration: 5000 });
+    }
+  };
+
   const validateStructureStep = () => {
-    const nextErrors = form.narrativeMode === 'custom'
-      ? { prompt: form.customNarrativePrompt.trim() ? undefined : '请填写报告结构提示词' }
-      : { skill: form.narrativeSkillId ? undefined : '请选择报告结构' };
+    setShowSectionValidation(true);
+    const nextSectionTitleErrors = Object.fromEntries(
+      form.sections
+        .map((section, index) => [index, section.title.trim() ? undefined : '请输入章节标题'])
+        .filter(([, error]) => error),
+    ) as Record<number, string>;
+    const nextSectionDescriptionErrors = Object.fromEntries(
+      form.sections
+        .map((section, index) => [index, section.description.trim() ? undefined : '请输入章节写作要求'])
+        .filter(([, error]) => error),
+    ) as Record<number, string>;
+    setSectionTitleErrors(nextSectionTitleErrors);
+    setSectionDescriptionErrors(nextSectionDescriptionErrors);
+    const nextErrors = form.narrativeMode === 'generated'
+      ? {
+          generation: form.generationStatus !== 'success' ? '请先生成报告结构' : undefined,
+          sections: generatedStructureValidationErrors[0],
+        }
+      : form.narrativeMode === 'custom'
+        ? { prompt: form.customNarrativePrompt.trim() ? undefined : '请填写报告结构提示词' }
+        : { skill: form.narrativeSkillId ? undefined : '请选择报告结构' };
     setStructureErrors(nextErrors);
 
     if (nextErrors.prompt) {
       customNarrativePromptRef.current?.focus();
     }
+    if (nextErrors.generation) structureRequestRef.current?.focus();
+    else if (Object.keys(nextSectionTitleErrors).length > 0) {
+      sectionTitleRefs.current[Number(Object.keys(nextSectionTitleErrors)[0])]?.focus();
+    } else if (Object.keys(nextSectionDescriptionErrors).length > 0) {
+      sectionDescriptionRefs.current[Number(Object.keys(nextSectionDescriptionErrors)[0])]?.focus();
+    }
 
-    return !nextErrors.skill && !nextErrors.prompt;
+    return !nextErrors.skill && !nextErrors.prompt && !nextErrors.generation && !nextErrors.sections
+      && Object.keys(nextSectionTitleErrors).length === 0
+      && Object.keys(nextSectionDescriptionErrors).length === 0;
   };
 
   const validateStyleStep = () => {
@@ -550,6 +742,7 @@ export default function TemplatesPage() {
     setBasicErrors({});
     setStructureErrors({});
     setStyleErrors({});
+    setShowAdvancedNarrativePrompt(false);
     setEditorStep('basic');
   };
 
@@ -1246,38 +1439,55 @@ export default function TemplatesPage() {
             </>}
 
             {editorStep === 'structure' && <div className="flex flex-col gap-3">
-              <div className="text-[14px] leading-[22px] text-[#4e5969]">报告结构</div>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[14px] leading-[22px] text-[#4e5969]">报告结构</div>
+                  <p className="mt-1 text-[12px] leading-5 text-[#86909c]">先描述目标，再由 AI 生成可控的章节结构。</p>
+                </div>
+                {form.legacyCustomNarrativePrompt && (
+                  <span className="shrink-0 rounded-full bg-[#fff7e8] px-2 py-1 text-[12px] leading-4 text-[#d46b08]">历史兼容模式</span>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {[
                   { value: 'skill' as const, title: '标准结构', detail: '选择完整的报告结构 Skill，由 Skill 统一定义叙事风格与分析内容。' },
-                  { value: 'custom' as const, title: '自定义结构', detail: '自行填写报告章节顺序和写作要求。' },
-                ].map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    aria-pressed={option.value === 'custom' ? form.narrativeMode === 'custom' : form.narrativeMode !== 'custom'}
-                    onClick={() => {
-                      setForm((current) => ({
-                        ...current,
-                        narrativeMode: option.value,
-                        ...(option.value === 'skill'
-                          ? { narrativeAdjustmentPrompt: '', narrativeOverridePrompt: '' }
-                          : {}),
-                      }));
-                      setStructureErrors({});
-                    }}
-                    className={`rounded-[10px] border p-3 text-left transition-colors ${
-                      (option.value === 'custom' ? form.narrativeMode === 'custom' : form.narrativeMode !== 'custom')
-                        ? 'border-[#165dff] bg-[#e8f3ff]'
-                        : 'border-[#e5e6eb] bg-white hover:bg-[#f7f8fa]'
-                    }`}
-                  >
-                    <div className={`text-[14px] font-medium ${(option.value === 'custom' ? form.narrativeMode === 'custom' : form.narrativeMode !== 'custom') ? 'text-[#165dff]' : 'text-[#1d2129]'}`}>
-                      {option.title}
-                    </div>
-                    <div className="mt-1 text-[12px] leading-5 text-[#86909c]">{option.detail}</div>
-                  </button>
-                ))}
+                  { value: 'generated' as const, title: '自定义结构', detail: '输入报告需求，由 AI 按标准规范生成可编辑的报告结构。' },
+                  ...(form.legacyCustomNarrativePrompt
+                    ? [{ value: 'custom' as const, title: '历史自定义', detail: '保留历史模板的原始提示词，不强制迁移。' }]
+                    : []),
+                ].map((option) => {
+                  const isSelected = option.value === 'skill'
+                    ? form.narrativeMode === 'skill' || form.narrativeMode === 'adjusted'
+                    : form.narrativeMode === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={isSelected}
+                      onClick={() => {
+                        setForm((current) => ({
+                          ...current,
+                          narrativeMode: option.value,
+                          ...(option.value === 'skill'
+                            ? { narrativeAdjustmentPrompt: '', narrativeOverridePrompt: '' }
+                            : {}),
+                        }));
+                        setStructureErrors({});
+                      }}
+                      className={`rounded-[10px] border p-3 text-left transition-colors ${
+                        isSelected
+                          ? 'border-[#165dff] bg-[#e8f3ff]'
+                          : 'border-[#e5e6eb] bg-white hover:bg-[#f7f8fa]'
+                      }`}
+                    >
+                      <div className={`text-[14px] font-medium ${isSelected ? 'text-[#165dff]' : 'text-[#1d2129]'}`}>
+                        {option.title}
+                      </div>
+                      <div className="mt-1 text-[12px] leading-5 text-[#86909c]">{option.detail}</div>
+                    </button>
+                  );
+                })}
               </div>
 
               {form.narrativeMode === 'skill' || form.narrativeMode === 'adjusted' ? (
@@ -1296,17 +1506,13 @@ export default function TemplatesPage() {
                     }}
                   >
                     <div className="flex flex-col gap-2">
-                      <label htmlFor="template-narrative-skill" className="text-[13px] leading-5 text-[#4e5969]">
-                        报告结构 Skill
-                      </label>
+                      <label htmlFor="template-narrative-skill" className="text-[13px] leading-5 text-[#4e5969]">报告结构 Skill</label>
                       <SelectTrigger
                         id="template-narrative-skill"
                         aria-invalid={Boolean(structureErrors.skill)}
                         aria-describedby={structureErrors.skill ? 'template-narrative-skill-error' : undefined}
                         className={`h-10 w-full rounded-[12px] bg-white px-3 text-[14px] shadow-none focus-visible:ring-2 focus-visible:ring-[#165dff]/10 ${
-                          structureErrors.skill
-                            ? 'border-[#f53f3f] focus-visible:border-[#f53f3f]'
-                            : 'border-[#e5e6eb] focus-visible:border-[#165dff]'
+                          structureErrors.skill ? 'border-[#f53f3f] focus-visible:border-[#f53f3f]' : 'border-[#e5e6eb] focus-visible:border-[#165dff]'
                         }`}
                       >
                         <SelectValue placeholder="请选择报告结构 Skill">{selectedNarrativeSkill?.name}</SelectValue>
@@ -1315,11 +1521,7 @@ export default function TemplatesPage() {
                     </div>
                     <SelectContent className="min-w-[var(--radix-select-trigger-width)]">
                       {narrativeSkills.map((skill) => (
-                        <SelectItem
-                          key={skill.id}
-                          value={skill.id}
-                          className="h-auto items-start py-2 pr-9"
-                        >
+                        <SelectItem key={skill.id} value={skill.id} className="h-auto items-start py-2 pr-9">
                           <span className="flex min-w-0 flex-col items-start gap-0.5 py-0.5">
                             <span className="text-[14px] leading-5 text-[#1d2129]">{skill.name}</span>
                             <span className="text-[12px] leading-5 text-[#86909c]">{skill.description}</span>
@@ -1329,77 +1531,44 @@ export default function TemplatesPage() {
                     </SelectContent>
                   </Select>
                   <div className="flex flex-col gap-3 rounded-[10px] border border-[#e5e6eb] bg-[#f7f8fa] p-3">
-                    <div className="group/prompt flex flex-col gap-2">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5">
-                          <Tooltip delayDuration={240}>
-                            <TooltipTrigger asChild>
-                              <label
-                                htmlFor="narrative-override-prompt"
-                                className="inline-flex shrink-0 cursor-text items-center gap-1.5 text-[13px] leading-5 text-[#4e5969]"
-                              >
-                                <span>报告结构提示词</span>
-                                <PencilLine
-                                  aria-hidden="true"
-                                  className="h-3.5 w-3.5 shrink-0 text-[#86909c] transition-colors group-focus-within/prompt:text-[#165dff]"
-                                />
-                              </label>
-                            </TooltipTrigger>
-                            <TooltipContent
-                              side="top"
-                              sideOffset={6}
-                              className="rounded-[6px] border-0 bg-[#1d2129] px-2 py-1 text-[12px] leading-5 text-white shadow-[0_4px_12px_rgba(29,33,41,0.16)]"
-                            >
-                              编辑提示词
-                            </TooltipContent>
-                          </Tooltip>
-                          <span className="text-[12px] leading-5 text-[#86909c]">修改仅对当前模板生效</span>
-                        </div>
-                        {isNarrativePromptAdjusted && (
-                          <button
-                            type="button"
-                            onClick={() => setForm((current) => ({
-                              ...current,
-                              narrativeMode: 'skill',
-                              narrativeOverridePrompt: '',
-                              narrativeAdjustmentPrompt: '',
-                            }))}
-                            className="shrink-0 text-[12px] leading-5 text-[#165dff] hover:text-[#0e42d2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
-                          >
-                            恢复默认
-                          </button>
-                        )}
-                      </div>
-                      <div className="relative">
-                        <textarea
-                          id="narrative-override-prompt"
-                          maxLength={1000}
-                          value={displayedNarrativePrompt}
-                          onChange={(event) => {
-                            const nextPrompt = event.currentTarget.value;
-                            const isDefaultPrompt = nextPrompt === defaultNarrativePrompt;
-                            setForm((current) => ({
-                              ...current,
-                              narrativeMode: isDefaultPrompt ? 'skill' : 'adjusted',
-                              narrativeOverridePrompt: isDefaultPrompt ? '' : nextPrompt,
-                              narrativeAdjustmentPrompt: '',
-                            }));
-                          }}
-                          placeholder="当前 Skill 暂无报告结构提示词"
-                          className="min-h-[260px] w-full cursor-text resize-y rounded-[8px] border border-[#e5e6eb] bg-white p-3 pb-8 text-[14px] leading-[22px] text-[#1d2129] outline-none transition-[border-color,box-shadow] placeholder:text-[#86909c] hover:border-[#c9cdd4] focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10 focus:hover:border-[#165dff]"
-                        />
-                        <span className="pointer-events-none absolute bottom-2 right-3 text-[12px] leading-5 text-[#86909c]">
-                          {displayedNarrativePrompt.length}/1000
-                        </span>
-                      </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[13px] leading-5 text-[#4e5969]">报告结构提示词</span>
+                      {isNarrativePromptAdjusted && (
+                        <button
+                          type="button"
+                          onClick={() => setForm((current) => ({ ...current, narrativeMode: 'skill', narrativeOverridePrompt: '', narrativeAdjustmentPrompt: '' }))}
+                          className="shrink-0 text-[12px] leading-5 text-[#165dff] hover:text-[#0e42d2]"
+                        >恢复默认</button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <textarea
+                        id="narrative-override-prompt"
+                        maxLength={1000}
+                        value={displayedNarrativePrompt}
+                        onChange={(event) => {
+                          const nextPrompt = event.currentTarget.value;
+                          const isDefaultPrompt = nextPrompt === defaultNarrativePrompt;
+                          setForm((current) => ({
+                            ...current,
+                            narrativeMode: isDefaultPrompt ? 'skill' : 'adjusted',
+                            narrativeOverridePrompt: isDefaultPrompt ? '' : nextPrompt,
+                            narrativeAdjustmentPrompt: '',
+                          }));
+                        }}
+                        placeholder="当前 Skill 暂无报告结构提示词"
+                        className="min-h-[220px] w-full resize-y rounded-[8px] border border-[#e5e6eb] bg-white p-3 pb-8 text-[14px] leading-[22px] text-[#1d2129] outline-none placeholder:text-[#86909c] focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10"
+                      />
+                      <span className="pointer-events-none absolute bottom-2 right-3 text-[12px] leading-5 text-[#86909c]">{displayedNarrativePrompt.length}/1000</span>
                     </div>
                   </div>
                 </>
-              ) : (
+              ) : form.narrativeMode === 'custom' ? (
                 <div className="flex flex-col gap-3 rounded-[10px] border border-[#e5e6eb] bg-[#f7f8fa] p-3">
-                  <label htmlFor="custom-narrative-prompt" className="text-[13px] leading-5 text-[#4e5969]">
-                    报告结构提示词
-                  </label>
+                  <div>
+                    <label htmlFor="custom-narrative-prompt" className="text-[13px] leading-5 text-[#4e5969]">历史报告结构提示词</label>
+                    <p className="mt-1 text-[12px] leading-5 text-[#86909c]">该模板使用旧版提示词格式，可继续编辑并正常使用。</p>
+                  </div>
                   <div className="relative">
                     <textarea
                       id="custom-narrative-prompt"
@@ -1407,21 +1576,164 @@ export default function TemplatesPage() {
                       maxLength={1000}
                       value={form.customNarrativePrompt}
                       aria-invalid={Boolean(structureErrors.prompt)}
-                      aria-describedby={structureErrors.prompt ? 'custom-narrative-prompt-error' : undefined}
                       onChange={(event) => {
                         setForm((current) => ({ ...current, customNarrativePrompt: event.target.value }));
                         if (structureErrors.prompt) setStructureErrors((current) => ({ ...current, prompt: undefined }));
                       }}
-                      placeholder="请填写完整报告结构，包括章节、顺序和写作要求，并说明要分析的指标、问题和时间范围。"
-                      className={`min-h-[260px] w-full resize-y rounded-[8px] border bg-white p-3 pb-8 text-[14px] leading-[22px] text-[#1d2129] outline-none placeholder:text-[#86909c] focus:ring-2 focus:ring-[#165dff]/10 ${
-                        structureErrors.prompt ? 'border-[#f53f3f] focus:border-[#f53f3f]' : 'border-[#e5e6eb] focus:border-[#165dff]'
-                      }`}
+                      placeholder="历史模板提示词"
+                      className={`min-h-[220px] w-full resize-y rounded-[8px] border bg-white p-3 pb-8 text-[14px] leading-[22px] text-[#1d2129] outline-none placeholder:text-[#86909c] focus:ring-2 focus:ring-[#165dff]/10 ${structureErrors.prompt ? 'border-[#f53f3f]' : 'border-[#e5e6eb] focus:border-[#165dff]'}`}
                     />
-                    <span className="pointer-events-none absolute bottom-2 right-3 text-[12px] leading-5 text-[#86909c]">
-                      {(form.customNarrativePrompt ?? '').length}/1000
-                    </span>
+                    <span className="pointer-events-none absolute bottom-2 right-3 text-[12px] leading-5 text-[#86909c]">{form.customNarrativePrompt.length}/1000</span>
                   </div>
-                  {structureErrors.prompt && <p id="custom-narrative-prompt-error" className="text-[12px] leading-5 text-[#f53f3f]">{structureErrors.prompt}</p>}
+                  {structureErrors.prompt && <p className="text-[12px] leading-5 text-[#f53f3f]">{structureErrors.prompt}</p>}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-2">
+                    <label htmlFor="structure-request" className="text-[14px] leading-[22px] text-[#4e5969]">报告需求</label>
+                    <div className="relative">
+                      <textarea
+                        id="structure-request"
+                        ref={structureRequestRef}
+                        maxLength={2000}
+                        value={form.structureRequest}
+                        onChange={(event) => setForm((current) => ({ ...current, structureRequest: event.target.value, generationError: undefined }))}
+                        placeholder={'请描述报告主题、统计周期和分析重点。\n例如：分析近 12 个月某科室药占比变化，按月份和药品类别展示趋势，识别异常并给出管理建议。'}
+                        className={`min-h-[260px] w-full resize-y rounded-[10px] border bg-white p-3 pb-8 text-[14px] leading-[22px] text-[#1d2129] outline-none placeholder:text-[#86909c] hover:border-[#c9cdd4] focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10 ${structureErrors.generation || form.generationError ? 'border-[#f53f3f] focus:border-[#f53f3f]' : 'border-[#e5e6eb]'}`}
+                      />
+                      <span className="pointer-events-none absolute bottom-2 right-3 text-[12px] leading-5 text-[#86909c]">{form.structureRequest.length}/2000</span>
+                    </div>
+                    {structureErrors.generation && <p className="text-[12px] leading-5 text-[#f53f3f]">{structureErrors.generation}</p>}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => void handleGenerateStructure()}
+                    disabled={!form.structureRequest.trim() || form.generationStatus === 'generating'}
+                    className="inline-flex h-10 w-fit items-center justify-center gap-2 rounded-[8px] bg-[#165dff] px-4 text-[14px] font-medium text-white transition-colors hover:bg-[#0e42d2] disabled:cursor-not-allowed disabled:bg-[#bed3ff]"
+                  >
+                    {form.generatedStructure ? <RotateCcw aria-hidden="true" className="h-4 w-4" /> : <Settings2 aria-hidden="true" className="h-4 w-4" />}
+                    {form.generatedStructure ? '重新生成' : '生成报告结构'}
+                  </button>
+
+                  {form.generatedStructure && (
+                    <>
+                      {form.generationWarnings.map((warning) => (
+                        <div key={warning} className="rounded-[8px] border border-[#ffe4ba] bg-[#fff7e8] px-3 py-2 text-[12px] leading-5 text-[#d46b08]">{warning}</div>
+                      ))}
+
+                      <div className="flex flex-col gap-3 rounded-[10px] border border-[#e5e6eb] bg-white p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-[13px] font-medium leading-5 text-[#1d2129]">AI 生成的报告结构</div>
+                            <div className="mt-1 text-[12px] leading-5 text-[#86909c]">可以调整章节顺序和写作要求。</div>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col gap-2">
+                          {form.sections.map((section, index) => (
+                            <div key={`${section.title}-${index}`} className="rounded-[8px] border border-[#e5e6eb] bg-[#f7f8fa] p-3">
+                              <div className="flex items-start gap-2">
+                                <div className="flex min-w-0 flex-1 flex-col gap-2">
+                                  <div className="flex items-start gap-2">
+                                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#e8f3ff] text-[12px] font-medium text-[#165dff]">{index + 1}</span>
+                                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                                      <input
+                                        value={section.title}
+                                        ref={(element) => { sectionTitleRefs.current[index] = element; }}
+                                        onBlur={() => {
+                                          if (!section.title.trim()) setSectionTitleErrors((current) => ({ ...current, [index]: '请输入章节标题' }));
+                                        }}
+                                        aria-label={`第${index + 1}章节标题`}
+                                        onChange={(event) => {
+                                          const value = event.target.value;
+                                          updateGeneratedSections(form.sections.map((item, itemIndex) => itemIndex === index ? { ...item, title: value } : item));
+                                          if (value.trim()) {
+                                            setSectionTitleErrors((current) => {
+                                              if (!current[index]) return current;
+                                              const next = { ...current };
+                                              delete next[index];
+                                              return next;
+                                            });
+                                          }
+                                        }}
+                                        className={`h-8 min-w-0 w-full rounded-[6px] border bg-white px-2 text-[13px] font-medium text-[#1d2129] outline-none focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10 ${sectionTitleErrors[index] ? 'border-[#f53f3f]' : 'border-[#e5e6eb]'}`}
+                                      />
+                                      {showSectionValidation && sectionTitleErrors[index] && <p className="text-[12px] leading-5 text-[#f53f3f]">{sectionTitleErrors[index]}</p>}
+                                    </div>
+                                  </div>
+                                  <textarea
+                                    value={section.description}
+                                    ref={(element) => { sectionDescriptionRefs.current[index] = element; }}
+                                    aria-label={`${section.title || `第${index + 1}`}章节写作要求`}
+                                    onBlur={() => {
+                                      if (showSectionValidation && !section.description.trim()) setSectionDescriptionErrors((current) => ({ ...current, [index]: '请输入章节写作要求' }));
+                                    }}
+                                    onChange={(event) => {
+                                      const value = event.target.value;
+                                      updateGeneratedSections(form.sections.map((item, itemIndex) => itemIndex === index ? { ...item, description: value } : item));
+                                      if (value.trim()) {
+                                        setSectionDescriptionErrors((current) => {
+                                          if (!current[index]) return current;
+                                          const next = { ...current };
+                                          delete next[index];
+                                          return next;
+                                        });
+                                      }
+                                    }}
+                                    className={`min-h-[58px] w-full resize-y rounded-[6px] border bg-white px-2 py-1.5 text-[13px] leading-5 text-[#4e5969] outline-none focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10 ${sectionDescriptionErrors[index] ? 'border-[#f53f3f]' : 'border-[#e5e6eb]'}`}
+                                  />
+                                  {showSectionValidation && sectionDescriptionErrors[index] && <p className="text-[12px] leading-5 text-[#f53f3f]">{sectionDescriptionErrors[index]}</p>}
+                                </div>
+                                <div className="flex shrink-0 flex-col gap-1">
+                                  <button type="button" aria-label={`上移第${index + 1}章节`} disabled={index === 0} onClick={() => { const next = [...form.sections]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; updateGeneratedSections(next); }} className="flex h-7 w-7 items-center justify-center rounded-[6px] text-[#4e5969] hover:bg-white disabled:cursor-not-allowed disabled:text-[#c9cdd4]"><ChevronUp aria-hidden="true" className="h-4 w-4" /></button>
+                                  <button type="button" aria-label={`下移第${index + 1}章节`} disabled={index === form.sections.length - 1} onClick={() => { const next = [...form.sections]; [next[index], next[index + 1]] = [next[index + 1], next[index]]; updateGeneratedSections(next); }} className="flex h-7 w-7 items-center justify-center rounded-[6px] text-[#4e5969] hover:bg-white disabled:cursor-not-allowed disabled:text-[#c9cdd4]"><ChevronDown aria-hidden="true" className="h-4 w-4" /></button>
+                                  <button type="button" aria-label={`删除第${index + 1}章节`} disabled={form.sections.length <= 1} onClick={() => updateGeneratedSections(form.sections.filter((_, itemIndex) => itemIndex !== index))} className="flex h-7 w-7 items-center justify-center rounded-[6px] text-[#f53f3f] hover:bg-[#fff2f0] disabled:cursor-not-allowed disabled:text-[#c9cdd4]"><X aria-hidden="true" className="h-4 w-4" /></button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={form.sections.length >= 8}
+                          onClick={() => updateGeneratedSections([...form.sections, { title: '', description: '', required: true, metricIds: [] }])}
+                          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-[8px] border border-dashed border-[#c9cdd4] text-[13px] text-[#4e5969] hover:border-[#165dff] hover:text-[#165dff] disabled:cursor-not-allowed disabled:text-[#c9cdd4]"
+                        ><Plus aria-hidden="true" className="h-4 w-4" />新增章节</button>
+                      </div>
+
+                      <div className="overflow-hidden rounded-[10px] border border-[#e5e6eb]">
+                        <button type="button" onClick={() => setShowAdvancedNarrativePrompt((current) => !current)} className="flex w-full items-center justify-between gap-3 bg-[#f7f8fa] px-3 py-2.5 text-left">
+                          <span className="flex items-center gap-2 text-[13px] font-medium text-[#1d2129]">
+                            高级设置：查看并修改完整提示词
+                            {form.advancedNarrativePromptDirty && <span className="rounded-full bg-[#fff7e8] px-2 py-0.5 text-[11px] font-normal text-[#d46b08]">已修改</span>}
+                          </span>
+                          <ChevronDown aria-hidden="true" className={`h-4 w-4 text-[#86909c] transition-transform ${showAdvancedNarrativePrompt ? 'rotate-180' : ''}`} />
+                        </button>
+                        {showAdvancedNarrativePrompt && (
+                          <div className="flex flex-col gap-2 border-t border-[#e5e6eb] p-3">
+                            <p className="text-[12px] leading-5 text-[#86909c]">修改完整提示词可能影响报告结构稳定性，请确认后使用。</p>
+                            <div className="relative">
+                              <textarea
+                                ref={advancedNarrativePromptRef}
+                                maxLength={4000}
+                                value={form.advancedNarrativePrompt}
+                                onChange={(event) => setForm((current) => ({ ...current, advancedNarrativePrompt: event.target.value, advancedNarrativePromptDirty: event.target.value !== generatedPrompt }))}
+                                className="min-h-[180px] w-full resize-y rounded-[8px] border border-[#e5e6eb] bg-white p-3 pb-8 text-[13px] leading-5 text-[#1d2129] outline-none focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10"
+                              />
+                              <span className="pointer-events-none absolute bottom-2 right-3 text-[12px] leading-5 text-[#86909c]">{form.advancedNarrativePrompt.length}/4000</span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button type="button" onClick={() => setForm((current) => ({ ...current, advancedNarrativePrompt: current.generatedStructure?.generatedPrompt ?? '', advancedNarrativePromptDirty: false, sectionsDirty: false }))} className="inline-flex h-8 items-center gap-1.5 rounded-[6px] border border-[#e5e6eb] bg-white px-2.5 text-[12px] text-[#4e5969] hover:border-[#165dff] hover:text-[#165dff]"><RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />恢复 AI 生成版本</button>
+                              {form.advancedNarrativePromptDirty && form.sectionsDirty && <button type="button" onClick={() => setForm((current) => ({ ...current, advancedNarrativePrompt: current.generatedStructure ? compileStructurePrompt(current.structureRequest, current.sections) : current.advancedNarrativePrompt, advancedNarrativePromptDirty: false, sectionsDirty: false }))} className="inline-flex h-8 items-center gap-1.5 rounded-[6px] border border-[#165dff] bg-[#e8f3ff] px-2.5 text-[12px] text-[#165dff]">按当前结构重新生成提示词</button>}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                    </>
+                  )}
                 </div>
               )}
             </div>}
@@ -1606,9 +1918,19 @@ export default function TemplatesPage() {
                     <div className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-4 py-4 sm:grid-cols-[112px_minmax(0,1fr)]">
                       <dt className="text-[13px] leading-5 text-[#4e5969]">报告结构</dt>
                       <dd className="min-w-0 break-words text-[14px] font-medium leading-[22px] text-[#1d2129]">
-                        {form.narrativeMode === 'custom' ? '自定义报告结构' : selectedNarrativeSkill?.name ?? '未选择'}
+                        {form.narrativeMode === 'generated'
+                          ? `需求生成结构 · ${form.sections.length} 个章节`
+                          : form.narrativeMode === 'custom'
+                            ? '历史自定义报告结构'
+                            : selectedNarrativeSkill?.name ?? '未选择'}
                       </dd>
                     </div>
+                    {form.narrativeMode === 'generated' && (
+                      <div className="grid grid-cols-[88px_minmax(0,1fr)] items-start gap-4 py-4 sm:grid-cols-[112px_minmax(0,1fr)]">
+                        <dt className="text-[13px] leading-5 text-[#4e5969]">需求摘要</dt>
+                        <dd className="min-w-0 whitespace-pre-wrap break-words text-[14px] leading-[22px] text-[#1d2129]">{form.structureRequest || '未填写'}</dd>
+                      </div>
+                    )}
                     <div className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-4 py-4 sm:grid-cols-[112px_minmax(0,1fr)]">
                       <dt className="text-[13px] leading-5 text-[#4e5969]">视觉风格</dt>
                       <dd className="min-w-0 break-words text-[14px] font-medium leading-[22px] text-[#1d2129]">
@@ -1714,11 +2036,28 @@ export default function TemplatesPage() {
                 <div className="flex items-start border-b border-[#e5e6eb] pb-4">
                   <dt className="w-28 shrink-0 text-[14px] leading-[22px] text-[#4e5969]">报告结构</dt>
                   <dd className="min-w-0 flex-1 text-[14px] leading-[22px] text-[#1d2129]">
-                    {viewingTemplate.narrativeMode === 'custom'
+                    {viewingTemplate.narrativeMode === 'generated'
+                      ? `需求生成结构 · ${viewingTemplate.sections.length} 个章节`
+                      : viewingTemplate.narrativeMode === 'custom'
                       ? '自定义报告结构'
                       : `使用标准报告结构 · ${skills.find((skill) => skill.id === viewingTemplate.narrativeSkillId)?.name ?? '未绑定报告结构 Skill'}`}
                   </dd>
                 </div>
+
+                {viewingTemplate.narrativeMode === 'generated' && (
+                  <>
+                    <div className="flex flex-col gap-2 border-b border-[#e5e6eb] pb-4">
+                      <dt className="text-[14px] leading-[22px] text-[#4e5969]">需求来源</dt>
+                      <dd className="whitespace-pre-wrap break-words rounded-[10px] border border-[#e5e6eb] bg-[#f7f8fa] px-3 py-2.5 text-[14px] leading-[22px] text-[#1d2129]">
+                        {viewingTemplate.structureRequest?.trim() || '未配置'}
+                      </dd>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 border-b border-[#e5e6eb] pb-4 text-[13px] leading-5">
+                      <div><dt className="text-[#86909c]">生成时间</dt><dd className="mt-1 text-[#1d2129]">{viewingTemplate.generatedStructure?.generatedAt || viewingTemplate.createdAt || '-'}</dd></div>
+                      <div><dt className="text-[#86909c]">提示词状态</dt><dd className="mt-1 text-[#1d2129]">{viewingTemplate.customNarrativePrompt?.trim() ? '已人工修改' : '使用 AI 生成版本'}</dd></div>
+                    </div>
+                  </>
+                )}
 
                 {viewingTemplate.narrativeMode === 'custom' && (
                   <div className="flex flex-col gap-2 border-b border-[#e5e6eb] pb-4">
@@ -1768,9 +2107,12 @@ export default function TemplatesPage() {
                 <div className="flex flex-col gap-2 border-b border-[#e5e6eb] pb-4">
                   <dt className="text-[14px] leading-[22px] text-[#4e5969]">章节与指标</dt>
                   <dd className="space-y-2">
-                    <div className="rounded-[8px] bg-[#f7f8fa] px-3 py-2 text-[13px] leading-5 text-[#4e5969]">
-                      当前由所选报告结构 Skill 统一组织叙事风格与分析内容。
-                    </div>
+                    {viewingTemplate.narrativeMode === 'generated' ? viewingTemplate.sections.map((section, index) => (
+                      <div key={`${section.id}-${index}`} className="rounded-[8px] bg-[#f7f8fa] px-3 py-2 text-[13px] leading-5 text-[#4e5969]">
+                        <div className="font-medium text-[#1d2129]">{index + 1}. {section.title}</div>
+                        <div className="mt-1">{section.description || '未填写写作要求'}</div>
+                      </div>
+                    )) : <div className="rounded-[8px] bg-[#f7f8fa] px-3 py-2 text-[13px] leading-5 text-[#4e5969]">当前由所选报告结构 Skill 统一组织叙事风格与分析内容。</div>}
                   </dd>
                 </div>
               </dl>

@@ -42,6 +42,7 @@
 } from './types';
 import { buildAnalysisReportFileName } from './utils/reportFileName';
 import { summarizeReportTopic } from './utils/reportTopic';
+import { getEffectiveNarrativePrompt } from './utils/reportTemplateStructure';
 
 export const skills: Skill[] = [
   {
@@ -3582,6 +3583,8 @@ function includesLoose(source: string, target: string) {
 function getReportTemplatePrompt(template: ReportTemplate) {
   const narrativePrompt = !template.narrativeMode
     ? template.templatePrompt || template.description || template.sections.map((section) => section.description).join(' ')
+    : template.narrativeMode === 'generated'
+    ? getEffectiveNarrativePrompt(template)
     : template.narrativeMode === 'custom'
     ? template.customNarrativePrompt ?? ''
     : template.narrativeMode === 'adjusted' && template.narrativeOverridePrompt?.trim()
@@ -3598,7 +3601,11 @@ function getReportTemplatePrompt(template: ReportTemplate) {
   const styleAdjustmentPrompt = template.styleMode === 'adjusted' && !template.styleOverridePrompt?.trim()
     ? template.styleAdjustmentPrompt ?? ''
     : '';
-  const sectionPrompt = '';
+  const sectionPrompt = template.narrativeMode === 'generated' && template.sections.length
+    ? `最终章节顺序：\n${template.sections
+      .map((section, index) => `${index + 1}. ${section.title}${section.required ? '（必需）' : ''}：${section.description}`)
+      .join('\n')}`
+    : '';
 
   return [narrativePrompt, narrativeAdjustmentPrompt, stylePrompt, styleAdjustmentPrompt, sectionPrompt]
     .filter(Boolean)

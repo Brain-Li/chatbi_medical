@@ -332,6 +332,8 @@ export interface ReportSubscription {
 
 export type ReportTemplateStatus = 'draft' | 'published' | 'disabled';
 
+export type ReportTemplateNarrativeMode = 'skill' | 'adjusted' | 'custom' | 'generated';
+
 export type ReportTemplateChartType = 'line' | 'bar' | 'table' | 'pie' | 'metric-card';
 
 export interface ReportTemplateParameter {
@@ -348,6 +350,14 @@ export interface ReportTemplateSection {
   required: boolean;
   description: string;
   metricIds?: string[];
+}
+
+export interface GeneratedReportStructure {
+  schemaVersion: 'v1';
+  requirement: string;
+  generatedPrompt: string;
+  generatedAt: string;
+  sections: Array<Pick<ReportTemplateSection, 'title' | 'description' | 'required' | 'metricIds'>>;
 }
 
 export interface ReportTemplateMetricBlock {
@@ -378,7 +388,9 @@ export interface ReportTemplate {
   status: ReportTemplateStatus;
   triggerPhrases: string[];
   templatePrompt: string;
-  narrativeMode?: 'skill' | 'adjusted' | 'custom';
+  narrativeMode?: ReportTemplateNarrativeMode;
+  structureRequest?: string;
+  generatedStructure?: GeneratedReportStructure;
   customNarrativePrompt?: string;
   narrativeAdjustmentPrompt?: string;
   narrativeOverridePrompt?: string;

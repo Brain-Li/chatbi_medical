@@ -7,7 +7,7 @@ export default function App() {
   return (
     <WorkspaceProvider>
       <RouterProvider router={router} />
-      <Toaster position="top-center" richColors closeButton />
+      <Toaster position="top-center" richColors />
     </WorkspaceProvider>
   );
 }
