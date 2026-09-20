@@ -3,6 +3,7 @@ import {
   compileStructurePrompt,
   generateReportStructure,
   getEffectiveNarrativePrompt,
+  getStructureEditMode,
   validateGeneratedStructure,
 } from './reportTemplateStructure';
 import { GeneratedReportStructure, ReportTemplate } from '../types';
@@ -54,7 +55,7 @@ describe('reportTemplateStructure', () => {
       requirement: '分析上个月的门诊收入、异常点、异常原因和经营建议。',
       industry: '医疗',
       category: '月报',
-    })).rejects.toThrow('无法生成报告结构，请调整需求描述后重试。');
+    })).rejects.toThrow('需求描述过于简略，无法生成报告结构，请调整后重试。');
   });
 
   it('rejects invalid section structures', () => {
@@ -114,5 +115,48 @@ describe('reportTemplateStructure', () => {
       narrativeMode: 'custom',
       customNarrativePrompt: '历史提示词',
     }))).toBe('历史提示词');
+  });
+
+  it('uses only the selected mode for generation', () => {
+    const template = baseTemplate({
+      narrativeMode: 'generated',
+      structureEditMode: 'basic',
+      structureRequest: '分析趋势',
+      sections: [{ id: 'summary', title: '基础摘要', description: '总结趋势', required: true }],
+      customNarrativePrompt: '旧高级内容',
+    });
+    expect(getEffectiveNarrativePrompt(template)).toContain('基础摘要');
+    expect(getEffectiveNarrativePrompt(template)).not.toContain('旧高级内容');
+    expect(getEffectiveNarrativePrompt({ ...template, structureEditMode: 'advanced' })).toBe('旧高级内容');
+    expect(getEffectiveNarrativePrompt({ ...template, structureEditMode: 'advanced', customNarrativePrompt: '' })).toBe('');
+  });
+
+  it('restores an explicitly saved mode and infers legacy advanced templates', () => {
+    expect(getStructureEditMode(baseTemplate())).toBe('basic');
+    expect(getStructureEditMode(baseTemplate({ customNarrativePrompt: '历史修改' }))).toBe('advanced');
+    expect(getStructureEditMode(baseTemplate({ structureEditMode: 'advanced' }))).toBe('advanced');
+    expect(getStructureEditMode(baseTemplate({ structureEditMode: 'basic', customNarrativePrompt: '旧高级内容' }))).toBe('basic');
+  });
+
+  it('validates advanced text independently of hidden basic sections', () => {
+    const structure: GeneratedReportStructure = {
+      schemaVersion: 'v1', requirement: '分析趋势', generatedPrompt: '按自定义要求生成', generatedAt: '',
+      sections: [{ title: '', description: '', required: true }],
+    };
+    expect(validateGeneratedStructure(structure, 'advanced')).toEqual([]);
+    expect(validateGeneratedStructure(structure, 'basic')).toHaveLength(2);
+    expect(validateGeneratedStructure({ ...structure, generatedPrompt: ' ' }, 'advanced')).toContain('生成的报告结构提示词不能为空');
+    expect(validateGeneratedStructure({ ...structure, generatedPrompt: '字'.repeat(4001) }, 'advanced')).toContain('完整提示词最多支持 4000 字');
+  });
+
+  it('accepts section length limits and rejects oversized saved sections', () => {
+    const structure: GeneratedReportStructure = {
+      schemaVersion: 'v1', requirement: '分析趋势', generatedPrompt: '报告提示词', generatedAt: '',
+      sections: [{ title: '字'.repeat(20), description: '字'.repeat(1000), required: true }],
+    };
+    expect(validateGeneratedStructure(structure)).toEqual([]);
+    expect(validateGeneratedStructure({ ...structure, sections: [{ title: '字'.repeat(21), description: '字'.repeat(1001), required: true }] })).toEqual([
+      '章节标题最多支持 20 字', '写作要求最多支持 1000 字',
+    ]);
   });
 });

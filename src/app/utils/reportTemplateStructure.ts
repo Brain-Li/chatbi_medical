@@ -17,6 +17,9 @@ export interface GenerateStructureResult {
 
 type StructureSection = Pick<ReportTemplateSection, 'title' | 'description' | 'required' | 'metricIds'>;
 
+export const sectionTitleMaxLength = 20;
+export const sectionDescriptionMaxLength = 1000;
+
 const baseSections: StructureSection[] = [
   {
     title: '分析目标与结论摘要',
@@ -91,17 +94,23 @@ export function compileStructurePrompt(
   ].join('\n');
 }
 
-export function validateGeneratedStructure(structure: GeneratedReportStructure) {
+export function validateGeneratedStructure(structure: GeneratedReportStructure, mode: 'basic' | 'advanced' = 'basic') {
   const errors: string[] = [];
   const sections = structure.sections ?? [];
   const titles = sections.map((section) => section.title.trim()).filter(Boolean);
 
   if (!structure.requirement.trim()) errors.push('请填写报告需求');
   if (!structure.generatedPrompt.trim()) errors.push('生成的报告结构提示词不能为空');
+  if (mode === 'advanced') {
+    if (structure.generatedPrompt.length > 4000) errors.push('完整提示词最多支持 4000 字');
+    return errors;
+  }
   if (sections.length < 1) errors.push('至少需要一个报告章节');
   if (sections.length > 8) errors.push('报告章节最多支持 8 个');
   if (titles.length !== sections.length) errors.push('每个报告章节都需要填写标题');
   if (sections.some((section) => !section.description.trim())) errors.push('每个报告章节都需要填写写作要求');
+  if (sections.some((section) => section.title.length > sectionTitleMaxLength)) errors.push('章节标题最多支持 20 字');
+  if (sections.some((section) => section.description.length > sectionDescriptionMaxLength)) errors.push('写作要求最多支持 1000 字');
 
   return errors;
 }
@@ -114,7 +123,7 @@ export async function generateReportStructure(
     throw new Error('请先描述报告需求');
   }
   if (!hasEnoughRequirementDetail(requirement)) {
-    throw new Error('无法生成报告结构，请调整需求描述后重试。');
+    throw new Error('需求描述过于简略，无法生成报告结构，请调整后重试。');
   }
 
   const sections = cloneSections();
@@ -179,10 +188,16 @@ export async function generateReportStructure(
   return { structure, warnings };
 }
 
+export function getStructureEditMode(template: ReportTemplate): 'basic' | 'advanced' {
+  return template.structureEditMode ?? (template.customNarrativePrompt?.trim() ? 'advanced' : 'basic');
+}
+
 export function getEffectiveNarrativePrompt(template: ReportTemplate) {
   if (template.narrativeMode === 'generated') {
-    return template.customNarrativePrompt?.trim()
-      || template.generatedStructure?.generatedPrompt?.trim()
+    if (getStructureEditMode(template) === 'advanced' && template.customNarrativePrompt !== undefined) {
+      return template.customNarrativePrompt.trim();
+    }
+    return template.generatedStructure?.generatedPrompt?.trim()
       || compileStructurePrompt(
         template.structureRequest ?? '',
         template.sections.map((section) => ({

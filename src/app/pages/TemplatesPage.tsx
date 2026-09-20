@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, ChevronUp, PencilLine, Plus, RotateCcw, Settings2, X } from 'lucide-react';
-import { toast } from 'sonner';
+import { Check, ChevronDown, GripVertical, LoaderCircle, PencilLine, Plus, Settings2, Trash2, X } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { GeneratedReportStructure, ReportTemplate, ReportTemplateSection, ReportTemplateStatus } from '../types';
 import {
   compileStructurePrompt,
   generateReportStructure,
   getEffectiveNarrativePrompt,
+  getStructureEditMode,
+  sectionTitleMaxLength,
+  sectionDescriptionMaxLength,
   validateGeneratedStructure,
 } from '../utils/reportTemplateStructure';
 import templateModalChevronDown from '../../assets/figma-report-template/template-modal-chevron-down.svg';
@@ -38,6 +40,11 @@ import {
 } from '../components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { ReportSubscriptionDialog } from '../components/ReportSubscriptionDialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '../components/ui/alert-dialog';
 
 const templatePageSizeOptions = [10, 20, 50] as const;
 const templateDescriptionMaxLength = 50;
@@ -149,9 +156,9 @@ type TemplateFormState = {
   narrativeMode: 'skill' | 'adjusted' | 'custom' | 'generated';
   structureRequest: string;
   generatedStructure?: GeneratedReportStructure;
+  structureEditMode: 'basic' | 'advanced';
   advancedNarrativePrompt: string;
   advancedNarrativePromptDirty: boolean;
-  sectionsDirty: boolean;
   legacyCustomNarrativePrompt: boolean;
   generationStatus: 'idle' | 'generating' | 'success' | 'error';
   generationError?: string;
@@ -178,9 +185,9 @@ const emptyTemplateForm: TemplateFormState = {
   narrativeMode: 'skill',
   structureRequest: '',
   generatedStructure: undefined,
+  structureEditMode: 'basic',
   advancedNarrativePrompt: '',
   advancedNarrativePromptDirty: false,
-  sectionsDirty: false,
   legacyCustomNarrativePrompt: false,
   generationStatus: 'idle',
   generationError: undefined,
@@ -277,7 +284,7 @@ function toTemplateForm(template: ReportTemplate): TemplateFormState {
         ...(template.generatedStructure ?? {
           schemaVersion: 'v1' as const,
           requirement: template.structureRequest ?? '',
-          generatedPrompt: template.customNarrativePrompt ?? compileStructurePrompt(template.structureRequest ?? '', sections),
+          generatedPrompt: compileStructurePrompt(template.structureRequest ?? '', sections),
           generatedAt: template.createdAt ?? new Date().toISOString(),
           sections,
         }),
@@ -295,9 +302,9 @@ function toTemplateForm(template: ReportTemplate): TemplateFormState {
     narrativeMode,
     structureRequest: template.structureRequest ?? '',
     generatedStructure,
-    advancedNarrativePrompt: template.customNarrativePrompt ?? generatedPrompt,
-    advancedNarrativePromptDirty: Boolean(template.customNarrativePrompt && template.customNarrativePrompt !== generatedPrompt),
-    sectionsDirty: false,
+    structureEditMode: getStructureEditMode(template),
+    advancedNarrativePrompt: getStructureEditMode(template) === 'advanced' ? template.customNarrativePrompt ?? generatedPrompt : generatedPrompt,
+    advancedNarrativePromptDirty: getStructureEditMode(template) === 'advanced' && template.customNarrativePrompt !== undefined && template.customNarrativePrompt !== generatedPrompt,
     legacyCustomNarrativePrompt: narrativeMode === 'custom',
     generationStatus: narrativeMode === 'generated' ? 'success' : 'idle',
     generationError: undefined,
@@ -342,9 +349,17 @@ function createTemplateFromForm(form: TemplateFormState, existing?: ReportTempla
     templatePrompt: '',
     narrativeMode: form.narrativeMode,
     structureRequest: form.narrativeMode === 'generated' ? form.structureRequest.trim() : existing?.structureRequest,
-    generatedStructure: form.narrativeMode === 'generated' ? form.generatedStructure : existing?.generatedStructure,
+    generatedStructure: form.narrativeMode === 'generated' && form.generatedStructure
+      ? {
+          ...form.generatedStructure,
+          sections: form.sections,
+          generatedPrompt: JSON.stringify(form.sections) !== JSON.stringify(form.generatedStructure.sections)
+            ? compileStructurePrompt(form.structureRequest, form.sections) : form.generatedStructure.generatedPrompt,
+        }
+      : existing?.generatedStructure,
+    structureEditMode: form.narrativeMode === 'generated' ? form.structureEditMode : undefined,
     customNarrativePrompt: form.narrativeMode === 'generated'
-      ? (form.advancedNarrativePromptDirty ? form.advancedNarrativePrompt.trim() : undefined)
+      ? (form.structureEditMode === 'advanced' ? form.advancedNarrativePrompt.trim() : undefined)
       : form.narrativeMode === 'custom'
         ? form.customNarrativePrompt.trim()
         : undefined,
@@ -398,11 +413,18 @@ export default function TemplatesPage() {
   const [defaultTemplateIndustry, setDefaultTemplateIndustry] = useState(templateIndustries[0]);
   const [defaultTemplateDraft, setDefaultTemplateDraft] = useState<Record<string, string>>({});
   const [form, setForm] = useState<TemplateFormState>(emptyTemplateForm);
-  const [showAdvancedNarrativePrompt, setShowAdvancedNarrativePrompt] = useState(false);
+  const [pendingStructureAction, setPendingStructureAction] = useState<'basic' | null>(null);
+  const [structureRequestDraft, setStructureRequestDraft] = useState('');
+  const [promptUpdateError, setPromptUpdateError] = useState<string | null>(null);
+  const [promptUpdateAttempt, setPromptUpdateAttempt] = useState(0);
+  const [draggedSectionIndex, setDraggedSectionIndex] = useState<number | null>(null);
+  const [dragOverSectionIndex, setDragOverSectionIndex] = useState<number | null>(null);
+  const isStructureRequestChanged = Boolean(form.generatedStructure)
+    && structureRequestDraft.trim() !== form.structureRequest.trim();
   const editorContentRef = useRef<HTMLDivElement>(null);
   const templateNameRef = useRef<HTMLInputElement>(null);
   const structureRequestRef = useRef<HTMLTextAreaElement>(null);
-  const sectionTitleRefs = useRef<Record<number, HTMLInputElement | null>>({});
+  const sectionTitleRefs = useRef<Record<number, HTMLTextAreaElement | null>>({});
   const sectionDescriptionRefs = useRef<Record<number, HTMLTextAreaElement | null>>({});
   const customNarrativePromptRef = useRef<HTMLTextAreaElement>(null);
   const advancedNarrativePromptRef = useRef<HTMLTextAreaElement>(null);
@@ -435,21 +457,44 @@ export default function TemplatesPage() {
     && displayedNarrativePrompt !== defaultNarrativePrompt;
   const generatedStructure = form.generatedStructure;
   const generatedPrompt = generatedStructure?.generatedPrompt ?? '';
-  const effectiveGeneratedPrompt = form.advancedNarrativePromptDirty
+  const promptNeedsUpdate = Boolean(generatedStructure)
+    && JSON.stringify(form.sections) !== JSON.stringify(generatedStructure?.sections);
+  const isPromptUpdatePending = form.structureEditMode === 'advanced'
+    && promptNeedsUpdate && !form.advancedNarrativePromptDirty;
+
+  useEffect(() => {
+    if (!isEditorOpen || editorStep !== 'structure' || form.narrativeMode !== 'generated'
+      || !isPromptUpdatePending || form.generationStatus === 'generating') return;
+    setPromptUpdateError(null);
+    // Prototype latency makes the on-demand update state visible without an AI service.
+    const timer = window.setTimeout(() => {
+      try {
+        const prompt = compileStructurePrompt(form.structureRequest, form.sections);
+        setForm((current) => ({
+          ...current,
+          generatedStructure: current.generatedStructure
+            ? { ...current.generatedStructure, sections: form.sections, generatedPrompt: prompt }
+            : undefined,
+          advancedNarrativePrompt: prompt,
+          advancedNarrativePromptDirty: false,
+        }));
+      } catch {
+        setPromptUpdateError('更新失败，请重试');
+      }
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [isEditorOpen, editorStep, form.narrativeMode, isPromptUpdatePending,
+    form.generationStatus, form.structureRequest, form.sections, promptUpdateAttempt]);
+  const effectiveGeneratedPrompt = form.structureEditMode === 'advanced'
     ? form.advancedNarrativePrompt
     : generatedPrompt;
   const generatedStructureValidationErrors = generatedStructure
-    ? [
-        ...validateGeneratedStructure({
+    ? validateGeneratedStructure({
         ...generatedStructure,
         requirement: form.structureRequest,
         generatedPrompt: effectiveGeneratedPrompt,
         sections: form.sections,
-        }),
-        ...(form.sectionsDirty && form.advancedNarrativePromptDirty
-          ? ['章节结构已更新，请同步高级提示词后再保存']
-          : []),
-      ]
+        }, form.structureEditMode)
     : ['请先生成报告结构'];
   const currentEditorStepIndex = templateEditorSteps.findIndex((step) => step.value === editorStep);
 
@@ -541,7 +586,8 @@ export default function TemplatesPage() {
     setSectionTitleErrors({});
     setSectionDescriptionErrors({});
     setShowSectionValidation(false);
-    setShowAdvancedNarrativePrompt(false);
+    setPendingStructureAction(null);
+    setStructureRequestDraft('');
     setEditorStep('basic');
     setIsEditorOpen(true);
   };
@@ -555,7 +601,8 @@ export default function TemplatesPage() {
     setSectionTitleErrors({});
     setSectionDescriptionErrors({});
     setShowSectionValidation(false);
-    setShowAdvancedNarrativePrompt(false);
+    setPendingStructureAction(null);
+    setStructureRequestDraft(template.structureRequest ?? '');
     setEditorStep('basic');
     setIsEditorOpen(true);
   };
@@ -579,25 +626,38 @@ export default function TemplatesPage() {
         return { ...current, sections: nextSections };
       }
 
-      const nextPrompt = compileStructurePrompt(current.structureRequest, nextSections);
-      const shouldSyncPrompt = !current.advancedNarrativePromptDirty;
-
       return {
         ...current,
         sections: nextSections,
-        sectionsDirty: true,
-        generatedStructure: {
-          ...current.generatedStructure,
-          sections: nextSections,
-          generatedPrompt: nextPrompt,
-        },
-        advancedNarrativePrompt: shouldSyncPrompt ? nextPrompt : current.advancedNarrativePrompt,
+        advancedNarrativePromptDirty: false,
       };
     });
   };
 
+  const switchStructureMode = (mode: 'basic' | 'advanced') => {
+    if (mode === form.structureEditMode) return;
+    if (mode === 'advanced' && promptNeedsUpdate && !validateStructureStep()) return;
+    if (mode === 'basic' && form.advancedNarrativePromptDirty) {
+      setPendingStructureAction('basic');
+      return;
+    }
+    setForm((current) => ({ ...current, structureEditMode: mode }));
+    setPromptUpdateError(null);
+    setStructureErrors({});
+  };
+
+  const confirmSwitchToBasic = () => {
+    setForm((current) => ({
+      ...current,
+      structureEditMode: 'basic',
+      advancedNarrativePrompt: current.generatedStructure?.generatedPrompt ?? '',
+      advancedNarrativePromptDirty: false,
+    }));
+    setStructureErrors({});
+  };
+
   const handleGenerateStructure = async () => {
-    const requirement = form.structureRequest.trim();
+    const requirement = structureRequestDraft.trim();
     if (!requirement) {
       setStructureErrors({ generation: '请先描述报告需求' });
       structureRequestRef.current?.focus();
@@ -629,12 +689,14 @@ export default function TemplatesPage() {
         sections: result.structure.sections,
         advancedNarrativePrompt: result.structure.generatedPrompt,
         advancedNarrativePromptDirty: false,
-        sectionsDirty: false,
         customNarrativePrompt: '',
         generationStatus: 'success',
         generationError: undefined,
         generationWarnings: result.warnings,
       }));
+      setSectionTitleErrors({});
+      setSectionDescriptionErrors({});
+      setShowSectionValidation(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : '生成报告结构失败，请重试';
       setForm((current) => ({
@@ -643,27 +705,30 @@ export default function TemplatesPage() {
         generationError: message,
       }));
       structureRequestRef.current?.focus();
-      toast.error(message, { duration: 5000 });
     }
   };
 
   const validateStructureStep = () => {
+    if (form.narrativeMode === 'generated' && isPromptUpdatePending) return false;
+    const validateSections = form.narrativeMode === 'generated' && form.structureEditMode === 'basic';
     setShowSectionValidation(true);
     const nextSectionTitleErrors = Object.fromEntries(
-      form.sections
-        .map((section, index) => [index, section.title.trim() ? undefined : '请输入章节标题'])
+      (validateSections ? form.sections : [])
+        .map((section, index) => [index, !section.title.trim() ? '请输入章节标题' : section.title.length > sectionTitleMaxLength ? '章节标题最多支持 20 字' : undefined])
         .filter(([, error]) => error),
     ) as Record<number, string>;
     const nextSectionDescriptionErrors = Object.fromEntries(
-      form.sections
-        .map((section, index) => [index, section.description.trim() ? undefined : '请输入章节写作要求'])
+      (validateSections ? form.sections : [])
+        .map((section, index) => [index, !section.description.trim() ? '请输入章节写作要求' : section.description.length > sectionDescriptionMaxLength ? '写作要求最多支持 1000 字' : undefined])
         .filter(([, error]) => error),
     ) as Record<number, string>;
     setSectionTitleErrors(nextSectionTitleErrors);
     setSectionDescriptionErrors(nextSectionDescriptionErrors);
     const nextErrors = form.narrativeMode === 'generated'
       ? {
-          generation: form.generationStatus !== 'success' ? '请先生成报告结构' : undefined,
+          generation: !form.generatedStructure ? '请先生成报告结构'
+            : form.generationStatus === 'generating' ? '正在生成报告结构，请稍候'
+            : undefined,
           sections: generatedStructureValidationErrors[0],
         }
       : form.narrativeMode === 'custom'
@@ -675,6 +740,7 @@ export default function TemplatesPage() {
       customNarrativePromptRef.current?.focus();
     }
     if (nextErrors.generation) structureRequestRef.current?.focus();
+    else if (nextErrors.sections && form.structureEditMode === 'advanced') advancedNarrativePromptRef.current?.focus();
     else if (Object.keys(nextSectionTitleErrors).length > 0) {
       sectionTitleRefs.current[Number(Object.keys(nextSectionTitleErrors)[0])]?.focus();
     } else if (Object.keys(nextSectionDescriptionErrors).length > 0) {
@@ -699,6 +765,13 @@ export default function TemplatesPage() {
     return !nextErrors.skill && !nextErrors.prompt;
   };
 
+  const discardUnappliedStructureRequest = () => {
+    if (form.narrativeMode !== 'generated' || !form.generatedStructure) return;
+    setStructureRequestDraft(form.structureRequest);
+    setForm((current) => ({ ...current, generationStatus: 'success', generationError: undefined }));
+    setStructureErrors((current) => ({ ...current, generation: undefined }));
+  };
+
   const handleEditorStepChange = (requestedStep: TemplateEditorStep) => {
     const requestedStepIndex = templateEditorSteps.findIndex((step) => step.value === requestedStep);
 
@@ -712,7 +785,10 @@ export default function TemplatesPage() {
     if (editorStep === 'style' && !validateStyleStep()) return;
 
     const nextStep = templateEditorSteps[currentEditorStepIndex + 1]?.value;
-    if (nextStep) setEditorStep(nextStep);
+    if (nextStep) {
+      if (editorStep === 'structure') discardUnappliedStructureRequest();
+      setEditorStep(nextStep);
+    }
   };
 
   const handleSaveTemplate = () => {
@@ -728,6 +804,7 @@ export default function TemplatesPage() {
       setEditorStep('style');
       return;
     }
+    discardUnappliedStructureRequest();
     const nextTemplate = createTemplateFromForm(form, editingTemplate ?? undefined);
 
     if (editingTemplate) {
@@ -742,7 +819,7 @@ export default function TemplatesPage() {
     setBasicErrors({});
     setStructureErrors({});
     setStyleErrors({});
-    setShowAdvancedNarrativePrompt(false);
+    setPendingStructureAction(null);
     setEditorStep('basic');
   };
 
@@ -1596,25 +1673,33 @@ export default function TemplatesPage() {
                         id="structure-request"
                         ref={structureRequestRef}
                         maxLength={2000}
-                        value={form.structureRequest}
-                        onChange={(event) => setForm((current) => ({ ...current, structureRequest: event.target.value, generationError: undefined }))}
+                        rows={4}
+                        value={structureRequestDraft}
+                        disabled={form.generationStatus === 'generating'}
+                        aria-invalid={Boolean(structureErrors.generation || form.generationError)}
+                        aria-describedby={structureErrors.generation || form.generationError ? 'structure-request-error' : undefined}
+                        onChange={(event) => { setStructureRequestDraft(event.target.value); setForm((current) => ({ ...current, generationError: undefined })); setStructureErrors({}); }}
                         placeholder={'请描述报告主题、统计周期和分析重点。\n例如：分析近 12 个月某科室药占比变化，按月份和药品类别展示趋势，识别异常并给出管理建议。'}
-                        className={`min-h-[260px] w-full resize-y rounded-[10px] border bg-white p-3 pb-8 text-[14px] leading-[22px] text-[#1d2129] outline-none placeholder:text-[#86909c] hover:border-[#c9cdd4] focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10 ${structureErrors.generation || form.generationError ? 'border-[#f53f3f] focus:border-[#f53f3f]' : 'border-[#e5e6eb]'}`}
+                        className={`min-h-[140px] w-full resize-y rounded-[10px] border bg-white p-3 pb-8 text-[14px] leading-[22px] text-[#1d2129] outline-none placeholder:text-[#86909c] hover:border-[#c9cdd4] focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10 ${structureErrors.generation || form.generationError ? 'border-[#f53f3f] focus:border-[#f53f3f]' : 'border-[#e5e6eb]'}`}
                       />
-                      <span className="pointer-events-none absolute bottom-2 right-3 text-[12px] leading-5 text-[#86909c]">{form.structureRequest.length}/2000</span>
+                      <span className="pointer-events-none absolute bottom-2 right-3 text-[12px] leading-5 text-[#86909c]">{structureRequestDraft.length}/2000</span>
                     </div>
-                    {structureErrors.generation && <p className="text-[12px] leading-5 text-[#f53f3f]">{structureErrors.generation}</p>}
+                    {(form.generationError || structureErrors.generation) && <p id="structure-request-error" role="alert" className="text-[12px] leading-5 text-[#f53f3f]">{form.generationError || structureErrors.generation}</p>}
+                    {isStructureRequestChanged && !form.generationError && !structureErrors.generation && (
+                      <p role="status" className="text-[12px] leading-5 text-[#86909c]">需求已修改，点击生成报告结构以更新。</p>
+                    )}
                   </div>
-
+                  <div className="flex items-center gap-3">
                   <button
                     type="button"
                     onClick={() => void handleGenerateStructure()}
-                    disabled={!form.structureRequest.trim() || form.generationStatus === 'generating'}
+                    disabled={!structureRequestDraft.trim() || form.generationStatus === 'generating'}
                     className="inline-flex h-10 w-fit items-center justify-center gap-2 rounded-[8px] bg-[#165dff] px-4 text-[14px] font-medium text-white transition-colors hover:bg-[#0e42d2] disabled:cursor-not-allowed disabled:bg-[#bed3ff]"
                   >
-                    {form.generatedStructure ? <RotateCcw aria-hidden="true" className="h-4 w-4" /> : <Settings2 aria-hidden="true" className="h-4 w-4" />}
-                    {form.generatedStructure ? '重新生成' : '生成报告结构'}
+                    <Settings2 aria-hidden="true" className="h-4 w-4" />
+                    {form.generationStatus === 'generating' ? '正在生成…' : '生成报告结构'}
                   </button>
+                  </div>
 
                   {form.generatedStructure && (
                     <>
@@ -1622,23 +1707,38 @@ export default function TemplatesPage() {
                         <div key={warning} className="rounded-[8px] border border-[#ffe4ba] bg-[#fff7e8] px-3 py-2 text-[12px] leading-5 text-[#d46b08]">{warning}</div>
                       ))}
 
-                      <div className="flex flex-col gap-3 rounded-[10px] border border-[#e5e6eb] bg-white p-3">
-                        <div className="flex items-center justify-between gap-3">
+                      <Tabs value={form.structureEditMode} onValueChange={(value) => switchStructureMode(value as 'basic' | 'advanced')} className="gap-3 rounded-[10px] border border-[#e5e6eb] bg-white p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
                           <div>
-                            <div className="text-[13px] font-medium leading-5 text-[#1d2129]">AI 生成的报告结构</div>
-                            <div className="mt-1 text-[12px] leading-5 text-[#86909c]">可以调整章节顺序和写作要求。</div>
+                            <div className="text-[14px] font-medium leading-5 text-[#1d2129]">报告结构</div>
                           </div>
+                          <TabsList aria-label="报告结构编辑模式" className="h-9 rounded-[8px] bg-[#f2f3f5] p-1">
+                            <TabsTrigger value="basic" disabled={form.generationStatus === 'generating'} className="rounded-[6px] px-3 text-[13px] data-[state=active]:bg-white data-[state=active]:text-[#165dff]">基础模式</TabsTrigger>
+                            <TabsTrigger value="advanced" disabled={form.generationStatus === 'generating'} className="rounded-[6px] px-3 text-[13px] data-[state=active]:bg-white data-[state=active]:text-[#165dff]">高级模式</TabsTrigger>
+                          </TabsList>
                         </div>
-
-                        <div className="flex flex-col gap-2">
+                        <TabsContent value="basic" className="m-0 space-y-3">
+                        <p className="text-[12px] leading-5 text-[#86909c]">按章节调整报告内容，拖动左侧手柄调整顺序。</p>
+                        <fieldset disabled={form.generationStatus === 'generating'} className="min-w-0 space-y-3">
+                        <div className="hidden grid-cols-[180px_minmax(0,1fr)_28px] gap-3 border-b border-[#e5e6eb] px-2 pb-2 text-[12px] leading-5 text-[#86909c] sm:grid" aria-hidden="true">
+                          <span className="pl-8">章节标题</span>
+                          <span>写作要求</span>
+                          <span className="sr-only">操作</span>
+                        </div>
+                        <div className="divide-y divide-[#e5e6eb]">
                           {form.sections.map((section, index) => (
-                            <div key={`${section.title}-${index}`} className="rounded-[8px] border border-[#e5e6eb] bg-[#f7f8fa] p-3">
-                              <div className="flex items-start gap-2">
-                                <div className="flex min-w-0 flex-1 flex-col gap-2">
+                            <div key={index} onDragOver={event => { event.preventDefault(); setDragOverSectionIndex(index); }} onDrop={event => { event.preventDefault(); if (draggedSectionIndex !== null && draggedSectionIndex !== index) { const next = [...form.sections]; const [moved] = next.splice(draggedSectionIndex, 1); next.splice(index, 0, moved); updateGeneratedSections(next); } setDraggedSectionIndex(null); setDragOverSectionIndex(null); }} className={`relative px-2 py-3 transition-colors hover:bg-[#f7f8fa] focus-within:bg-[#f7f8fa] ${dragOverSectionIndex === index && draggedSectionIndex !== index ? 'before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-[#165dff]' : ''}`}>
+                              <div className="flex items-start gap-3">
+                                <button type="button" draggable={form.generationStatus !== 'generating'} disabled={form.generationStatus === 'generating' || form.sections.length <= 1} aria-label={`拖拽第${index + 1}章节调整顺序`} title="拖拽调整顺序；使用 Alt+方向键调整" onDragStart={() => setDraggedSectionIndex(index)} onDragEnd={() => { setDraggedSectionIndex(null); setDragOverSectionIndex(null); }} onKeyDown={event => { if (!event.altKey || !['ArrowUp', 'ArrowDown'].includes(event.key)) return; event.preventDefault(); const to = Math.max(0, Math.min(form.sections.length - 1, index + (event.key === 'ArrowUp' ? -1 : 1))); if (to !== index) { const next = [...form.sections]; [next[index], next[to]] = [next[to], next[index]]; updateGeneratedSections(next); } }} className="mt-1 flex h-8 w-7 shrink-0 cursor-grab items-center justify-center rounded-[6px] text-[#86909c] hover:bg-[#e8f3ff] hover:text-[#165dff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/30 active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40"><GripVertical aria-hidden="true" className="h-4 w-4" /></button>
+                                <div className="grid min-w-0 flex-1 grid-cols-1 items-start gap-3 sm:grid-cols-[180px_minmax(0,1fr)]">
                                   <div className="flex items-start gap-2">
-                                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#e8f3ff] text-[12px] font-medium text-[#165dff]">{index + 1}</span>
+                                    <span className="mt-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#e8f3ff] text-[12px] font-medium text-[#165dff]">{index + 1}</span>
                                     <div className="flex min-w-0 flex-1 flex-col gap-1">
-                                      <input
+                                      <div className="relative">
+                                      <textarea
+                                        rows={2}
+                                        maxLength={sectionTitleMaxLength}
+                                        aria-describedby={`section-title-count-${index}`}
                                         value={section.title}
                                         ref={(element) => { sectionTitleRefs.current[index] = element; }}
                                         onBlur={() => {
@@ -1657,12 +1757,21 @@ export default function TemplatesPage() {
                                             });
                                           }
                                         }}
-                                        className={`h-8 min-w-0 w-full rounded-[6px] border bg-white px-2 text-[13px] font-medium text-[#1d2129] outline-none focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10 ${sectionTitleErrors[index] ? 'border-[#f53f3f]' : 'border-[#e5e6eb]'}`}
+                                        className={`block min-h-[64px] min-w-0 w-full resize-y [field-sizing:content] rounded-[6px] border bg-white px-2 pt-1.5 pb-6 text-[13px] font-medium leading-5 text-[#1d2129] outline-none focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10 ${sectionTitleErrors[index] ? 'border-[#f53f3f]' : 'border-[#e5e6eb]'}`}
                                       />
+                                      <span id={`section-title-count-${index}`} className={`pointer-events-none absolute bottom-1 right-3 text-[11px] leading-4 ${section.title.length > sectionTitleMaxLength ? 'text-[#f53f3f]' : 'text-[#86909c]'}`}>{section.title.length}/{sectionTitleMaxLength}</span>
+                                      </div>
                                       {showSectionValidation && sectionTitleErrors[index] && <p className="text-[12px] leading-5 text-[#f53f3f]">{sectionTitleErrors[index]}</p>}
                                     </div>
                                   </div>
+                                  <div className="flex min-w-0 flex-col gap-1">
+                                  <label htmlFor={`section-description-${index}`} className="text-[12px] leading-5 text-[#86909c] sm:hidden">写作要求</label>
+                                  <div className="relative">
                                   <textarea
+                                    id={`section-description-${index}`}
+                                    rows={3}
+                                    maxLength={sectionDescriptionMaxLength}
+                                    aria-describedby={`section-description-count-${index}`}
                                     value={section.description}
                                     ref={(element) => { sectionDescriptionRefs.current[index] = element; }}
                                     aria-label={`${section.title || `第${index + 1}`}章节写作要求`}
@@ -1681,14 +1790,15 @@ export default function TemplatesPage() {
                                         });
                                       }
                                     }}
-                                    className={`min-h-[58px] w-full resize-y rounded-[6px] border bg-white px-2 py-1.5 text-[13px] leading-5 text-[#4e5969] outline-none focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10 ${sectionDescriptionErrors[index] ? 'border-[#f53f3f]' : 'border-[#e5e6eb]'}`}
+                                    className={`block min-h-[64px] w-full resize-y [field-sizing:content] rounded-[6px] border bg-white px-2 pt-1.5 pb-6 text-[13px] leading-5 text-[#4e5969] outline-none focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10 ${sectionDescriptionErrors[index] ? 'border-[#f53f3f]' : 'border-[#e5e6eb]'}`}
                                   />
+                                  <span id={`section-description-count-${index}`} className={`pointer-events-none absolute bottom-1 right-3 text-[11px] leading-4 ${section.description.length > sectionDescriptionMaxLength ? 'text-[#f53f3f]' : 'text-[#86909c]'}`}>{section.description.length}/{sectionDescriptionMaxLength}</span>
+                                  </div>
                                   {showSectionValidation && sectionDescriptionErrors[index] && <p className="text-[12px] leading-5 text-[#f53f3f]">{sectionDescriptionErrors[index]}</p>}
+                                  </div>
                                 </div>
                                 <div className="flex shrink-0 flex-col gap-1">
-                                  <button type="button" aria-label={`上移第${index + 1}章节`} disabled={index === 0} onClick={() => { const next = [...form.sections]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; updateGeneratedSections(next); }} className="flex h-7 w-7 items-center justify-center rounded-[6px] text-[#4e5969] hover:bg-white disabled:cursor-not-allowed disabled:text-[#c9cdd4]"><ChevronUp aria-hidden="true" className="h-4 w-4" /></button>
-                                  <button type="button" aria-label={`下移第${index + 1}章节`} disabled={index === form.sections.length - 1} onClick={() => { const next = [...form.sections]; [next[index], next[index + 1]] = [next[index + 1], next[index]]; updateGeneratedSections(next); }} className="flex h-7 w-7 items-center justify-center rounded-[6px] text-[#4e5969] hover:bg-white disabled:cursor-not-allowed disabled:text-[#c9cdd4]"><ChevronDown aria-hidden="true" className="h-4 w-4" /></button>
-                                  <button type="button" aria-label={`删除第${index + 1}章节`} disabled={form.sections.length <= 1} onClick={() => updateGeneratedSections(form.sections.filter((_, itemIndex) => itemIndex !== index))} className="flex h-7 w-7 items-center justify-center rounded-[6px] text-[#f53f3f] hover:bg-[#fff2f0] disabled:cursor-not-allowed disabled:text-[#c9cdd4]"><X aria-hidden="true" className="h-4 w-4" /></button>
+                                  <button type="button" aria-label={`删除第${index + 1}章节`} title="删除章节" disabled={form.sections.length <= 1} onClick={() => updateGeneratedSections(form.sections.filter((_, itemIndex) => itemIndex !== index))} className="flex h-7 w-7 items-center justify-center rounded-[6px] text-[#f53f3f] hover:bg-[#fff2f0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f53f3f]/30 disabled:cursor-not-allowed disabled:text-[#c9cdd4]"><Trash2 aria-hidden="true" className="h-4 w-4" /></button>
                                 </div>
                               </div>
                             </div>
@@ -1699,38 +1809,50 @@ export default function TemplatesPage() {
                           type="button"
                           disabled={form.sections.length >= 8}
                           onClick={() => updateGeneratedSections([...form.sections, { title: '', description: '', required: true, metricIds: [] }])}
-                          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-[8px] border border-dashed border-[#c9cdd4] text-[13px] text-[#4e5969] hover:border-[#165dff] hover:text-[#165dff] disabled:cursor-not-allowed disabled:text-[#c9cdd4]"
+                          className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-[8px] border border-dashed border-[#c9cdd4] text-[13px] text-[#4e5969] hover:border-[#165dff] hover:text-[#165dff] disabled:cursor-not-allowed disabled:text-[#c9cdd4]"
                         ><Plus aria-hidden="true" className="h-4 w-4" />新增章节</button>
-                      </div>
-
-                      <div className="overflow-hidden rounded-[10px] border border-[#e5e6eb]">
-                        <button type="button" onClick={() => setShowAdvancedNarrativePrompt((current) => !current)} className="flex w-full items-center justify-between gap-3 bg-[#f7f8fa] px-3 py-2.5 text-left">
-                          <span className="flex items-center gap-2 text-[13px] font-medium text-[#1d2129]">
-                            高级设置：查看并修改完整提示词
-                            {form.advancedNarrativePromptDirty && <span className="rounded-full bg-[#fff7e8] px-2 py-0.5 text-[11px] font-normal text-[#d46b08]">已修改</span>}
-                          </span>
-                          <ChevronDown aria-hidden="true" className={`h-4 w-4 text-[#86909c] transition-transform ${showAdvancedNarrativePrompt ? 'rotate-180' : ''}`} />
-                        </button>
-                        {showAdvancedNarrativePrompt && (
-                          <div className="flex flex-col gap-2 border-t border-[#e5e6eb] p-3">
-                            <p className="text-[12px] leading-5 text-[#86909c]">修改完整提示词可能影响报告结构稳定性，请确认后使用。</p>
+                        </fieldset>
+                        </TabsContent>
+                        <TabsContent value="advanced" className="m-0 space-y-3">
+                            <p className="text-[12px] leading-5 text-[#86909c]">直接编辑完整提示词，报告将按此内容生成。</p>
+                            <>
+                            <div className="flex items-center gap-2">
+                              <label htmlFor="advanced-narrative-prompt" className="text-[13px] text-[#4e5969]">完整提示词</label>
+                              {form.advancedNarrativePromptDirty && <span className="rounded-full bg-[#fff7e8] px-2 py-0.5 text-[11px] text-[#d46b08]">已修改</span>}
+                            </div>
                             <div className="relative">
                               <textarea
+                                id="advanced-narrative-prompt"
                                 ref={advancedNarrativePromptRef}
                                 maxLength={4000}
+                                disabled={form.generationStatus === 'generating' || isPromptUpdatePending}
+                                aria-invalid={Boolean(structureErrors.sections)}
+                                aria-describedby={structureErrors.sections ? 'generated-structure-error' : undefined}
                                 value={form.advancedNarrativePrompt}
-                                onChange={(event) => setForm((current) => ({ ...current, advancedNarrativePrompt: event.target.value, advancedNarrativePromptDirty: event.target.value !== generatedPrompt }))}
-                                className="min-h-[180px] w-full resize-y rounded-[8px] border border-[#e5e6eb] bg-white p-3 pb-8 text-[13px] leading-5 text-[#1d2129] outline-none focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10"
+                                onChange={(event) => { setForm((current) => ({ ...current, advancedNarrativePrompt: event.target.value, advancedNarrativePromptDirty: event.target.value !== generatedPrompt })); setStructureErrors({}); }}
+                                className="min-h-[320px] w-full resize-y rounded-[8px] border border-[#e5e6eb] bg-white p-3 pb-8 text-[13px] leading-[22px] text-[#1d2129] outline-none focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10"
                               />
                               <span className="pointer-events-none absolute bottom-2 right-3 text-[12px] leading-5 text-[#86909c]">{form.advancedNarrativePrompt.length}/4000</span>
+                              {isPromptUpdatePending && (
+                                <div aria-busy={!promptUpdateError} className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-[8px] bg-[#86909c]/55 px-4 text-center backdrop-blur-[1px]">
+                                  {promptUpdateError ? (
+                                    <>
+                                      <p role="alert" className="text-[13px] font-medium leading-5 text-[#f53f3f]">{promptUpdateError}</p>
+                                      <button type="button" onClick={() => { setPromptUpdateError(null); setPromptUpdateAttempt((current) => current + 1); }} className="rounded-[6px] border border-[#e5e6eb] bg-white px-3 py-1.5 text-[13px] text-[#165dff] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20">重新更新</button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <LoaderCircle aria-hidden="true" className="h-6 w-6 animate-spin text-[#165dff] motion-reduce:animate-none" />
+                                      <p role="status" className="rounded-[6px] bg-white/85 px-2 py-1 text-[13px] font-medium leading-5 text-[#4e5969]">正在更新完整提示词…</p>
+                                    </>
+                                  )}
+                                </div>
+                              )}
                             </div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <button type="button" onClick={() => setForm((current) => ({ ...current, advancedNarrativePrompt: current.generatedStructure?.generatedPrompt ?? '', advancedNarrativePromptDirty: false, sectionsDirty: false }))} className="inline-flex h-8 items-center gap-1.5 rounded-[6px] border border-[#e5e6eb] bg-white px-2.5 text-[12px] text-[#4e5969] hover:border-[#165dff] hover:text-[#165dff]"><RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />恢复 AI 生成版本</button>
-                              {form.advancedNarrativePromptDirty && form.sectionsDirty && <button type="button" onClick={() => setForm((current) => ({ ...current, advancedNarrativePrompt: current.generatedStructure ? compileStructurePrompt(current.structureRequest, current.sections) : current.advancedNarrativePrompt, advancedNarrativePromptDirty: false, sectionsDirty: false }))} className="inline-flex h-8 items-center gap-1.5 rounded-[6px] border border-[#165dff] bg-[#e8f3ff] px-2.5 text-[12px] text-[#165dff]">按当前结构重新生成提示词</button>}
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                            </>
+                        </TabsContent>
+                      </Tabs>
+                      {structureErrors.sections && <p id="generated-structure-error" role="alert" className="text-[12px] leading-5 text-[#f53f3f]">{structureErrors.sections}</p>}
 
                     </>
                   )}
@@ -1919,17 +2041,23 @@ export default function TemplatesPage() {
                       <dt className="text-[13px] leading-5 text-[#4e5969]">报告结构</dt>
                       <dd className="min-w-0 break-words text-[14px] font-medium leading-[22px] text-[#1d2129]">
                         {form.narrativeMode === 'generated'
-                          ? `需求生成结构 · ${form.sections.length} 个章节`
+                          ? form.structureEditMode === 'advanced' ? '需求生成结构 · 使用完整提示词' : `需求生成结构 · ${form.sections.length} 个章节`
                           : form.narrativeMode === 'custom'
                             ? '历史自定义报告结构'
                             : selectedNarrativeSkill?.name ?? '未选择'}
                       </dd>
                     </div>
                     {form.narrativeMode === 'generated' && (
+                      <>
+                      <div className="grid grid-cols-[88px_minmax(0,1fr)] items-start gap-4 py-4 sm:grid-cols-[112px_minmax(0,1fr)]">
+                        <dt className="text-[13px] leading-5 text-[#4e5969]">编辑模式</dt>
+                        <dd className="text-[14px] leading-[22px] text-[#1d2129]">{form.structureEditMode === 'advanced' ? '高级模式 · 以完整提示词为准' : '基础模式 · 按章节结构生成'}</dd>
+                      </div>
                       <div className="grid grid-cols-[88px_minmax(0,1fr)] items-start gap-4 py-4 sm:grid-cols-[112px_minmax(0,1fr)]">
                         <dt className="text-[13px] leading-5 text-[#4e5969]">需求摘要</dt>
                         <dd className="min-w-0 whitespace-pre-wrap break-words text-[14px] leading-[22px] text-[#1d2129]">{form.structureRequest || '未填写'}</dd>
                       </div>
+                      </>
                     )}
                     <div className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-4 py-4 sm:grid-cols-[112px_minmax(0,1fr)]">
                       <dt className="text-[13px] leading-5 text-[#4e5969]">视觉风格</dt>
@@ -1971,7 +2099,8 @@ export default function TemplatesPage() {
                     const nextStep = templateEditorSteps[currentEditorStepIndex + 1]?.value;
                     if (nextStep) handleEditorStepChange(nextStep);
                   }}
-                  className="inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-[12px] border border-[#1d2129] bg-[#1d2129] px-4 text-[14px] leading-[22px] tracking-[0.15px] text-white transition-colors hover:bg-[#2f3339] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 sm:px-6"
+                  disabled={editorStep === 'structure' && form.narrativeMode === 'generated' && isPromptUpdatePending}
+                  className="inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-[12px] border border-[#1d2129] bg-[#1d2129] px-4 text-[14px] leading-[22px] tracking-[0.15px] text-white transition-colors hover:bg-[#2f3339] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 disabled:cursor-not-allowed disabled:opacity-40 sm:px-6"
                 >
                   下一步
                 </button>
@@ -1979,6 +2108,7 @@ export default function TemplatesPage() {
                 <button
                   type="button"
                   onClick={handleSaveTemplate}
+                  disabled={form.narrativeMode === 'generated' && isPromptUpdatePending}
                   className="inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-[12px] border border-[#1d2129] bg-[#1d2129] px-4 text-[14px] leading-[22px] tracking-[0.15px] text-white transition-colors hover:bg-[#2f3339] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 sm:px-6"
                 >
                   {editingTemplate ? '保存' : '创建'}
@@ -1986,6 +2116,23 @@ export default function TemplatesPage() {
               )}
             </div>
           </div>
+          <AlertDialog open={pendingStructureAction !== null} onOpenChange={(open) => { if (!open) setPendingStructureAction(null); }}>
+            <AlertDialogContent className="max-w-[calc(100vw-32px)] rounded-[12px] border-[#e5e6eb] bg-white sm:max-w-[440px]"
+              onCloseAutoFocus={(event) => { event.preventDefault(); editorContentRef.current?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus(); }}>
+              <AlertDialogHeader>
+                <AlertDialogTitle>切换到基础模式？</AlertDialogTitle>
+                <AlertDialogDescription className="text-[13px] leading-[22px] text-[#4e5969]">
+                  切回基础模式将使用上次的章节结构，并放弃高级提示词中的自定义修改。
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>继续高级编辑</AlertDialogCancel>
+                <AlertDialogAction className="bg-[#165dff] text-white hover:bg-[#0e42d2]" onClick={() => {
+                  confirmSwitchToBasic();
+                }}>使用基础模式</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </DialogContent>
       </Dialog>
 
@@ -2037,7 +2184,7 @@ export default function TemplatesPage() {
                   <dt className="w-28 shrink-0 text-[14px] leading-[22px] text-[#4e5969]">报告结构</dt>
                   <dd className="min-w-0 flex-1 text-[14px] leading-[22px] text-[#1d2129]">
                     {viewingTemplate.narrativeMode === 'generated'
-                      ? `需求生成结构 · ${viewingTemplate.sections.length} 个章节`
+                      ? getStructureEditMode(viewingTemplate) === 'advanced' ? '高级模式 · 使用完整提示词' : `基础模式 · ${viewingTemplate.sections.length} 个章节`
                       : viewingTemplate.narrativeMode === 'custom'
                       ? '自定义报告结构'
                       : `使用标准报告结构 · ${skills.find((skill) => skill.id === viewingTemplate.narrativeSkillId)?.name ?? '未绑定报告结构 Skill'}`}
@@ -2054,7 +2201,7 @@ export default function TemplatesPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-4 border-b border-[#e5e6eb] pb-4 text-[13px] leading-5">
                       <div><dt className="text-[#86909c]">生成时间</dt><dd className="mt-1 text-[#1d2129]">{viewingTemplate.generatedStructure?.generatedAt || viewingTemplate.createdAt || '-'}</dd></div>
-                      <div><dt className="text-[#86909c]">提示词状态</dt><dd className="mt-1 text-[#1d2129]">{viewingTemplate.customNarrativePrompt?.trim() ? '已人工修改' : '使用 AI 生成版本'}</dd></div>
+                      <div><dt className="text-[#86909c]">生效内容</dt><dd className="mt-1 text-[#1d2129]">{getStructureEditMode(viewingTemplate) === 'advanced' ? '完整提示词' : '基础章节结构'}</dd></div>
                     </div>
                   </>
                 )}
@@ -2105,9 +2252,11 @@ export default function TemplatesPage() {
                 )}
 
                 <div className="flex flex-col gap-2 border-b border-[#e5e6eb] pb-4">
-                  <dt className="text-[14px] leading-[22px] text-[#4e5969]">章节与指标</dt>
+                  <dt className="text-[14px] leading-[22px] text-[#4e5969]">{viewingTemplate.narrativeMode === 'generated' && getStructureEditMode(viewingTemplate) === 'advanced' ? '完整提示词' : '章节与指标'}</dt>
                   <dd className="space-y-2">
-                    {viewingTemplate.narrativeMode === 'generated' ? viewingTemplate.sections.map((section, index) => (
+                    {viewingTemplate.narrativeMode === 'generated' && getStructureEditMode(viewingTemplate) === 'advanced' ? (
+                      <div className="whitespace-pre-wrap break-words rounded-[8px] bg-[#f7f8fa] px-3 py-2 text-[13px] leading-5 text-[#4e5969]">{getEffectiveNarrativePrompt(viewingTemplate)}</div>
+                    ) : viewingTemplate.narrativeMode === 'generated' ? viewingTemplate.sections.map((section, index) => (
                       <div key={`${section.id}-${index}`} className="rounded-[8px] bg-[#f7f8fa] px-3 py-2 text-[13px] leading-5 text-[#4e5969]">
                         <div className="font-medium text-[#1d2129]">{index + 1}. {section.title}</div>
                         <div className="mt-1">{section.description || '未填写写作要求'}</div>

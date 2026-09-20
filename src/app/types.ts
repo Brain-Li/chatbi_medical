@@ -391,6 +391,7 @@ export interface ReportTemplate {
   narrativeMode?: ReportTemplateNarrativeMode;
   structureRequest?: string;
   generatedStructure?: GeneratedReportStructure;
+  structureEditMode?: 'basic' | 'advanced';
   customNarrativePrompt?: string;
   narrativeAdjustmentPrompt?: string;
   narrativeOverridePrompt?: string;
