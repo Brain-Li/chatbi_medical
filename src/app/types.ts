@@ -347,6 +347,8 @@ export interface ReportTemplateParameter {
 export interface ReportTemplateSection {
   id: string;
   title: string;
+  // Undefined uses automatic numbering; an empty string explicitly removes it.
+  titlePrefix?: string;
   required: boolean;
   description: string;
   metricIds?: string[];
@@ -357,7 +359,7 @@ export interface GeneratedReportStructure {
   requirement: string;
   generatedPrompt: string;
   generatedAt: string;
-  sections: Array<Pick<ReportTemplateSection, 'title' | 'description' | 'required' | 'metricIds'>>;
+  sections: Array<Pick<ReportTemplateSection, 'title' | 'titlePrefix' | 'description' | 'required' | 'metricIds'>>;
 }
 
 export interface ReportTemplateMetricBlock {

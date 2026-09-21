@@ -87,6 +87,31 @@ describe('reportTemplateStructure', () => {
     expect(prompt).toContain('先给结论');
   });
 
+  it('preserves edited and removed numbering when compiling and reordering sections', () => {
+    const sections = [
+      { title: '摘要', titlePrefix: '', description: '结论', required: true },
+      { title: '建议', titlePrefix: '九、', description: '行动', required: true },
+    ];
+    const prompt = compileStructurePrompt('分析趋势', sections);
+    expect(prompt).toContain('\n摘要\n');
+    expect(prompt).toContain('\n九、建议\n');
+    expect(prompt).not.toContain('1. 摘要');
+    const reordered = compileStructurePrompt('分析趋势', [...sections].reverse());
+    expect(reordered).toContain('\n九、建议\n');
+    expect(reordered).toContain('\n摘要\n');
+  });
+
+  it('keeps custom numbering when rebuilding a saved template prompt', () => {
+    const prompt = getEffectiveNarrativePrompt(baseTemplate({
+      narrativeMode: 'generated',
+      structureEditMode: 'basic',
+      structureRequest: '分析趋势',
+      sections: [{ id: 'summary', title: '摘要', titlePrefix: '7. ', description: '结论', required: true }],
+    }));
+    expect(prompt).toContain('\n7. 摘要\n');
+    expect(prompt).not.toContain('1. 摘要');
+  });
+
   it('uses the advanced prompt before the generated prompt', () => {
     const generatedStructure: GeneratedReportStructure = {
       schemaVersion: 'v1',
@@ -152,11 +177,12 @@ describe('reportTemplateStructure', () => {
   it('accepts section length limits and rejects oversized saved sections', () => {
     const structure: GeneratedReportStructure = {
       schemaVersion: 'v1', requirement: '分析趋势', generatedPrompt: '报告提示词', generatedAt: '',
-      sections: [{ title: '字'.repeat(20), description: '字'.repeat(1000), required: true }],
+      sections: [{ title: '字'.repeat(20), description: '字'.repeat(2000), required: true }],
     };
     expect(validateGeneratedStructure(structure)).toEqual([]);
-    expect(validateGeneratedStructure({ ...structure, sections: [{ title: '字'.repeat(21), description: '字'.repeat(1001), required: true }] })).toEqual([
-      '章节标题最多支持 20 字', '写作要求最多支持 1000 字',
+    expect(validateGeneratedStructure({ ...structure, sections: [{ title: '医'.repeat(19) + '😀', description: '字'.repeat(1999) + '😀', required: true }] })).toEqual([]);
+    expect(validateGeneratedStructure({ ...structure, sections: [{ title: '字'.repeat(21), description: '字'.repeat(2001), required: true }] })).toEqual([
+      '章节标题最多支持 20 字', '写作要求最多支持 2000 字',
     ]);
   });
 });

@@ -3603,7 +3603,7 @@ function getReportTemplatePrompt(template: ReportTemplate) {
     : '';
   const sectionPrompt = template.narrativeMode === 'generated' && template.sections.length
     ? `最终章节顺序：\n${template.sections
-      .map((section, index) => `${index + 1}. ${section.title}${section.required ? '（必需）' : ''}：${section.description}`)
+      .map((section, index) => `${section.titlePrefix ?? `${index + 1}. `}${section.title}${section.required ? '（必需）' : ''}：${section.description}`)
       .join('\n')}`
     : '';
 

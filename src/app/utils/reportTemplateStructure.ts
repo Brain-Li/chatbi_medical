@@ -18,7 +18,7 @@ export interface GenerateStructureResult {
 type StructureSection = Pick<ReportTemplateSection, 'title' | 'description' | 'required' | 'metricIds'>;
 
 export const sectionTitleMaxLength = 20;
-export const sectionDescriptionMaxLength = 1000;
+export const sectionDescriptionMaxLength = 2000;
 
 const baseSections: StructureSection[] = [
   {
@@ -82,7 +82,7 @@ export function compileStructurePrompt(
   sections: GeneratedReportStructure['sections'],
 ) {
   const sectionLines = sections
-    .map((section, index) => `${index + 1}. ${section.title}\n   写作要求：${section.description}`)
+    .map((section, index) => `${section.titlePrefix ?? `${index + 1}. `}${section.title}\n   写作要求：${section.description}`)
     .join('\n');
 
   return [
@@ -109,8 +109,8 @@ export function validateGeneratedStructure(structure: GeneratedReportStructure, 
   if (sections.length > 8) errors.push('报告章节最多支持 8 个');
   if (titles.length !== sections.length) errors.push('每个报告章节都需要填写标题');
   if (sections.some((section) => !section.description.trim())) errors.push('每个报告章节都需要填写写作要求');
-  if (sections.some((section) => section.title.length > sectionTitleMaxLength)) errors.push('章节标题最多支持 20 字');
-  if (sections.some((section) => section.description.length > sectionDescriptionMaxLength)) errors.push('写作要求最多支持 1000 字');
+  if (sections.some((section) => Array.from(section.title).length > sectionTitleMaxLength)) errors.push('章节标题最多支持 20 字');
+  if (sections.some((section) => Array.from(section.description).length > sectionDescriptionMaxLength)) errors.push('写作要求最多支持 2000 字');
 
   return errors;
 }
@@ -202,6 +202,7 @@ export function getEffectiveNarrativePrompt(template: ReportTemplate) {
         template.structureRequest ?? '',
         template.sections.map((section) => ({
           title: section.title,
+          titlePrefix: section.titlePrefix,
           description: section.description,
           required: section.required,
           metricIds: section.metricIds ?? [],
