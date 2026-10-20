@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import type { Agent } from '../types';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import searchIcon from '../../assets/figma-agent-management/search-line.svg';
 import addIcon from '../../assets/figma-agent-management/add-large-line.svg';
 import editIcon from '../../assets/figma-agent-management/edit-2-line.svg';
 import copyIcon from '../../assets/figma-agent-management/file-copy-line.svg';
 import deleteIcon from '../../assets/figma-agent-management/delete-bin-line.svg';
-import arrowDownIcon from '../../assets/figma-agent-management/arrow-down-s-line.svg';
 import arrowLeftIcon from '../../assets/figma-agent-management/arrow-left-s-line.svg';
 import arrowRightIcon from '../../assets/figma-agent-management/arrow-right-s-line.svg';
 
@@ -54,6 +54,8 @@ const secondaryTabs = [
   { label: 'Skill 管理', section: 'skills' },
   { label: 'MCP 接入', section: 'mcp' },
   { label: '知识库管理', section: 'knowledge' },
+  { label: '工具管理', section: 'tools' },
+  { label: '运行模式', section: 'runtime' },
 ];
 
 function IconButton({
@@ -93,45 +95,29 @@ export default function AgentManagementSection({
   onUpdate,
 }: AgentManagementSectionProps) {
   const [query, setQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [pageSize, setPageSize] = useState(10);
   const normalizedQuery = query.trim().toLowerCase();
   const filteredAgents = useMemo(
     () =>
       agents.filter((agent) => {
+        if (typeFilter !== 'all' && agent.type !== typeFilter) return false;
         if (!normalizedQuery) return true;
         const description = figmaDescriptions[agent.id] ?? agent.description;
         return `${agent.name} ${description}`.toLowerCase().includes(normalizedQuery);
       }),
-    [agents, normalizedQuery],
+    [agents, normalizedQuery, typeFilter],
   );
-  const visibleAgents = page === 1 ? filteredAgents.slice(0, 5) : [];
+  const totalPages = Math.max(1, Math.ceil(filteredAgents.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const visibleAgents = filteredAgents.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
     <section className="flex h-full min-h-0 flex-col overflow-hidden bg-white text-[#1d2129]">
       <div className="shrink-0 px-[22px] pt-[22px]">
         <div className="flex h-10 items-start justify-between">
           <h1 className="mb-0 mr-0 font-['PingFang_SC','Microsoft_YaHei',sans-serif] text-xl font-semibold leading-7 tracking-[0px] text-[#1d2129]">配置中心</h1>
-          <div className="-mt-1 flex items-center gap-3">
-            <label className="flex h-10 w-60 items-center gap-2 rounded-xl border border-[#e5e6eb] px-[17px]">
-              <img src={searchIcon} alt="" className="size-4 shrink-0 object-contain" />
-              <input
-                value={query}
-                onChange={(event) => {
-                  setQuery(event.target.value);
-                  onPageChange(1);
-                }}
-                placeholder="输入模板名称或触发词"
-                className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm leading-[22px] text-[#1d2129] outline-none placeholder:text-[#86909c]"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={onCreate}
-              className="flex h-[38px] items-center gap-1 rounded-xl border border-[#e5e6eb] bg-white px-3 text-sm leading-[22px] tracking-[0.15px] text-[#4e5969] transition-colors hover:bg-[#f7f8fa]"
-            >
-              <img src={addIcon} alt="" className="size-4 object-contain" />
-              <span>新建 Agent</span>
-            </button>
-          </div>
+
         </div>
 
         <nav className="mt-4 flex h-10 items-start gap-6 border-b border-[#e5e6eb]" aria-label="配置中心分类">
@@ -172,16 +158,48 @@ export default function AgentManagementSection({
             );
           })}
         </nav>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
+            <label className="flex h-10 w-[300px] max-w-full items-center gap-2 rounded-xl border border-[#e5e6eb] px-[17px]">
+              <img src={searchIcon} alt="" className="size-4 shrink-0 object-contain" />
+              <input
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  onPageChange(1);
+                }}
+                placeholder="搜索Agent名称或场景描述"
+                className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm leading-[22px] text-[#1d2129] outline-none placeholder:text-[#86909c]"
+              />
+            </label>
+            <Select value={typeFilter} onValueChange={(value) => { setTypeFilter(value); onPageChange(1); }}>
+              <SelectTrigger aria-label="筛选 Agent 类型" className="w-[180px] rounded-xl border-[#e5e6eb] bg-white text-[#4e5969] data-[size=default]:h-10"><SelectValue /></SelectTrigger>
+              <SelectContent className="rounded-xl border-[#e5e6eb] bg-white">
+                {[['all', '全部类型'], ['main', '主 Agent'], ['knowledge', '知识库问答'], ['ask', '问数类型'], ['report', '报告类型']].map(([value, label]) => (
+                  <SelectItem key={value} value={value} className="rounded-lg">{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+            <button
+              type="button"
+              onClick={onCreate}
+              className="flex h-[38px] items-center gap-1 rounded-xl border border-[#e5e6eb] bg-white px-3 text-sm leading-[22px] tracking-[0.15px] text-[#4e5969] transition-colors hover:bg-[#f7f8fa]"
+            >
+              <img src={addIcon} alt="" className="size-4 object-contain" />
+              <span>新建 Agent</span>
+            </button>
+          </div>
       </div>
 
-      <div className="min-h-0 flex-1 px-[22px] pt-4">
-        <div className="grid h-12 border-b border-[#e5e6eb] bg-[#f7f8fa] text-sm font-medium leading-6 text-[#4e5969]" style={gridColumns}>
+      <div className="flex min-h-0 flex-1 flex-col px-[22px] pt-4">
+        <div className="grid h-12 shrink-0 border-b border-[#e5e6eb] bg-[#f7f8fa] text-sm font-medium leading-6 text-[#4e5969]" style={gridColumns}>
           {['Agent 名称', '类型', '数据集', 'Skills', 'MCP能力', '知识文档', '状态', '操作'].map((label) => (
             <div key={label} className="flex min-w-0 items-center whitespace-nowrap px-4">{label}</div>
           ))}
         </div>
 
-        <div className="mt-2 flex min-h-0 flex-col gap-2 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="mt-2 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {visibleAgents.map((agent) => {
             const enabled = agent.status === '已启用';
             const datasets = agent.datasetIds?.length ? agent.datasetIds.map(datasetName).join('、') : '-';
@@ -241,19 +259,18 @@ export default function AgentManagementSection({
 
       <footer className="flex h-14 shrink-0 items-center justify-between border-t border-[#e5e6eb] bg-[#f7f8fa] px-6 text-sm text-[#1d2129]">
         <div className="flex items-center gap-4">
-          <span>共 100 条</span>
-          <button type="button" className="flex h-8 items-center gap-2.5 rounded-lg border border-[#e5e6eb] px-2 text-[#4e5969]">
-            <span>10 条/页</span>
-            <span className="flex size-4 shrink-0 items-center justify-center overflow-hidden">
-              <img src={arrowDownIcon} alt="" className="h-[5.19px] w-[8.49px] max-w-none" />
-            </span>
-          </button>
+          <span>共 {filteredAgents.length} 条</span>
+          <Select value={String(pageSize)} onValueChange={(value) => { setPageSize(Number(value)); onPageChange(1); }}>
+            <SelectTrigger aria-label="每页条数" className="w-[108px] rounded-lg border-[#e5e6eb] bg-transparent data-[size=default]:h-8"><SelectValue /></SelectTrigger>
+            <SelectContent className="rounded-lg">{[10, 20, 50].map((size) => <SelectItem key={size} value={String(size)}>{size} 条/页</SelectItem>)}</SelectContent>
+          </Select>
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => onPageChange(Math.max(1, page - 1))}
+              onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+              disabled={currentPage === 1}
               aria-label="上一页"
               className="flex size-8 items-center justify-center rounded-lg border border-[#f2f3f5] bg-[#f7f8fa]"
             >
@@ -261,13 +278,13 @@ export default function AgentManagementSection({
                 <img src={arrowLeftIcon} alt="" className="h-[12.73px] w-[7.78px] max-w-none" />
               </span>
             </button>
-            {[1, 2, 3].map((pageNumber) => (
+            {Array.from({ length: totalPages }, (_, index) => index + 1).map((pageNumber) => (
               <button
                 key={pageNumber}
                 type="button"
                 onClick={() => onPageChange(pageNumber)}
                 className={`flex size-8 items-center justify-center rounded-lg border text-center ${
-                  page === pageNumber
+                  currentPage === pageNumber
                     ? 'border-[#1d2129] bg-[#1d2129] font-medium text-white'
                     : 'border-[#f2f3f5] bg-transparent text-[#4e5969]'
                 }`}
@@ -275,19 +292,10 @@ export default function AgentManagementSection({
                 {pageNumber}
               </button>
             ))}
-            <span className="flex size-8 items-center justify-center text-[#4e5969]">...</span>
             <button
               type="button"
-              onClick={() => onPageChange(10)}
-              className={`flex size-8 items-center justify-center rounded-lg border ${
-                page === 10 ? 'border-[#1d2129] bg-[#1d2129] text-white' : 'border-[#f2f3f5] text-[#4e5969]'
-              }`}
-            >
-              10
-            </button>
-            <button
-              type="button"
-              onClick={() => onPageChange(Math.min(10, page + 1))}
+              onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+              disabled={currentPage === totalPages}
               aria-label="下一页"
               className="flex size-8 items-center justify-center rounded-lg border border-[#f2f3f5] bg-[#f7f8fa]"
             >
@@ -306,7 +314,7 @@ export default function AgentManagementSection({
               onKeyDown={(event) => {
                 if (event.key !== 'Enter') return;
                 const target = Number(event.currentTarget.value);
-                if (Number.isInteger(target) && target >= 1 && target <= 10) onPageChange(target);
+                if (Number.isInteger(target) && target >= 1 && target <= totalPages) onPageChange(target);
               }}
             />
             <span className="text-[#4e5969]">页</span>

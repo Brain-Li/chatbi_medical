@@ -54,8 +54,11 @@ import { Switch } from '../components/ui/switch';
 import { ConfigActionIconButton } from '../components/ConfigActionIconButton';
 import AgentManagementSection from '../components/AgentManagementSection';
 import CreateAgentDialog from '../components/CreateAgentDialog';
+import UserManagementSection from '../components/UserManagementSection';
 import SkillManagementSection from '../components/SkillManagementSection';
 import KnowledgeManagementSection from '../components/KnowledgeManagementSection';
+import ToolManagementSection from '../components/ToolManagementSection';
+import RuntimeModeSection from '../components/RuntimeModeSection';
 import SemanticAssetManagementSection from '../components/SemanticAssetManagementSection';
 import ConfigCenterSection from '../components/ConfigCenterSection';
 import McpAccessManagement from './McpAccessManagement';
@@ -66,6 +69,8 @@ type SettingsSection =
   | 'agents'
   | 'skills'
   | 'knowledge'
+  | 'tools'
+  | 'runtime'
   | 'datasets'
   | 'dimensions'
   | 'indicators'
@@ -80,6 +85,8 @@ const sectionIds: SettingsSection[] = [
   'skills',
   'mcp',
   'knowledge',
+  'tools',
+  'runtime',
   'datasets',
   'dimensions',
   'indicators',
@@ -104,6 +111,8 @@ const sectionGroups: Array<{
       { id: 'skills', label: 'Skill 管理', icon: Sparkles },
       { id: 'mcp', label: 'MCP 接入', icon: Network },
       { id: 'knowledge', label: '知识库管理', icon: FileText },
+      { id: 'tools', label: '工具管理', icon: Settings2 },
+      { id: 'runtime', label: '运行模式', icon: Settings2 },
     ],
   },
   {
@@ -142,9 +151,10 @@ const configurableSkillAgentTypes: AgentType[] = ['ask', 'report'];
 
 const enabledStatus = '已启用';
 
-type SystemSettingsTab = 'general' | 'mail' | 'appToken';
+type SystemSettingsTab = 'users' | 'general' | 'mail' | 'appToken';
 
 const systemSettingsTabs: Array<{ id: SystemSettingsTab; label: string }> = [
+  { id: 'users', label: '用户管理' },
   { id: 'general', label: '系统设置' },
   { id: 'mail', label: '邮件配置' },
   { id: 'appToken', label: 'AppToken 管理' },
@@ -371,7 +381,9 @@ export default function SystemSettings() {
     activeSection === 'agents' ||
     activeSection === 'skills' ||
     activeSection === 'mcp' ||
-    activeSection === 'knowledge';
+    activeSection === 'knowledge' ||
+    activeSection === 'tools' ||
+    activeSection === 'runtime';
   const useSemanticAssetLayout =
     activeSection === 'datasets' ||
     activeSection === 'dimensions' ||
@@ -447,7 +459,7 @@ export default function SystemSettings() {
 
   useEffect(() => {
     if (activeSection !== 'system') return;
-    if (systemTabParam === 'general' || systemTabParam === 'mail' || systemTabParam === 'appToken') {
+    if (systemTabParam === 'users' || systemTabParam === 'general' || systemTabParam === 'mail' || systemTabParam === 'appToken') {
       setSystemSettingsTab(systemTabParam);
       return;
     }
@@ -534,7 +546,7 @@ export default function SystemSettings() {
     setIsDatabaseDialogOpen(true);
   };
 
-  const submitAgent = (value: Pick<Agent, 'name' | 'type' | 'description' | 'exampleQuestions'>) => {
+  const submitAgent = (value: Pick<Agent, 'name' | 'type' | 'description' | 'exampleQuestions' | 'datasetIds'>) => {
     const agent: Agent = {
       id: `agent-${Date.now()}`,
       name: value.name,
@@ -547,7 +559,7 @@ export default function SystemSettings() {
       skills: [],
       exampleQuestions: value.exampleQuestions,
       capabilitySummary: '',
-      datasetIds: [],
+      datasetIds: value.datasetIds,
       knowledgeConfig: {
         enabled: false,
         mode: 'manual-documents',
@@ -1543,7 +1555,7 @@ export default function SystemSettings() {
         onOpenPrimarySection={(section) => openSection(section)}
         onOpenSecondary={(tab) => openSection('system', tab.systemTab as SystemSettingsTab)}
       >
-        {renderSystemSection()}
+        {systemSettingsTab === 'users' ? <UserManagementSection /> : renderSystemSection()}
       </ConfigCenterSection>
     );
 
@@ -1565,6 +1577,10 @@ export default function SystemSettings() {
         return renderSkillSection();
       case 'knowledge':
         return renderKnowledgeSection();
+      case 'tools':
+        return <ToolManagementSection onOpenSection={(section) => openSection(section as SettingsSection)} />;
+      case 'runtime':
+        return <RuntimeModeSection onOpenSection={(section) => openSection(section as SettingsSection)} />;
       case 'datasets':
         return renderSemanticAssetSection(
           <SemanticModel
@@ -1742,6 +1758,7 @@ export default function SystemSettings() {
       </AlertDialog>
 
       <CreateAgentDialog
+        datasets={semanticDatasets}
         open={isAgentDialogOpen}
         onOpenChange={setIsAgentDialogOpen}
         onSave={submitAgent}

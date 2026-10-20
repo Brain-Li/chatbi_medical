@@ -37,6 +37,8 @@ const secondaryTabs = [
   { label: 'Skill 管理', section: 'skills' },
   { label: 'MCP 接入', section: 'mcp' },
   { label: '知识库管理', section: 'knowledge' },
+  { label: '工具管理', section: 'tools' },
+  { label: '运行模式', section: 'runtime' },
 ];
 
 const agentTypeLabel: Record<AgentType, string> = {
