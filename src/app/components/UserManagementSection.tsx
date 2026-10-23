@@ -1,3 +1,5 @@
+import { useMemoryDraft } from '../license/hooks';
+import { guardLicense } from '../license/service';
 import { useRef, useState, type FormEvent } from 'react';
 import { Copy, Eye, EyeOff, PencilLine, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -33,9 +35,9 @@ export default function UserManagementSection() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [jump, setJump] = useState('');
-  const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<UserRow | null>(null);
-  const [form, setForm] = useState<UserForm>(emptyForm);
+  const [open, setOpen] = useMemoryDraft('UserManagementSection.tsx.open', false);
+  const [editing, setEditing] = useMemoryDraft<UserRow | null>('UserManagementSection.tsx.editing', null);
+  const [form, setForm] = useMemoryDraft<UserForm>('UserManagementSection.tsx.form', emptyForm);
   const [validated, setValidated] = useState(false);
   const [usernameLimitHint, setUsernameLimitHint] = useState('');
   const composingUsername = useRef(false);
@@ -93,6 +95,7 @@ export default function UserManagementSection() {
     setForm((current) => ({ ...current, name: value }));
   };
   const persist = (next: UserRow[]) => {
+    if (!guardLicense('configure')) return false;
     try { localStorage.setItem(storageKey, JSON.stringify(next)); setUsers(next); return true; }
     catch { toast.error('保存失败，请检查浏览器存储空间或权限'); return false; }
   };
@@ -107,6 +110,7 @@ export default function UserManagementSection() {
   };
   const save = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!guardLicense('configure')) return;
     if (composingUsername.current || composingName.current) return;
     setValidated(true);
     const first = (Object.keys(errors) as (keyof typeof errors)[]).find((key) => errors[key]);
@@ -156,6 +160,7 @@ export default function UserManagementSection() {
                   onPaste={(event) => {
                     if (composingUsername.current) return;
                     event.preventDefault();
+    if (!guardLicense('configure')) return;
                     const input = event.currentTarget;
                     const start = input.selectionStart ?? input.value.length;
                     input.setRangeText(event.clipboardData.getData('text').replace(/[\r\n]/g, ''), start, input.selectionEnd ?? start, 'end');
@@ -180,6 +185,7 @@ export default function UserManagementSection() {
                   onPaste={(event) => {
                     if (composingName.current) return;
                     event.preventDefault();
+    if (!guardLicense('configure')) return;
                     const input = event.currentTarget;
                     const start = input.selectionStart ?? input.value.length;
                     input.setRangeText(event.clipboardData.getData('text').replace(/[\r\n]/g, ''), start, input.selectionEnd ?? start, 'end');

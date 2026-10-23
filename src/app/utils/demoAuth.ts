@@ -6,10 +6,27 @@ export const PERSISTENT_AUTH_EXPIRES_AT_STORAGE_KEY = 'chatbi-medical-persistent
 const AUTH_USERNAME_STORAGE_KEY = 'chatbi-medical-auth-username';
 const DEMO_PASSWORD_STORAGE_KEY = 'chatbi-medical-demo-password';
 const DEFAULT_DEMO_PASSWORD = 'admin123';
+const LICENSE_REMINDER_DISMISSED_KEY = 'chatbi.license.reminder-dismissed';
+
+function clearLicenseReminderDismissal() {
+  window.sessionStorage.removeItem(LICENSE_REMINDER_DISMISSED_KEY);
+  window.localStorage.removeItem(LICENSE_REMINDER_DISMISSED_KEY);
+}
+
+export function getDismissedLicenseReminder() {
+  const storage = window.sessionStorage.getItem(AUTH_STORAGE_KEY) === 'true' ? window.sessionStorage : window.localStorage;
+  return storage.getItem(LICENSE_REMINDER_DISMISSED_KEY);
+}
+
+export function dismissLicenseReminder(key: string) {
+  const storage = window.sessionStorage.getItem(AUTH_STORAGE_KEY) === 'true' ? window.sessionStorage : window.localStorage;
+  storage.setItem(LICENSE_REMINDER_DISMISSED_KEY, key);
+}
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function createDemoAuthSession(rememberMe: boolean, username = 'admin') {
+  clearLicenseReminderDismissal();
   if (rememberMe) {
     window.sessionStorage.removeItem(AUTH_STORAGE_KEY);
     window.sessionStorage.removeItem(AUTH_USERNAME_STORAGE_KEY);
@@ -27,6 +44,7 @@ export function createDemoAuthSession(rememberMe: boolean, username = 'admin') {
 }
 
 export function clearDemoAuthSession() {
+  clearLicenseReminderDismissal();
   window.sessionStorage.removeItem(AUTH_STORAGE_KEY);
   window.sessionStorage.removeItem(AUTH_USERNAME_STORAGE_KEY);
   window.localStorage.removeItem(PERSISTENT_AUTH_STORAGE_KEY);

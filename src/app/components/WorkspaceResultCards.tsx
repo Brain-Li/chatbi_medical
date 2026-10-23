@@ -1,3 +1,4 @@
+import { guardLicense } from '../license/service';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import {
   Bar,
@@ -2537,6 +2538,7 @@ function ReportResultCard({
   };
 
   const handleSaveGeneratedTemplate = () => {
+    if (!guardLicense('configure')) return;
     const templateUsage = result.templateUsage;
     if (!templateUsage || templateUsage.source !== 'agent-generated' || matchedTemplate) return;
 
@@ -2548,6 +2550,7 @@ function ReportResultCard({
   };
 
   const handleOpenSubscription = () => {
+    if (!guardLicense('manageSubscription')) return;
     if (unsavedGeneratedTemplate) {
       toast.warning('请先保存 Agent 动态生成的模板，再设置报告订阅');
       return;

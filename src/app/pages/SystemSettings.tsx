@@ -1,3 +1,5 @@
+import { guardLicense, isLicenseAdmin } from '../license/service';
+import { useLicense } from '../license/hooks';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import {
@@ -61,6 +63,7 @@ import ToolManagementSection from '../components/ToolManagementSection';
 import RuntimeModeSection from '../components/RuntimeModeSection';
 import SemanticAssetManagementSection from '../components/SemanticAssetManagementSection';
 import ConfigCenterSection from '../components/ConfigCenterSection';
+import LicenseManagementSection from '../components/LicenseManagementSection';
 import McpAccessManagement from './McpAccessManagement';
 import IndicatorMarket from './IndicatorMarket';
 import SemanticModel from './SemanticModel';
@@ -151,13 +154,14 @@ const configurableSkillAgentTypes: AgentType[] = ['ask', 'report'];
 
 const enabledStatus = '已启用';
 
-type SystemSettingsTab = 'users' | 'general' | 'mail' | 'appToken';
+type SystemSettingsTab = 'users' | 'general' | 'mail' | 'appToken' | 'license';
 
 const systemSettingsTabs: Array<{ id: SystemSettingsTab; label: string }> = [
   { id: 'users', label: '用户管理' },
   { id: 'general', label: '系统设置' },
   { id: 'mail', label: '邮件配置' },
   { id: 'appToken', label: 'AppToken 管理' },
+  { id: 'license', label: '授权管理' },
 ];
 
 const databaseDialogInputClass =
@@ -361,7 +365,11 @@ export default function SystemSettings() {
   const [knowledgePage, setKnowledgePage] = useState(1);
   const [databasePage, setDatabasePage] = useState(1);
   const [llmPage, setLlmPage] = useState(1);
-  const [systemSettingsTab, setSystemSettingsTab] = useState<SystemSettingsTab>('general');
+  useLicense();
+  // Keep the license page implementation available for future user access.
+  const visibleSystemSettingsTabs = systemSettingsTabs.filter(tab => tab.id !== 'license' || isLicenseAdmin());
+  const selectedSystemTab = new URLSearchParams(location.search).get('systemTab');
+  const systemSettingsTab: SystemSettingsTab = visibleSystemSettingsTabs.some(tab => tab.id === selectedSystemTab) ? selectedSystemTab as SystemSettingsTab : 'general';
   const [mailTestStatus, setMailTestStatus] = useState('');
   const [databaseForm, setDatabaseForm] =
     useState<DatabaseConnectionForm>(emptyDatabaseConnectionForm);
@@ -457,14 +465,7 @@ export default function SystemSettings() {
     setLlmPage((current) => Math.min(current, llmTotalPages));
   }, [llmTotalPages]);
 
-  useEffect(() => {
-    if (activeSection !== 'system') return;
-    if (systemTabParam === 'users' || systemTabParam === 'general' || systemTabParam === 'mail' || systemTabParam === 'appToken') {
-      setSystemSettingsTab(systemTabParam);
-      return;
-    }
-    setSystemSettingsTab('general');
-  }, [activeSection, systemTabParam]);
+
 
   const openSection = (section: SettingsSection, systemTab?: SystemSettingsTab) => {
     if (section === 'system') {
@@ -547,6 +548,7 @@ export default function SystemSettings() {
   };
 
   const submitAgent = (value: Pick<Agent, 'name' | 'type' | 'description' | 'exampleQuestions' | 'datasetIds'>) => {
+    if (!guardLicense('configure')) return;
     const agent: Agent = {
       id: `agent-${Date.now()}`,
       name: value.name,
@@ -678,6 +680,7 @@ export default function SystemSettings() {
   };
 
   const submitDatabaseConnection = () => {
+    if (!guardLicense('configure')) return;
     const name = databaseForm.name.trim();
     const jdbcUrl = databaseForm.jdbcUrl.trim();
     const username = databaseForm.username.trim();
@@ -726,6 +729,7 @@ export default function SystemSettings() {
   };
 
   const submitSkill = () => {
+    if (!guardLicense('configure')) return;
     const name = skillForm.name.trim();
     const description = skillForm.description.trim();
     const skillMarkdown = skillForm.skillMarkdown.trim();
@@ -774,6 +778,7 @@ export default function SystemSettings() {
   };
 
   const submitKnowledgeDocument = () => {
+    if (!guardLicense('configure')) return;
     const title = knowledgeDocumentForm.title.trim();
     const fileName = knowledgeDocumentForm.fileName.trim();
     const knowledgeBaseId = knowledgeBases[0]?.id ?? 'kb-operational';
@@ -806,6 +811,7 @@ export default function SystemSettings() {
   };
 
   const submitLlmConnection = () => {
+    if (!guardLicense('configure')) return;
     const connectionName = llmForm.connectionName.trim();
     const baseUrl = llmForm.baseUrl.trim();
     const apiKey = llmForm.apiKey.trim();
@@ -1344,28 +1350,28 @@ export default function SystemSettings() {
                 <div className="flex flex-wrap items-center gap-3">
                   <button
                     type="button"
-                    onClick={() => setMailTestStatus('SMTP 模拟连接成功：主机 smtp.263.net、465 端口、SSL 配置可用。')}
+                    onClick={() => guardLicense('configure') && setMailTestStatus('SMTP 模拟连接成功：主机 smtp.263.net、465 端口、SSL 配置可用。')}
                     className={systemSettingsSecondaryButtonClass}
                   >
                     测试连接
                   </button>
                   <button
                     type="button"
-                    onClick={() => setMailTestStatus('测试发送成功：样例报告邮件已发送至经营分析组，未创建正式推送记录。')}
+                    onClick={() => guardLicense('configure') && setMailTestStatus('测试发送成功：样例报告邮件已发送至经营分析组，未创建正式推送记录。')}
                     className={systemSettingsSecondaryButtonClass}
                   >
                     测试发送
                   </button>
                   <button
                     type="button"
-                    onClick={() => setMailTestStatus('配置已重新加载：报告访问域名和 SMTP 参数已同步到推送服务。')}
+                    onClick={() => guardLicense('configure') && setMailTestStatus('配置已重新加载：报告访问域名和 SMTP 参数已同步到推送服务。')}
                     className={systemSettingsSecondaryButtonClass}
                   >
                     重新加载
                   </button>
                   <button
                     type="button"
-                    onClick={() => setMailTestStatus('邮件配置已保存：后续定时报告将使用当前 SMTP 和报告访问域名。')}
+                    onClick={() => guardLicense('configure') && setMailTestStatus('邮件配置已保存：后续定时报告将使用当前 SMTP 和报告访问域名。')}
                     className={systemSettingsPrimaryButtonClass}
                   >
                     保存
@@ -1547,7 +1553,7 @@ export default function SystemSettings() {
         activePrimary="system"
         activeSecondary="system"
         activeSystemTab={systemSettingsTab}
-        secondaryTabs={systemSettingsTabs.map((tab) => ({
+        secondaryTabs={visibleSystemSettingsTabs.map((tab) => ({
           label: tab.label,
           section: 'system',
           systemTab: tab.id,
@@ -1555,7 +1561,7 @@ export default function SystemSettings() {
         onOpenPrimarySection={(section) => openSection(section)}
         onOpenSecondary={(tab) => openSection('system', tab.systemTab as SystemSettingsTab)}
       >
-        {systemSettingsTab === 'users' ? <UserManagementSection /> : renderSystemSection()}
+        {systemSettingsTab === 'license' ? <LicenseManagementSection /> : systemSettingsTab === 'users' ? <UserManagementSection /> : renderSystemSection()}
       </ConfigCenterSection>
     );
 
@@ -1636,18 +1642,21 @@ export default function SystemSettings() {
   };
 
   const confirmDeleteDatabase = () => {
+    if (!guardLicense('configure')) return;
     if (!pendingDeleteDatabase || databaseDeleteBlockers.length) return;
     deleteDatabaseConnection(pendingDeleteDatabase.id);
     setDatabasePendingDeleteId(null);
   };
 
   const confirmDeleteLlm = () => {
+    if (!guardLicense('configure')) return;
     if (!pendingDeleteLlm) return;
     setLlmItems((current) => current.filter((connection) => connection.id !== pendingDeleteLlm.id));
     setLlmPendingDeleteId(null);
   };
 
   const confirmDeleteKnowledgeDocument = () => {
+    if (!guardLicense('configure')) return;
     if (!pendingDeleteKnowledgeDocument) return;
     deleteKnowledgeDocument(pendingDeleteKnowledgeDocument.id);
     setKnowledgeDocumentPendingDeleteId(null);
@@ -1760,12 +1769,13 @@ export default function SystemSettings() {
       <CreateAgentDialog
         datasets={semanticDatasets}
         open={isAgentDialogOpen}
+        suspended={activeSection === 'system' && systemTabParam === 'license'}
         onOpenChange={setIsAgentDialogOpen}
         onSave={submitAgent}
       />
 
       <Dialog
-        open={isSkillDialogOpen}
+        open={isSkillDialogOpen && !(activeSection === 'system' && systemTabParam === 'license')}
         onOpenChange={(open) => {
           if (open) {
             setIsSkillDialogOpen(true);
@@ -2021,7 +2031,7 @@ export default function SystemSettings() {
       </Dialog>
 
       <Dialog
-        open={isKnowledgeDocumentDialogOpen}
+        open={isKnowledgeDocumentDialogOpen && !(activeSection === 'system' && systemTabParam === 'license')}
         onOpenChange={(open) => {
           if (open) {
             setIsKnowledgeDocumentDialogOpen(true);
@@ -2244,7 +2254,7 @@ export default function SystemSettings() {
       </AlertDialog>
 
       <Dialog
-        open={isDatabaseDialogOpen}
+        open={isDatabaseDialogOpen && !(activeSection === 'system' && systemTabParam === 'license')}
         onOpenChange={(open) => {
           if (open) {
             setIsDatabaseDialogOpen(true);
@@ -2396,7 +2406,7 @@ export default function SystemSettings() {
       </Dialog>
 
       <Dialog
-        open={isLlmDialogOpen}
+        open={isLlmDialogOpen && !(activeSection === 'system' && systemTabParam === 'license')}
         onOpenChange={(open) => {
           if (open) {
             setIsLlmDialogOpen(true);

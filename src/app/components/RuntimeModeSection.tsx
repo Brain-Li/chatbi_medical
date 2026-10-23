@@ -1,3 +1,5 @@
+import { useMemoryDraft } from '../license/hooks';
+import { guardLicense } from '../license/service';
 import { useRef, useState, type FormEvent, type ChangeEvent, type ClipboardEvent, type CompositionEvent } from 'react';
 import { PencilLine } from 'lucide-react';
 import { toast } from 'sonner';
@@ -61,6 +63,7 @@ function RuntimeTextField({ field, label, value, onChange, placeholder, required
     onPaste: (event: ClipboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       if (composing.current) return;
       event.preventDefault();
+    if (!guardLicense('configure')) return;
       const input = event.currentTarget;
       const text = event.clipboardData.getData('text').replace(rows ? /\r\n?/g : /[\r\n]/g, rows ? '\n' : '');
       const start = input.selectionStart ?? input.value.length;
@@ -85,8 +88,8 @@ function RuntimeTextField({ field, label, value, onChange, placeholder, required
 
 export default function RuntimeModeSection({ onOpenSection }: { onOpenSection: (section: string) => void }) {
   const [modes, setModes] = useState(readRuntimeModes);
-  const [editingMode, setEditingMode] = useState<RuntimeMode | null>(null);
-  const [form, setForm] = useState<RuntimeModeForm>({ name: '', code: '', maxSteps: '', description: '', systemPrompt: '', nextStepPrompt: '' });
+  const [editingMode, setEditingMode] = useMemoryDraft<RuntimeMode | null>('RuntimeModeSection.tsx.editingMode', null);
+  const [form, setForm] = useMemoryDraft<RuntimeModeForm>('RuntimeModeSection.tsx.form', { name: '', code: '', maxSteps: '', description: '', systemPrompt: '', nextStepPrompt: '' });
   const [validated, setValidated] = useState(false);
   const [stepsHint, setStepsHint] = useState('');
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -106,6 +109,7 @@ export default function RuntimeModeSection({ onOpenSection }: { onOpenSection: (
 
   const save = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!guardLicense('configure')) return;
     if (!editingMode) return;
     setValidated(true);
     const firstError = (['name', 'code', 'maxSteps', 'description', 'systemPrompt', 'nextStepPrompt'] as const).find((key) => errors[key]);

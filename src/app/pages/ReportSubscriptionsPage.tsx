@@ -1,3 +1,5 @@
+import { useSessionDraft } from '../license/hooks';
+import { guardLicense } from '../license/service';
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import {
@@ -183,9 +185,9 @@ export default function ReportSubscriptionsPage() {
   const activeTab: ReportCenterTab = searchParams.get('tab') === 'reports' ? 'reports' : 'subscriptions';
   const [query, setQuery] = useState('');
   const [reportStatusFilter, setReportStatusFilter] = useState<'all' | DeliveryStatus>('all');
-  const [editingSubscription, setEditingSubscription] = useState<ReportSubscription | null>(null);
+  const [editingSubscription, setEditingSubscription] = useSessionDraft<ReportSubscription | null>('subscriptions.editing', null);
   const [pendingDeleteSubscription, setPendingDeleteSubscription] = useState<ReportSubscription | null>(null);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useSessionDraft('subscriptions.open', false);
 
   const activeSubscriptions = useMemo(
     () => reportSubscriptions
@@ -268,6 +270,7 @@ export default function ReportSubscriptionsPage() {
 
   const toggleSubscriptionStatus = (subscription: ReportSubscription) => {
     const nextStatus = subscription.status === 'running' ? 'paused' : 'running';
+    if (!guardLicense(nextStatus === 'running' ? 'manageSubscription' : 'pauseSubscription')) return;
     updateReportSubscription(subscription.id, { status: nextStatus });
     toast.success(nextStatus === 'running' ? '订阅任务已恢复' : '订阅任务已暂停');
   };
@@ -444,6 +447,7 @@ export default function ReportSubscriptionsPage() {
                                   {subscription.name}
                                 </TooltipContent>
                               </Tooltip>
+                              {subscription.licensePaused && <span className="mt-1 block text-xs text-[#ad6800]">因授权限制暂停，需手动恢复</span>}
                             </td>
                             <td className="px-4 py-3"><div className="truncate text-[#4e5969]">{template?.name ?? '模板已删除'}</div></td>
                             <td className="px-4 py-3 text-[#4e5969]">{subscription.period || '-'}</td>

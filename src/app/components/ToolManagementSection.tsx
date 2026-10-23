@@ -1,3 +1,5 @@
+import { useMemoryDraft } from '../license/hooks';
+import { guardLicense } from '../license/service';
 import { useRef, useState, type FormEvent } from 'react';
 import { ChevronLeft, ChevronRight, Copy, PencilLine, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -91,9 +93,9 @@ export default function ToolManagementSection({ onOpenSection }: { onOpenSection
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [jumpPage, setJumpPage] = useState('');
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState(emptyForm);
+  const [dialogOpen, setDialogOpen] = useMemoryDraft('ToolManagementSection.tsx.dialogOpen', false);
+  const [editingId, setEditingId] = useMemoryDraft<string | null>('ToolManagementSection.tsx.editingId', null);
+  const [form, setForm] = useMemoryDraft('ToolManagementSection.tsx.form', emptyForm);
   const [isComposingName, setIsComposingName] = useState(false);
   const composingName = useRef(false);
   const acceptedName = useRef('');
@@ -163,6 +165,7 @@ export default function ToolManagementSection({ onOpenSection }: { onOpenSection
   const updateCode = (input: HTMLInputElement) => updateLimitedField(input, 'code');
 
   const persist = (next: Tool[]) => {
+    if (!guardLicense('configure')) return false;
     try {
       localStorage.setItem(storageKey, JSON.stringify(next));
       setTools(next);
@@ -206,6 +209,7 @@ export default function ToolManagementSection({ onOpenSection }: { onOpenSection
 
   const saveTool = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!guardLicense('configure')) return;
     if (composingName.current || composingCode.current || composingDescription.current || composingParameters.current) return;
     const fields = ['name', 'code', 'description', 'parameters'] as const;
     setValidatedFields((current) => ({
@@ -300,6 +304,7 @@ export default function ToolManagementSection({ onOpenSection }: { onOpenSection
                     onPaste={(event) => {
                       if (composingName.current) return;
                       event.preventDefault();
+    if (!guardLicense('configure')) return;
                       const input = event.currentTarget;
                       const start = input.selectionStart ?? input.value.length;
                       const end = input.selectionEnd ?? start;
@@ -338,6 +343,7 @@ export default function ToolManagementSection({ onOpenSection }: { onOpenSection
                     onPaste={(event) => {
                       if (composingCode.current) return;
                       event.preventDefault();
+    if (!guardLicense('configure')) return;
                       const input = event.currentTarget;
                       const start = input.selectionStart ?? input.value.length;
                       const end = input.selectionEnd ?? start;
@@ -393,6 +399,7 @@ export default function ToolManagementSection({ onOpenSection }: { onOpenSection
                     onPaste={(event) => {
                       if (composingDescription.current) return;
                       event.preventDefault();
+    if (!guardLicense('configure')) return;
                       const input = event.currentTarget;
                       const start = input.selectionStart;
                       const end = input.selectionEnd;
@@ -429,6 +436,7 @@ export default function ToolManagementSection({ onOpenSection }: { onOpenSection
                     onPaste={(event) => {
                       if (composingParameters.current) return;
                       event.preventDefault();
+    if (!guardLicense('configure')) return;
                       const input = event.currentTarget;
                       input.setRangeText(event.clipboardData.getData('text').replace(/\r\n?/g, '\n'), input.selectionStart, input.selectionEnd, 'end');
                       updateLimitedField(input, 'parameters');

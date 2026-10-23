@@ -1,3 +1,5 @@
+import { useSessionDraft } from '../license/hooks';
+import { guardLicense } from '../license/service';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import {
@@ -573,7 +575,7 @@ export default function AgentWorkspace({
     mcpServers,
   } = useWorkspace();
 
-  const [inputValue, setInputValue] = useState('');
+  const [inputValue, setInputValue] = useSessionDraft('workspace.' + mode + '.question', '');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [pendingMessageId, setPendingMessageId] = useState<string | null>(null);
@@ -1246,6 +1248,7 @@ export default function AgentWorkspace({
   };
 
   const executeQuestion = (question: string, options?: ExecuteQuestionOptions) => {
+    if (!guardLicense('execute')) { setInputValue(question); return; }
     const trimmedQuestion = question.trim();
 
     if (!trimmedQuestion || isGenerating) return;
@@ -1687,6 +1690,7 @@ export default function AgentWorkspace({
   }, [location.state, mode, navigate]);
 
   const handleSend = () => {
+    if (!guardLicense('execute')) return;
     const cleanedQuestion = removeActiveSlashToken(inputValue).trim();
 
     if (!cleanedQuestion) return;
@@ -1984,6 +1988,7 @@ export default function AgentWorkspace({
   };
 
   const handleRegenerate = (messageId: string) => {
+    if (!guardLicense('execute')) return;
     if (!currentConversation || isGenerating) return;
 
     const messageIndex = currentConversation.messages.findIndex(

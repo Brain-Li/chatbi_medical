@@ -1,3 +1,4 @@
+import { guardLicense } from '../license/service';
 import { useEffect, useMemo, useState } from 'react';
 import { Globe, Save, Terminal } from 'lucide-react';
 import { useNavigate } from 'react-router';
@@ -256,6 +257,7 @@ export default function McpAccessManagement() {
   };
 
   const submitServerDialog = () => {
+    if (!guardLicense('configure')) return;
     const name = serverForm.name.trim();
     const businessDomain = serverForm.businessDomain.trim();
     const endpoint = serverForm.endpoint.trim();
@@ -294,6 +296,7 @@ export default function McpAccessManagement() {
   };
 
   const syncCapabilities = (serverId: string) => {
+    if (!guardLicense('configure')) return;
     if (syncingServerId) return;
     const serverName = serverNameById.get(serverId) ?? 'MCP 服务';
     setSyncingServerId(serverId);
@@ -315,6 +318,7 @@ export default function McpAccessManagement() {
   };
 
   const runHealthCheck = (serverId: string) => {
+    if (!guardLicense('configure')) return;
     if (checkingServerId) return;
     const serverName = serverNameById.get(serverId) ?? 'MCP 服务';
     setCheckingServerId(serverId);

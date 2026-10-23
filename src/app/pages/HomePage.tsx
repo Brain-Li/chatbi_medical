@@ -1,3 +1,5 @@
+import { useSessionDraft } from '../license/hooks';
+import { guardLicense } from '../license/service';
 import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useOutletContext } from 'react-router';
 import { ArrowUp, Eye, EyeOff } from 'lucide-react';
@@ -156,7 +158,7 @@ export default function HomePage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [selectedMode, setSelectedMode] = useState<HomeInputMode>('smart');
   const [selectedReportTemplateId, setSelectedReportTemplateId] = useState<string | null>(null);
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useSessionDraft('home.question', '');
   const [deepAnalysisEnabled, setDeepAnalysisEnabled] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
@@ -268,6 +270,7 @@ export default function HomePage() {
   ) => {
     const question = submittedQuestion.trim();
     if (!question) return;
+    if (!guardLicense('execute')) return;
     const resolvedMode =
       options?.mode ??
       (selectedMode === 'smart'
@@ -298,6 +301,7 @@ export default function HomePage() {
       forceNewConversation: false,
     };
 
+    setDraft('');
     navigate(resolvedMode === 'ask' ? '/ask' : '/report', {
       state: {
         autoSubmit,

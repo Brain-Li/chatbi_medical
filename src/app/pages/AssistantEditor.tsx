@@ -1,3 +1,4 @@
+import { guardLicense } from '../license/service';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { ArrowLeft, Eye, Plus, Save, Trash2 } from 'lucide-react';
@@ -662,6 +663,7 @@ export default function AssistantEditor() {
   };
 
   const handleSave = () => {
+    if (!guardLicense('configure')) return;
     const nextBehaviorConfig: AgentBehaviorConfig = {
       roleDefinition: agentPrompt.trim(),
       answerPrinciples: '',

@@ -1,3 +1,5 @@
+import { useSessionDraft } from '../license/hooks';
+import { guardLicense } from '../license/service';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, Check, ChevronDown, Feather, FileText, GripVertical, LoaderCircle, PencilLine, Plus, RefreshCw, RotateCcw, Settings2, Sparkles, SquarePen, UserRoundPen, X } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
@@ -406,18 +408,18 @@ export default function TemplatesPage() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [templatePage, setTemplatePage] = useState(1);
   const [templatePageSize, setTemplatePageSize] = useState<number>(templatePageSizeOptions[0]);
-  const [editingTemplate, setEditingTemplate] = useState<ReportTemplate | null>(null);
-  const [subscribingTemplate, setSubscribingTemplate] = useState<ReportTemplate | null>(null);
+  const [editingTemplate, setEditingTemplate] = useSessionDraft<ReportTemplate | null>('templates.editing', null);
+  const [subscribingTemplate, setSubscribingTemplate] = useSessionDraft<ReportTemplate | null>('templates.subscribing', null);
   const [viewingTemplate, setViewingTemplate] = useState<ReportTemplate | null>(null);
   const [pendingDeleteTemplate, setPendingDeleteTemplate] = useState<ReportTemplate | null>(null);
-  const [isEditorOpen, setIsEditorOpen] = useState(false);
-  const [editorStep, setEditorStep] = useState<TemplateEditorStep>('basic');
+  const [isEditorOpen, setIsEditorOpen] = useSessionDraft('templates.open', false);
+  const [editorStep, setEditorStep] = useSessionDraft<TemplateEditorStep>('templates.step', 'basic');
   const [showDefaultTemplateManager, setShowDefaultTemplateManager] = useState(false);
   const [defaultTemplateIndustry, setDefaultTemplateIndustry] = useState(templateIndustries[0]);
   const [defaultTemplateDraft, setDefaultTemplateDraft] = useState<Record<string, string>>({});
-  const [form, setForm] = useState<TemplateFormState>(emptyTemplateForm);
+  const [form, setForm] = useSessionDraft<TemplateFormState>('templates.form', emptyTemplateForm);
   const [pendingStructureAction, setPendingStructureAction] = useState<'regenerate' | null>(null);
-  const [structureRequestDraft, setStructureRequestDraft] = useState('');
+  const [structureRequestDraft, setStructureRequestDraft] = useSessionDraft('templates.structureDraft', '');
   const [structureTab, setStructureTab] = useState<'request' | 'result'>('request');
   const [promptUpdateError, setPromptUpdateError] = useState<string | null>(null);
   const [promptUpdateAttempt, setPromptUpdateAttempt] = useState(0);
@@ -607,6 +609,7 @@ export default function TemplatesPage() {
   }, [templateTotalPages]);
 
   const openNewTemplateEditor = () => {
+    if (!guardLicense('configure')) return;
     setPromptUpdateNextStep(null);
     setPromptUpdateError(null);
     setEditingTemplate(null);
@@ -683,6 +686,7 @@ export default function TemplatesPage() {
   };
 
   const handleGenerateStructure = async (options: { confirmedRequirementChange?: boolean; useSavedRequirement?: boolean } = {}) => {
+    if (!guardLicense('configure')) return;
     const { confirmedRequirementChange = false, useSavedRequirement = false } = options;
     if (form.generationStatus === 'generating' || isPromptUpdatePending) return;
     const requirement = (useSavedRequirement ? form.structureRequest : structureRequestDraft).trim();
@@ -852,6 +856,7 @@ export default function TemplatesPage() {
   };
 
   const handleSaveTemplate = () => {
+    if (!guardLicense('configure')) return;
     if (!validateBasicStep()) {
       setEditorStep('basic');
       return;
@@ -895,6 +900,7 @@ export default function TemplatesPage() {
     setShowDefaultTemplateManager(true);
   };
   const saveDefaultTemplateManager = () => {
+    if (!guardLicense('configure')) return;
     templateIndustries.forEach((industry) => {
       updateDefaultTemplateBinding(industry, defaultTemplateDraft[industry] ?? '');
     });
@@ -1188,7 +1194,7 @@ export default function TemplatesPage() {
                                   ? `订阅${template.name}`
                                   : `${template.name}已停用，无法订阅`,
                                 icon: templateSubscriptionIcon,
-                                onClick: () => setSubscribingTemplate(template),
+                                onClick: () => { if (guardLicense('manageSubscription')) setSubscribingTemplate(template); },
                                 unavailable: !enabled,
                               },
                               { tooltipLabel: '编辑', ariaLabel: `编辑${template.name}`, icon: templateEditIcon, onClick: () => openEditTemplateEditor(template), unavailable: false },

@@ -1,3 +1,4 @@
+import { guardLicense } from '../license/service';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BellRing,
@@ -310,6 +311,7 @@ export function ReportSubscriptionDialog({
   currentUserName = '李敏',
 }: ReportSubscriptionDialogProps) {
   const { agents, reportTemplates, addReportSubscription, updateReportSubscription } = useWorkspace();
+  const draftKey = 'chatbi.subscription-draft.' + (subscription?.id ?? template?.id ?? reportTitle ?? 'new');
   const [form, setForm] = useState<SubscriptionFormState>(() =>
     subscription
       ? createFormFromSubscription(subscription)
@@ -372,6 +374,10 @@ export function ReportSubscriptionDialog({
 
   useEffect(() => {
     if (!open) return;
+    try {
+      const saved = sessionStorage.getItem(draftKey);
+      if (saved) { setForm(JSON.parse(saved)); setErrors({}); return; }
+    } catch { /* Fall back to the saved subscription. */ }
     setForm(
       subscription
         ? createFormFromSubscription(subscription)
@@ -383,6 +389,13 @@ export function ReportSubscriptionDialog({
     setRecipientSearch('');
     setRecipientDepartmentName(recipientDepartments[0].name);
   }, [currentUserName, open, recipientMode, reportPeriod, reportTitle, subscription, template]);
+
+  useEffect(() => {
+    if (!open) return;
+    const persistDraft = () => { try { sessionStorage.setItem(draftKey, JSON.stringify(form)); } catch { /* Keep local form. */ } };
+    window.addEventListener('chatbi:license-navigate', persistDraft);
+    return () => window.removeEventListener('chatbi:license-navigate', persistDraft);
+  }, [draftKey, form, open]);
 
   useEffect(() => {
     if (!open || form.agentId || !availableAgents[0]) return;
@@ -488,6 +501,7 @@ export function ReportSubscriptionDialog({
   };
 
   const handleSave = () => {
+    if (!guardLicense('manageSubscription')) return;
     if (!validate()) return;
 
     const now = formatDateTime(new Date());
@@ -523,6 +537,7 @@ export function ReportSubscriptionDialog({
     else addReportSubscription(nextSubscription);
 
     onOpenChange(false);
+    sessionStorage.removeItem(draftKey);
     toast.success(subscription ? '订阅已更新' : '订阅成功');
   };
 

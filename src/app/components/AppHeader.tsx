@@ -5,6 +5,10 @@ import userLineIcon from '../../assets/figma-header/user-5-line.svg';
 import logoutLineIcon from '../../assets/figma-header/logout-box-r-line.svg';
 import { clearDemoAuthSession } from '../utils/demoAuth';
 import { BrandLogo } from './BrandLogo';
+import { LicenseDemoDialog } from './LicenseDemoDialog';
+import { SlidersHorizontal } from 'lucide-react';
+import { useLicense } from '../license/hooks';
+import { isLicenseAdmin } from '../license/service';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,8 +22,10 @@ type AppHeaderProps = {
 };
 
 export function AppHeader({ onLogoutClick }: AppHeaderProps) {
+  useLicense();
   const navigate = useNavigate();
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [demoSettingsOpen, setDemoSettingsOpen] = useState(false);
   const accountMenuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const accountMenuOpenedByHover = useRef(false);
   const cancelAccountMenuClose = () => {
@@ -102,8 +108,15 @@ export function AppHeader({ onLogoutClick }: AppHeaderProps) {
             <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
               <img src={userLineIcon} alt="" className="h-[13.3333px] w-[10.6667px]" />
             </span>
-            <span className="whitespace-nowrap">平台管理员</span>
+            <span className="whitespace-nowrap">{isLicenseAdmin() ? '平台管理员' : '普通用户'}</span>
           </DropdownMenuLabel>
+          <DropdownMenuItem
+            onSelect={() => setDemoSettingsOpen(true)}
+            className="h-[38px] cursor-pointer gap-1 rounded-none px-3 py-0 text-[14px] font-normal leading-[22px] text-[#1d2129] hover:bg-[#f7f8fa] focus:bg-[#f7f8fa]"
+          >
+            <SlidersHorizontal className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>演示设置</span>
+          </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={handleLogout}
             className="h-[38px] cursor-pointer gap-1 rounded-none px-3 py-0 text-[14px] font-normal leading-[22px] text-[#1d2129] hover:bg-[#f7f8fa] hover:text-[#1d2129] focus:bg-[#f7f8fa] focus:text-[#1d2129]"
@@ -115,6 +128,7 @@ export function AppHeader({ onLogoutClick }: AppHeaderProps) {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <LicenseDemoDialog open={demoSettingsOpen} onOpenChange={setDemoSettingsOpen} />
     </header>
   );
 }

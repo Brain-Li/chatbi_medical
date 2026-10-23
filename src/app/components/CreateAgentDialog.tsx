@@ -25,6 +25,7 @@ type AgentFormValue = {
 
 type CreateAgentDialogProps = {
   open: boolean;
+  suspended?: boolean;
   datasets: SemanticDataset[];
   onOpenChange: (open: boolean) => void;
   onSave: (value: AgentFormValue) => void;
@@ -54,6 +55,7 @@ export default function CreateAgentDialog({
   datasets,
   onOpenChange,
   onSave,
+  suspended = false,
 }: CreateAgentDialogProps) {
   const [activeTab, setActiveTab] = useState('基础信息');
   const [datasetIds, setDatasetIds] = useState<string[]>([]);
@@ -180,7 +182,7 @@ export default function CreateAgentDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open && !suspended} onOpenChange={onOpenChange}>
       <DialogContent
         aria-describedby={undefined}
         showCloseButton={false}

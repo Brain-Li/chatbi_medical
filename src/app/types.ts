@@ -300,6 +300,7 @@ export interface ReportSubscriptionRun {
 }
 
 export interface ReportSubscription {
+  licensePaused?: boolean;
   id: string;
   name: string;
   reportTemplateId: string;

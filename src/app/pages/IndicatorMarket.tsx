@@ -1,3 +1,4 @@
+import { guardLicense } from '../license/service';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
 import {
@@ -861,6 +862,7 @@ export default function IndicatorMarket({
   const editingIndicator = indicatorAssets.find((indicator) => indicator.id === editingIndicatorId) ?? null;
 
   const createIndicator = (updates: Partial<IndicatorAsset>) => {
+    if (!guardLicense('configure')) return;
     if (!draftIndicator) return;
 
     const bindings = updates.metricBindings ?? draftIndicator.metricBindings ?? [];
@@ -922,6 +924,7 @@ export default function IndicatorMarket({
   };
 
   const handleConfirmIndicatorAction = () => {
+    if (!guardLicense('configure')) return;
     if (!confirmAction) return;
 
     if (confirmAction.type === 'blocked-delete') {
@@ -1107,6 +1110,7 @@ export default function IndicatorMarket({
             dimensionSemantics={dimensionSemantics}
             onClose={() => setEditingIndicatorId(null)}
             onSave={(updates) => {
+            if (!guardLicense('configure')) return;
               updateIndicatorAsset(editingIndicator.id, updates);
               setEditingIndicatorId(null);
             }}
@@ -1370,6 +1374,7 @@ export default function IndicatorMarket({
           dimensionSemantics={dimensionSemantics}
           onClose={() => setEditingIndicatorId(null)}
           onSave={(updates) => {
+            if (!guardLicense('configure')) return;
             updateIndicatorAsset(editingIndicator.id, updates);
             setEditingIndicatorId(null);
           }}

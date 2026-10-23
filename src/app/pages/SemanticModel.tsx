@@ -1,3 +1,4 @@
+import { guardLicense } from '../license/service';
 import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { ArrowRight, ChevronLeft, ChevronRight, CircleHelp, Clock3, Database, Eye, PencilLine, Plus, Search, Shapes, Tags, Trash2, Users, X } from 'lucide-react';
@@ -1366,6 +1367,7 @@ export default function SemanticModel({
   };
 
   const confirmDeleteDimension = () => {
+    if (!guardLicense('configure')) return;
     if (!deleteDialogState) return;
     deleteDimensionSemantic(deleteDialogState.dimension.id);
     if (activeDimensionId === deleteDialogState.dimension.id) {
@@ -2299,6 +2301,7 @@ export default function SemanticModel({
           semanticDatasets={semanticDatasets}
           onClose={() => setIsCreateDimensionOpen(false)}
           onSubmit={(dimension) => {
+            if (!guardLicense('configure')) return;
             addDimensionSemantic(dimension);
             setIsCreateDimensionOpen(false);
           }}
@@ -2310,6 +2313,7 @@ export default function SemanticModel({
           semanticDatasets={semanticDatasets}
           onClose={() => setEditingDimension(null)}
           onSubmit={(dimension) => {
+            if (!guardLicense('configure')) return;
             updateDimensionSemantic(editingDimension.id, dimension);
             setEditingDimension(null);
           }}

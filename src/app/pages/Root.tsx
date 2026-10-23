@@ -5,6 +5,8 @@ import { AppShellBackground } from '../components/AppShellBackground';
 import { ConversationHistorySidebar } from '../components/ConversationHistorySidebar';
 import { PrimaryIconNav } from '../components/PrimaryIconNav';
 import { useWorkspace } from '../context/WorkspaceContext';
+import LicenseBoundary from '../components/LicenseBoundary';
+import { guardLicense } from '../license/service';
 
 export default function Root() {
   const location = useLocation();
@@ -67,10 +69,12 @@ export default function Root() {
   }, [navigate]);
 
   const handleRenameConversation = useCallback((conversationId: string, title: string) => {
+    if (!guardLicense('configure')) return;
     sidebarRuntimeRef.current.renameConversation(conversationId, title);
   }, []);
 
   const handleDeleteConversation = useCallback((conversationId: string) => {
+    if (!guardLicense('configure')) return false;
     const runtime = sidebarRuntimeRef.current;
     const deletingAskConversation = runtime.activeConversationIds.ask === conversationId;
     const deletingReportConversation = runtime.activeConversationIds.report === conversationId;
@@ -132,12 +136,12 @@ export default function Root() {
           />
         ) : null}
         <main className={`min-h-0 min-w-0 flex-1 overflow-hidden rounded-tl-[20px] rounded-tr-[20px] ${isWorkspacePage ? 'bg-transparent pb-0' : 'bg-white pb-[34px]'}`}>
-          <Outlet
+          <LicenseBoundary><Outlet
             context={{
               sidebarOpen,
               openSidebar: () => setSidebarOpen(true),
             }}
-          />
+          /></LicenseBoundary>
         </main>
       </div>
     </>

@@ -1,3 +1,5 @@
+import { guardLicense } from '../license/service';
+import { useLicense } from '../license/hooks';
 import {
   createContext,
   ReactNode,
@@ -272,6 +274,7 @@ const workspaceInitialActiveConversationIds = readStoredActiveConversationIds(
 );
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
+  const { status: licenseStatus } = useLicense();
   const [agents, setAgents] = useState<Agent[]>(initialAgents);
   const [skills, setSkills] = useState<Skill[]>(initialSkills);
   const [semanticDatasets, setSemanticDatasets] =
@@ -285,7 +288,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [reportTemplates, setReportTemplates] = useState<ReportTemplate[]>(initialReportTemplates);
   const [defaultTemplateBindings, setDefaultTemplateBindings] = useState<DefaultTemplateBinding[]>(initialDefaultTemplateBindings);
   const [reportSubscriptions, setReportSubscriptions] =
-    useState<ReportSubscription[]>(initialReportSubscriptions);
+    useState<ReportSubscription[]>(() => {
+      try {
+        const saved = JSON.parse(localStorage.getItem('chatbi.subscriptions.v1') ?? 'null');
+        if (Array.isArray(saved) && saved.every(item => typeof item.id === 'string' && Array.isArray(item.runs) && Array.isArray(item.pushRecords))) return saved;
+      } catch { /* Use existing demo data. */ }
+      return initialReportSubscriptions;
+    });
+  useEffect(() => {
+    if (licenseStatus !== 'expired' && licenseStatus !== 'invalid' && licenseStatus !== 'unactivated') return;
+    setReportSubscriptions(current => current.some(item => item.status === 'running' && !item.deletedAt)
+      ? current.map(item => item.status === 'running' && !item.deletedAt ? { ...item, status: 'paused', licensePaused: true } : item)
+      : current);
+  }, [licenseStatus]);
+  useEffect(() => {
+    try { localStorage.setItem('chatbi.subscriptions.v1', JSON.stringify(reportSubscriptions)); } catch { /* Keep in-memory state. */ }
+  }, [reportSubscriptions]);
   const [dimensionSemantics, setDimensionSemantics] = useState<DimensionSemantic[]>(initialDimensionSemantics);
   const [dimensionMembers, setDimensionMembers] = useState<DimensionMember[]>(initialDimensionMembers);
   const [conversations, setConversations] = useState<Conversation[]>(workspaceInitialConversations);
@@ -338,6 +356,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       mcpServers,
       activeConversationIds,
       updateAgent: (agentId, updates) => {
+        if (!guardLicense('configure')) return ;
         const targetAgent = agents.find((agent) => agent.id === agentId);
         const targetType = updates.type ?? targetAgent?.type;
         setAgents((current) =>
@@ -359,6 +378,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
       },
       addAgent: (agent) => {
+        if (!guardLicense('configure')) return ;
         setAgents((current) => [
           agent,
           ...current.map((item) =>
@@ -367,6 +387,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         ]);
       },
       copyAgent: (agentId) => {
+        if (!guardLicense('configure')) return null;
         const source = agents.find((agent) => agent.id === agentId);
         if (!source) return null;
 
@@ -381,6 +402,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         return copy;
       },
       deleteAgent: (agentId) => {
+        if (!guardLicense('configure')) return ;
         setAgents((current) => current.filter((agent) => agent.id !== agentId));
         setConversations((current) =>
           current.map((conversation) =>
@@ -474,6 +496,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
       },
       deleteConversation: (conversationId) => {
+        if (!guardLicense('configure')) return ;
         setConversations((current) =>
           current.filter((conversation) => conversation.id !== conversationId),
         );
@@ -497,6 +520,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         });
       },
       renameConversation: (conversationId, title) => {
+        if (!guardLicense('configure')) return ;
         setConversations((current) =>
           current.map((conversation) =>
             conversation.id === conversationId
@@ -525,6 +549,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }));
       },
       updateSkill: (skillId, updates) => {
+        if (!guardLicense('configure')) return ;
         setSkills((current) =>
           current.map((skill) =>
             skill.id === skillId
@@ -537,9 +562,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
       },
       addSkill: (skill) => {
+        if (!guardLicense('configure')) return ;
         setSkills((current) => [skill, ...current]);
       },
       copySkill: (skillId) => {
+        if (!guardLicense('configure')) return ;
         const source = skills.find((skill) => skill.id === skillId);
         if (!source) return;
 
@@ -555,6 +582,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setSkills((current) => [copy, ...current]);
       },
       deleteSkill: (skillId) => {
+        if (!guardLicense('configure')) return ;
         setSkills((current) => current.filter((skill) => skill.id !== skillId));
         setAgents((current) =>
           current.map((agent) => ({
@@ -564,9 +592,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
       },
       addKnowledgeDocument: (document) => {
+        if (!guardLicense('configure')) return ;
         setKnowledgeDocuments((current) => [document, ...current]);
       },
       updateKnowledgeDocument: (documentId, updates) => {
+        if (!guardLicense('configure')) return ;
         setKnowledgeDocuments((current) =>
           current.map((document) =>
             document.id === documentId
@@ -579,6 +609,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
       },
       deleteKnowledgeDocument: (documentId) => {
+        if (!guardLicense('configure')) return ;
         setKnowledgeDocuments((current) => current.filter((document) => document.id !== documentId));
         setAgents((current) =>
           current.map((agent) => ({
@@ -595,9 +626,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
       },
       addReportTemplate: (template) => {
+        if (!guardLicense('configure')) return ;
         setReportTemplates((current) => [template, ...current]);
       },
       updateReportTemplate: (templateId, updates) => {
+        if (!guardLicense('configure')) return ;
         if (updates.status === 'disabled') {
           setDefaultTemplateBindings((current) => current.filter((binding) => binding.templateId !== templateId));
         }
@@ -613,6 +646,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
       },
       deleteReportTemplate: (templateId) => {
+        if (!guardLicense('configure')) return ;
         setReportTemplates((current) => current.filter((template) => template.id !== templateId));
         setDefaultTemplateBindings((current) => current.filter((binding) => binding.templateId !== templateId));
         setReportSubscriptions((current) =>
@@ -628,9 +662,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
       },
       addReportSubscription: (subscription) => {
+        if (!guardLicense('manageSubscription')) return ;
         setReportSubscriptions((current) => [subscription, ...current]);
       },
       updateReportSubscription: (subscriptionId, updates) => {
+        const onlyPausing = updates.status === 'paused' && Object.keys(updates).length === 1;
+        if (!guardLicense(onlyPausing ? 'pauseSubscription' : 'manageSubscription')) return;
+        if (updates.status === 'running') updates = { ...updates, licensePaused: false };
         setReportSubscriptions((current) =>
           current.map((subscription) =>
             subscription.id === subscriptionId
@@ -644,6 +682,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
       },
       deleteReportSubscription: (subscriptionId) => {
+        if (!guardLicense('pauseSubscription')) return;
         setReportSubscriptions((current) =>
           current.map((subscription) =>
             subscription.id === subscriptionId
@@ -658,9 +697,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
       },
       addSemanticDataset: (dataset) => {
+        if (!guardLicense('configure')) return ;
         setSemanticDatasets((current) => [dataset, ...current]);
       },
       updateSemanticDataset: (datasetId, updates) => {
+        if (!guardLicense('configure')) return ;
         setSemanticDatasets((current) =>
           current.map((dataset) =>
             dataset.id === datasetId
@@ -673,13 +714,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
       },
       deleteSemanticDataset: (datasetId) => {
+        if (!guardLicense('configure')) return ;
         setSemanticDatasets((current) => current.filter((dataset) => dataset.id !== datasetId));
       },
       addIndicatorAssets: (indicators) => {
+        if (!guardLicense('configure')) return ;
         if (!indicators.length) return;
         setIndicatorAssets((current) => [...indicators, ...current]);
       },
       updateIndicatorAsset: (indicatorId, updates) => {
+        if (!guardLicense('configure')) return ;
         setIndicatorAssets((current) =>
           current.map((indicator) =>
             indicator.id === indicatorId
@@ -693,12 +737,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
       },
       deleteIndicatorAsset: (indicatorId) => {
+        if (!guardLicense('configure')) return ;
         setIndicatorAssets((current) => current.filter((indicator) => indicator.id !== indicatorId));
       },
       addDimensionSemantic: (dimension) => {
+        if (!guardLicense('configure')) return ;
         setDimensionSemantics((current) => [dimension, ...current]);
       },
       updateDimensionSemantic: (dimensionId, updates) => {
+        if (!guardLicense('configure')) return ;
         setDimensionSemantics((current) =>
           current.map((dimension) =>
             dimension.id === dimensionId
@@ -711,13 +758,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
       },
       deleteDimensionSemantic: (dimensionId) => {
+        if (!guardLicense('configure')) return ;
         setDimensionSemantics((current) => current.filter((dimension) => dimension.id !== dimensionId));
         setDimensionMembers((current) => current.filter((member) => member.dimensionId !== dimensionId));
       },
       addDimensionMember: (member) => {
+        if (!guardLicense('configure')) return ;
         setDimensionMembers((current) => [member, ...current]);
       },
       updateDimensionMember: (memberId, updates) => {
+        if (!guardLicense('configure')) return ;
         setDimensionMembers((current) =>
           current.map((member) =>
             member.id === memberId
@@ -730,12 +780,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
       },
       deleteDimensionMember: (memberId) => {
+        if (!guardLicense('configure')) return ;
         setDimensionMembers((current) => current.filter((member) => member.id !== memberId));
       },
       addDatabaseConnection: (connection) => {
+        if (!guardLicense('configure')) return ;
         setDatabaseConnections((current) => [connection, ...current]);
       },
       updateDatabaseConnection: (connectionId, updates) => {
+        if (!guardLicense('configure')) return ;
         const previousConnection = databaseConnections.find((connection) => connection.id === connectionId);
         setDatabaseConnections((current) =>
           current.map((connection) =>
@@ -761,6 +814,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
       },
       deleteDatabaseConnection: (connectionId) => {
+        if (!guardLicense('configure')) return ;
         setDatabaseConnections((current) =>
           current.filter((connection) => connection.id !== connectionId),
         );
@@ -774,14 +828,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           server.capabilities.some((capability) => capability.agentIds.includes(agentId)),
         ),
       updateMcpServer: (serverId, updater) => {
+        if (!guardLicense('configure')) return ;
         setMcpServers((current) =>
           current.map((server) => (server.id === serverId ? updater(server) : server)),
         );
       },
       addMcpServer: (server) => {
+        if (!guardLicense('configure')) return ;
         setMcpServers((current) => [server, ...current]);
       },
       updateDefaultTemplateBinding: (industry, templateId) => {
+        if (!guardLicense('configure')) return ;
         setDefaultTemplateBindings((current) => {
           const updatedAt = new Date().toLocaleString('zh-CN', { hour12: false });
           const existing = current.find((binding) => binding.industry === industry);
@@ -795,9 +852,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         });
       },
       deleteMcpServer: (serverId) => {
+        if (!guardLicense('configure')) return ;
         setMcpServers((current) => current.filter((server) => server.id !== serverId));
       },
       updateMcpCapability: (capabilityId, updater) => {
+        if (!guardLicense('configure')) return ;
         setMcpServers((current) =>
           current.map((server) => ({
             ...server,
@@ -808,6 +867,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
       },
       setMcpCapabilityAgentBinding: (capabilityId, agentId, enabled) => {
+        if (!guardLicense('configure')) return ;
         setMcpServers((current) =>
           current.map((server) => ({
             ...server,
@@ -827,6 +887,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
       },
       setMcpCapabilitySkillBinding: (capabilityId, skillId, enabled) => {
+        if (!guardLicense('configure')) return ;
         setMcpServers((current) =>
           current.map((server) => ({
             ...server,
@@ -846,6 +907,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
       },
       bulkSetMcpServerAgentBinding: (serverId, agentId, enabled) => {
+        if (!guardLicense('configure')) return ;
         setMcpServers((current) =>
           current.map((server) =>
             server.id === serverId
@@ -868,6 +930,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
       },
       setAgentMcpCapabilityBindings: (agentId, capabilityIds) => {
+        if (!guardLicense('configure')) return ;
         const nextCapabilityIds = new Set(capabilityIds);
         setMcpServers((current) =>
           current.map((server) => ({
