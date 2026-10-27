@@ -177,7 +177,7 @@ export default function LicenseManagementSection() {
             <div className="min-h-0 space-y-4 overflow-y-auto pr-1">
               <div>
                 <label htmlFor="license-token" className="block text-sm">许可证</label>
-                <textarea id="license-token" value={token} onChange={e => { setToken(e.target.value); setPreview(null); setError(''); }} disabled={formBusy} aria-describedby={error ? 'license-form-error' : undefined} rows={4} placeholder="请粘贴供应商提供的完整许可证" spellCheck={false} className="mt-2 block w-full resize-y rounded-lg border border-[#e5e6eb] bg-white p-3 font-mono text-sm outline-none focus:border-[#86909c] focus:ring-2 focus:ring-[#1d2129]/10" />
+                <textarea id="license-token" value={token} onChange={e => { setToken(e.target.value); setPreview(null); setError(''); }} readOnly={!!preview} disabled={formBusy} aria-describedby={error ? 'license-form-error' : undefined} rows={4} placeholder="请粘贴供应商提供的完整许可证" spellCheck={false} className="mt-2 block w-full resize-y rounded-lg border border-[#e5e6eb] bg-white p-3 font-mono text-sm outline-none read-only:bg-[#f7f8fa] focus:border-[#86909c] focus:ring-2 focus:ring-[#1d2129]/10" />
                 {error && <p id="license-form-error" role="alert" className="mt-2 text-sm leading-5 text-[#d4380d]">{error}</p>}
               </div>
               {preview && <div className="rounded-lg border border-[#b7ebcf] bg-[#f5fcf8] p-5">
