@@ -19,6 +19,13 @@ type StructureSection = Pick<ReportTemplateSection, 'title' | 'description' | 'r
 
 export const sectionTitleMaxLength = 20;
 export const sectionDescriptionMaxLength = 2000;
+export const sectionCountMax = 8;
+
+export function getSectionCountError(count: number) {
+  return count > sectionCountMax
+    ? `当前共有 ${count} 个章节，最多支持 ${sectionCountMax} 个。请合并或删除至少 ${count - sectionCountMax} 个章节后继续。`
+    : undefined;
+}
 
 const baseSections: StructureSection[] = [
   {
@@ -94,19 +101,95 @@ export function compileStructurePrompt(
   ].join('\n');
 }
 
-export function validateGeneratedStructure(structure: GeneratedReportStructure, mode: 'basic' | 'advanced' = 'basic') {
+// The prototype reads the same explicit section format that compileStructurePrompt emits.
+// Reject ambiguous text instead of replacing saved sections with guessed content.
+function readStructurePromptSections(
+  prompt: string,
+  previousSections: GeneratedReportStructure['sections'] = [],
+): GeneratedReportStructure['sections'] {
+  if (!prompt.trim()) throw new Error('生成的报告结构提示词不能为空');
+  if (prompt.length > 4000) throw new Error('完整提示词最多支持 4000 字');
+  const lines = prompt.replace(/\r\n?/g, '\n').split('\n');
+  const start = lines.findIndex((line) => /^\s*(?:#{1,6}\s*)?结构要求[：:]\s*$/.test(line));
+  const body = lines.slice(start < 0 ? 0 : start + 1);
+  const sections: GeneratedReportStructure['sections'] = [];
+  const formatError = '无法识别章节，请按“章节标题”换行“写作要求：具体内容”的格式修改完整提示词后重试';
+  let pendingLines: string[] = [];
+  let inGeneralRequirements = false;
+  for (const line of body) {
+    if (/^\s*(?:#{1,6}\s*)?通用要求[：:]/.test(line)) {
+      if (sections.length && !inGeneralRequirements) {
+        sections[sections.length - 1].description += `\n${pendingLines.join('\n')}`.trimEnd();
+      }
+      pendingLines = [];
+      inGeneralRequirements = true;
+      continue;
+    }
+    const description = line.match(/^\s*写作要求[：:][ \t]*(.*)$/);
+    if (!description) {
+      pendingLines.push(line);
+      continue;
+    }
+    while (pendingLines.length && !pendingLines[pendingLines.length - 1].trim()) pendingLines.pop();
+    const heading = pendingLines.pop()?.trim().replace(/^#{1,6}\s+/, '');
+    if (!heading) throw new Error(formatError);
+    if (sections.length && !inGeneralRequirements) {
+      sections[sections.length - 1].description += `\n${pendingLines.join('\n')}`.trimEnd();
+    } else if (!inGeneralRequirements && pendingLines.some((entry) => entry.trim())) {
+      throw new Error(formatError);
+    }
+    inGeneralRequirements = false;
+    const prefix = heading.match(/^(?:[一二三四五六七八九十百零〇]{1,4}|[0-9０-９]{1,4})[、.．][ \t]*/)?.[0] ?? '';
+    const title = heading.slice(prefix.length).trim();
+    const previous = previousSections.find((section) => section.title === title);
+    sections.push({ title, titlePrefix: prefix, description: description[1], required: true, metricIds: [...(previous?.metricIds ?? [])] });
+    pendingLines = [];
+  }
+  if (!sections.length) throw new Error(formatError);
+  if (!inGeneralRequirements) sections[sections.length - 1].description += `\n${pendingLines.join('\n')}`.trimEnd();
+  sections.forEach((section) => { section.description = section.description.trim(); });
+  return sections;
+}
+
+// Count the current draft without committing sections or validating unfinished fields.
+export function getStructurePromptSectionCount(prompt: string): number | undefined {
+  try {
+    return readStructurePromptSections(prompt).length;
+  } catch {
+    return undefined;
+  }
+}
+
+export function parseStructurePrompt(
+  prompt: string,
+  previousSections: GeneratedReportStructure['sections'] = [],
+): GeneratedReportStructure['sections'] {
+  const sections = readStructurePromptSections(prompt, previousSections);
+  const errors = validateGeneratedStructure({
+    schemaVersion: 'v1', requirement: '同步章节', generatedPrompt: prompt, generatedAt: '', sections,
+  }, 'basic', { allowSectionOverflow: true });
+  if (errors.length) throw new Error(errors[0]);
+  return sections;
+}
+
+export function validateGeneratedStructure(
+  structure: GeneratedReportStructure,
+  mode: 'basic' | 'advanced' = 'basic',
+  { allowSectionOverflow = false }: { allowSectionOverflow?: boolean } = {},
+) {
   const errors: string[] = [];
   const sections = structure.sections ?? [];
   const titles = sections.map((section) => section.title.trim()).filter(Boolean);
 
   if (!structure.requirement.trim()) errors.push('请填写报告需求');
   if (!structure.generatedPrompt.trim()) errors.push('生成的报告结构提示词不能为空');
+  const countError = getSectionCountError(sections.length);
+  if (!allowSectionOverflow && countError) errors.push(countError);
   if (mode === 'advanced') {
     if (structure.generatedPrompt.length > 4000) errors.push('完整提示词最多支持 4000 字');
     return errors;
   }
   if (sections.length < 1) errors.push('至少需要一个报告章节');
-  if (sections.length > 8) errors.push('报告章节最多支持 8 个');
   if (titles.length !== sections.length) errors.push('每个报告章节都需要填写标题');
   if (sections.some((section) => !section.description.trim())) errors.push('每个报告章节都需要填写写作要求');
   if (sections.some((section) => Array.from(section.title).length > sectionTitleMaxLength)) errors.push('章节标题最多支持 20 字');

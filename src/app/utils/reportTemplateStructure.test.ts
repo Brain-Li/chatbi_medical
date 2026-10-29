@@ -4,6 +4,9 @@ import {
   generateReportStructure,
   getEffectiveNarrativePrompt,
   getStructureEditMode,
+  getSectionCountError,
+  getStructurePromptSectionCount,
+  parseStructurePrompt,
   validateGeneratedStructure,
 } from './reportTemplateStructure';
 import { GeneratedReportStructure, ReportTemplate } from '../types';
@@ -36,6 +39,95 @@ const baseTemplate = (overrides: Partial<ReportTemplate> = {}): ReportTemplate =
 });
 
 describe('reportTemplateStructure', () => {
+  it('syncs edited titles, requirements, numbering and section order from the full prompt', () => {
+    const previous = [
+      { title: '摘要', description: '旧摘要', required: true, metricIds: ['revenue'] },
+      { title: '删除章节', description: '删除内容', required: true, metricIds: [] },
+    ];
+    const edited = [
+      { title: '新建议', titlePrefix: '九、', description: '第一行\n第二行\n1. 分析维度\n2. 指标口径', required: true, metricIds: [] },
+      { title: '摘要', titlePrefix: '', description: '新的写作要求', required: true, metricIds: ['revenue'] },
+    ];
+    expect(parseStructurePrompt(compileStructurePrompt('分析科室趋势', edited), previous)).toEqual(edited);
+    expect(previous[0].description).toBe('旧摘要');
+  });
+
+  it('reads CRLF, markdown headings and full-width numbering without changing the source prompt', () => {
+    const prompt = '用户需求：分析趋势\r\n结构要求：\r\n## １． 摘要\r\n写作要求: 先给结论\r\n\r\n### 二、建议\r\n写作要求：给出建议\r\n通用要求：不要编造';
+    expect(parseStructurePrompt(prompt).map(({ title, titlePrefix, description }) => ({ title, titlePrefix, description }))).toEqual([
+      { title: '摘要', titlePrefix: '１． ', description: '先给结论' },
+      { title: '建议', titlePrefix: '二、', description: '给出建议' },
+    ]);
+  });
+
+  it('rejects ambiguous, empty and oversized prompts without overwriting saved sections', () => {
+    const previous = [{ title: '保留章节', description: '保留要求', required: true }];
+    expect(() => parseStructurePrompt('自由描述一份报告', previous)).toThrow('无法识别章节');
+    expect(() => parseStructurePrompt('写作要求：缺少标题', previous)).toThrow('无法识别章节');
+    expect(() => parseStructurePrompt(' ', previous)).toThrow('不能为空');
+    expect(() => parseStructurePrompt('字'.repeat(4001), previous)).toThrow('4000');
+    expect(previous).toEqual([{ title: '保留章节', description: '保留要求', required: true }]);
+  });
+
+  it('validates parsed sections before committing a reverse sync', () => {
+    expect(() => parseStructurePrompt('结构要求：\n1. 摘要\n写作要求：\n通用要求：真实')).toThrow('填写写作要求');
+    expect(() => parseStructurePrompt(`1. ${'字'.repeat(21)}\n写作要求：有效内容`)).toThrow('标题最多支持 20 字');
+    expect(() => parseStructurePrompt(`1. 摘要\n写作要求：${'字'.repeat(2001)}`)).toThrow('写作要求最多支持 2000 字');
+    const tooMany = Array.from({ length: 9 }, (_, index) => `${index + 1}. 标题\n写作要求：内容`).join('\n');
+    expect(parseStructurePrompt(tooMany)).toHaveLength(9);
+  });
+
+  it('retains all overflow chapters for editing but blocks submission in both modes', () => {
+    const sections = Array.from({ length: 10 }, (_, index) => ({
+      title: `章节${index + 1}`, titlePrefix: `${index + 1}. `, description: `写作要求${index + 1}`, required: true, metricIds: [],
+    }));
+    const prompt = compileStructurePrompt('分析趋势', sections);
+    const parsed = parseStructurePrompt(prompt);
+    expect(getStructurePromptSectionCount(prompt)).toBe(10);
+    expect(parsed).toEqual(sections);
+    const structure: GeneratedReportStructure = {
+      schemaVersion: 'v1', requirement: '分析趋势', generatedAt: '', generatedPrompt: prompt, sections: parsed,
+    };
+    const countError = '当前共有 10 个章节，最多支持 8 个。请合并或删除至少 2 个章节后继续。';
+    expect(getSectionCountError(10)).toBe(countError);
+    for (const mode of ['basic', 'advanced'] as const) {
+      expect(validateGeneratedStructure(structure, mode)).toEqual([countError]);
+      expect(validateGeneratedStructure(structure, mode, { allowSectionOverflow: true })).toEqual([]);
+      expect(validateGeneratedStructure({ ...structure, sections: parsed.slice(0, 8) }, mode)).toEqual([]);
+    }
+    expect(getSectionCountError(8)).toBeUndefined();
+    expect(getSectionCountError(7)).toBeUndefined();
+    expect(validateGeneratedStructure({ ...structure, sections: parsed.map((section) => ({ ...section, title: '' })) }, 'basic', { allowSectionOverflow: true })).toContain('每个报告章节都需要填写标题');
+  });
+
+  it('counts draft chapters before field validation without changing draft content', () => {
+    const sections = Array.from({ length: 9 }, (_, index) => ({
+      title: '字'.repeat(21) + index, description: '', required: true, metricIds: [],
+    }));
+    const prompt = compileStructurePrompt('分析趋势', sections);
+    expect(getStructurePromptSectionCount(prompt)).toBe(9);
+    expect(() => parseStructurePrompt(prompt)).toThrow('填写写作要求');
+    expect(sections[0].description).toBe('');
+    expect(getStructurePromptSectionCount(compileStructurePrompt('分析趋势', sections.slice(0, 8)))).toBe(8);
+  });
+
+  it('includes chapters appended below the general requirements footer', () => {
+    const original = Array.from({ length: 8 }, (_, index) => ({ title: `章节${index + 1}`, description: '分析要求', required: true }));
+    const prompt = compileStructurePrompt('分析趋势', original) + '\n9. 新增章节\n写作要求：补充分析';
+    expect(getStructurePromptSectionCount(prompt)).toBe(9);
+    const sections = parseStructurePrompt(prompt);
+    expect(sections).toHaveLength(9);
+    expect(sections[7].description).toBe('分析要求');
+    expect(sections[8].title).toBe('新增章节');
+    expect(sections[8].description).toBe('补充分析');
+  });
+
+  it('does not invent a chapter count for unrecognized drafts', () => {
+    expect(getStructurePromptSectionCount('')).toBeUndefined();
+    expect(getStructurePromptSectionCount('暂未写完的提示词')).toBeUndefined();
+    expect(getStructurePromptSectionCount('写作要求：缺少章节标题')).toBeUndefined();
+  });
+
   it('generates a standard structure for a medical requirement', async () => {
     const result = await generateReportStructure({
       requirement: '分析近12个月某科室药占比趋势，识别异常并给出管理建议',

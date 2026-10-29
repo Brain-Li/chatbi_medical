@@ -1,7 +1,7 @@
 import { useSessionDraft } from '../license/hooks';
 import { guardLicense } from '../license/service';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Check, ChevronDown, Feather, FileText, GripVertical, LoaderCircle, PencilLine, Plus, RefreshCw, RotateCcw, Settings2, Sparkles, SquarePen, UserRoundPen, X } from 'lucide-react';
+import { AlertCircle, ArrowRight, Check, ChevronDown, Feather, FileText, GripVertical, LoaderCircle, PencilLine, Plus, RefreshCw, RotateCcw, Settings2, Sparkles, SquarePen, UserRoundPen, X } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { GeneratedReportStructure, ReportTemplate, ReportTemplateSection, ReportTemplateStatus } from '../types';
 import {
@@ -9,6 +9,10 @@ import {
   generateReportStructure,
   getEffectiveNarrativePrompt,
   getStructureEditMode,
+  getSectionCountError,
+  getStructurePromptSectionCount,
+  parseStructurePrompt,
+  sectionCountMax,
   sectionTitleMaxLength,
   sectionDescriptionMaxLength,
   validateGeneratedStructure,
@@ -434,6 +438,7 @@ export default function TemplatesPage() {
   const sectionContentRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const customNarrativePromptRef = useRef<HTMLTextAreaElement>(null);
   const advancedNarrativePromptRef = useRef<HTMLTextAreaElement>(null);
+  const sectionCountNoticeRef = useRef<HTMLDivElement>(null);
   const customStylePromptRef = useRef<HTMLTextAreaElement>(null);
   const [basicErrors, setBasicErrors] = useState<{ name?: string }>({});
   const [structureErrors, setStructureErrors] = useState<{ skill?: string; prompt?: string; generation?: string; sections?: string; requestRequired?: boolean }>({});
@@ -463,10 +468,21 @@ export default function TemplatesPage() {
     && displayedNarrativePrompt !== defaultNarrativePrompt;
   const generatedStructure = form.generatedStructure;
   const generatedPrompt = generatedStructure?.generatedPrompt ?? '';
+  const promptSectionCount = useMemo(
+    () => form.advancedNarrativePromptDirty ? getStructurePromptSectionCount(form.advancedNarrativePrompt) : undefined,
+    [form.advancedNarrativePrompt, form.advancedNarrativePromptDirty],
+  );
+  const sectionCountError = getSectionCountError((form.advancedNarrativePromptDirty ? promptSectionCount : form.sections.length) ?? 0);
+  const advancedStructureError = structureErrors.sections === sectionCountError ? undefined : structureErrors.sections;
   const promptNeedsUpdate = Boolean(generatedStructure)
     && JSON.stringify(form.sections) !== JSON.stringify(generatedStructure?.sections);
-  const isPromptUpdatePending = (form.structureEditMode === 'advanced' || promptUpdateNextStep !== null)
-    && promptNeedsUpdate && !form.advancedNarrativePromptDirty;
+  const isSectionUpdatePending = form.advancedNarrativePromptDirty
+    && (form.structureEditMode === 'basic' || promptUpdateNextStep !== null);
+  const isPromptUpdatePending = isSectionUpdatePending || ((form.structureEditMode === 'advanced' || promptUpdateNextStep !== null)
+    && promptNeedsUpdate && !form.advancedNarrativePromptDirty);
+  const structureUpdateMessage = isSectionUpdatePending
+    ? promptUpdateNextStep ? '正在更新章节内容，完成后进入下一步…' : '正在更新章节内容…'
+    : promptUpdateNextStep ? '正在更新完整提示词，完成后进入下一步…' : '正在更新完整提示词…';
   const structureGenerationBlock = form.generationStatus === 'generating'
     ? '正在生成报告结构，请稍候'
     : isStructureRequestChanged
@@ -477,17 +493,22 @@ export default function TemplatesPage() {
           ? '请先生成报告结构，再进行下一步'
           : undefined;
   const isCustomStructureStep = editorStep === 'structure' && form.narrativeMode === 'generated';
+  const sectionCountBlocked = isCustomStructureStep && structureTab === 'result' && Boolean(sectionCountError);
   const structureRequestError = form.generationError || structureErrors.generation;
   const visibleStructureRequestError = structureRequestError === '需求已修改，请重新生成报告结构'
     ? undefined : structureRequestError;
   const isStructureRequestInvalid = Boolean(structureRequestError || structureErrors.requestRequired);
   const structureStepMessage = structureRequestError
-    || (form.generationStatus === 'idle' && !generatedStructure ? undefined : structureGenerationBlock)
-    || (isPromptUpdatePending
-      ? promptUpdateError || '正在更新完整提示词，请稍候'
-      : undefined);
+    || (form.generationStatus === 'idle' && !generatedStructure ? undefined : structureGenerationBlock);
   const structureStepHint = structureRequestError || form.generationStatus === 'error' || structureStepMessage === '需求已修改，请重新生成报告结构'
     ? undefined : structureStepMessage;
+
+  useEffect(() => {
+    if (!isEditorOpen) {
+      setPromptUpdateNextStep(null);
+      setPromptUpdateError(null);
+    }
+  }, [isEditorOpen]);
 
   useEffect(() => {
     if (!isEditorOpen || editorStep !== 'structure' || form.narrativeMode !== 'generated'
@@ -496,37 +517,43 @@ export default function TemplatesPage() {
     // Prototype latency makes the on-demand update state visible without an AI service.
     const timer = window.setTimeout(() => {
       try {
-        const prompt = compileStructurePrompt(form.structureRequest, form.sections);
+        const sections = isSectionUpdatePending
+          ? parseStructurePrompt(form.advancedNarrativePrompt, form.sections)
+          : form.sections;
+        const prompt = isSectionUpdatePending
+          ? form.advancedNarrativePrompt
+          : compileStructurePrompt(form.structureRequest, sections);
         setForm((current) => ({
           ...current,
+          sections,
           generatedStructure: current.generatedStructure
-            ? { ...current.generatedStructure, sections: form.sections, generatedPrompt: prompt }
+            ? { ...current.generatedStructure, sections, generatedPrompt: prompt }
             : undefined,
           advancedNarrativePrompt: prompt,
           advancedNarrativePromptDirty: false,
         }));
+        setSectionTitleErrors({});
+        setSectionDescriptionErrors({});
+        setShowSectionValidation(false);
         if (promptUpdateNextStep) {
-          setEditorStep(promptUpdateNextStep);
+          if (getSectionCountError(sections.length)) {
+            requestAnimationFrame(() => sectionCountNoticeRef.current?.focus());
+          } else {
+            setEditorStep(promptUpdateNextStep);
+          }
           setPromptUpdateNextStep(null);
         }
-      } catch {
-        setPromptUpdateError('更新失败，请重试');
+      } catch (error) {
+        setPromptUpdateError(isSectionUpdatePending && error instanceof Error ? `章节更新失败：${error.message}` : '更新失败，请重试');
       }
     }, 1000);
     return () => window.clearTimeout(timer);
   }, [isEditorOpen, editorStep, form.narrativeMode, isPromptUpdatePending,
-    form.generationStatus, form.structureRequest, form.sections, promptUpdateAttempt, promptUpdateNextStep]);
+    form.generationStatus, form.structureRequest, form.sections, form.advancedNarrativePrompt,
+    isSectionUpdatePending, promptUpdateAttempt, promptUpdateNextStep]);
   const effectiveGeneratedPrompt = form.structureEditMode === 'advanced'
     ? form.advancedNarrativePrompt
     : generatedPrompt;
-  const generatedStructureValidationErrors = generatedStructure
-    ? validateGeneratedStructure({
-        ...generatedStructure,
-        requirement: form.structureRequest,
-        generatedPrompt: effectiveGeneratedPrompt,
-        sections: form.sections,
-        }, form.structureEditMode)
-    : ['请先生成报告结构'];
   const currentEditorStepIndex = templateEditorSteps.findIndex((step) => step.value === editorStep);
 
   useEffect(() => {
@@ -677,12 +704,22 @@ export default function TemplatesPage() {
   };
 
   const switchStructureMode = (mode: 'basic' | 'advanced') => {
-    if (isPromptUpdatePending) return;
+    if (form.generationStatus === 'generating' || isPromptUpdatePending) return;
     if (mode === form.structureEditMode) return;
-    if (mode === 'advanced' && promptNeedsUpdate && !validateStructureStep()) return;
+    if (mode === 'advanced' && promptNeedsUpdate && !validateStructureStep({ allowSectionOverflow: true })) return;
+    if (mode === 'basic' && form.advancedNarrativePromptDirty) {
+      if (!validateStructureStep({ allowSectionOverflow: true })) return;
+    }
     setForm((current) => ({ ...current, structureEditMode: mode }));
     setPromptUpdateError(null);
     setStructureErrors({});
+  };
+
+  const returnToPromptEditing = () => {
+    setPromptUpdateNextStep(null);
+    setPromptUpdateError(null);
+    setForm((current) => ({ ...current, structureEditMode: 'advanced' }));
+    requestAnimationFrame(() => advancedNarrativePromptRef.current?.focus());
   };
 
   const handleGenerateStructure = async (options: { confirmedRequirementChange?: boolean; useSavedRequirement?: boolean } = {}) => {
@@ -760,7 +797,7 @@ export default function TemplatesPage() {
     }
   };
 
-  const validateStructureStep = () => {
+  const validateStructureStep = ({ allowSectionOverflow = false }: { allowSectionOverflow?: boolean } = {}) => {
     if (form.narrativeMode === 'generated' && isPromptUpdatePending) return false;
     if (form.narrativeMode === 'generated' && !structureRequestDraft.trim()) {
       setStructureErrors({ requestRequired: true });
@@ -769,6 +806,17 @@ export default function TemplatesPage() {
       return false;
     }
     const validateSections = form.narrativeMode === 'generated' && form.structureEditMode === 'basic';
+    // A modified advanced prompt is parsed on sync; its previous section count is stale.
+    const generatedStructureValidationErrors = generatedStructure
+      ? validateGeneratedStructure({
+          ...generatedStructure,
+          requirement: form.structureRequest,
+          generatedPrompt: effectiveGeneratedPrompt,
+          sections: form.sections,
+        }, form.structureEditMode, {
+          allowSectionOverflow: allowSectionOverflow || (form.structureEditMode === 'advanced' && form.advancedNarrativePromptDirty),
+        })
+      : ['请先生成报告结构'];
     setShowSectionValidation(true);
     const nextSectionTitleErrors = Object.fromEntries(
       (validateSections ? form.sections : [])
@@ -785,7 +833,7 @@ export default function TemplatesPage() {
     const nextErrors = form.narrativeMode === 'generated'
       ? {
           generation: structureGenerationBlock,
-          sections: generatedStructureValidationErrors[0],
+          sections: (!allowSectionOverflow && sectionCountError) || generatedStructureValidationErrors[0],
         }
       : form.narrativeMode === 'custom'
         ? { prompt: form.customNarrativePrompt.trim() ? undefined : '请填写报告结构提示词' }
@@ -801,7 +849,8 @@ export default function TemplatesPage() {
     } else if (nextErrors.sections && form.narrativeMode === 'generated') {
       setStructureTab('result');
       requestAnimationFrame(() => {
-        if (form.structureEditMode === 'advanced') advancedNarrativePromptRef.current?.focus();
+        if (sectionCountError && nextErrors.sections === sectionCountError) sectionCountNoticeRef.current?.focus();
+        else if (form.structureEditMode === 'advanced') advancedNarrativePromptRef.current?.focus();
         else if (Object.keys(nextSectionTitleErrors).length) sectionContentRefs.current[Number(Object.keys(nextSectionTitleErrors)[0])]?.focus();
         else sectionContentRefs.current[Number(Object.keys(nextSectionDescriptionErrors)[0])]?.focus();
       });
@@ -845,7 +894,8 @@ export default function TemplatesPage() {
     const nextStep = templateEditorSteps[currentEditorStepIndex + 1]?.value;
     if (nextStep) {
       if (editorStep === 'structure' && form.narrativeMode === 'generated'
-        && form.structureEditMode === 'basic' && promptNeedsUpdate) {
+        && ((form.structureEditMode === 'basic' && promptNeedsUpdate)
+          || (form.structureEditMode === 'advanced' && form.advancedNarrativePromptDirty))) {
         setStructureTab('result');
         setPromptUpdateError(null);
         setPromptUpdateNextStep(nextStep);
@@ -917,6 +967,31 @@ export default function TemplatesPage() {
     (defaultTemplateDraft[industry] ?? '')
     !== (defaultTemplateBindings.find((binding) => binding.industry === industry)?.templateId ?? '')
   ));
+
+  const sectionCountNotice = sectionCountError && (
+      <div ref={sectionCountNoticeRef} id="section-count-notice" role="alert" tabIndex={-1}
+        className="sticky top-0 z-10 flex shrink-0 items-start gap-2 rounded-[6px] border border-[#f7c1bd] bg-[#fff2f0] px-3 py-2 text-[#b42318] outline-none focus:ring-2 focus:ring-[#f53f3f]/15">
+        <AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+        <p className="min-w-0 flex-1 text-[13px] leading-5">{sectionCountError}</p>
+      </div>
+    );
+
+  const structureUpdateOverlay = isPromptUpdatePending && (
+    <div aria-busy={!promptUpdateError} className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-[8px] bg-white/95 px-4 text-center">
+      {promptUpdateError ? (
+        <>
+          <p role="alert" className="text-[13px] font-medium leading-5 text-[#f53f3f]">{promptUpdateError}</p>
+          <button type="button" onClick={() => { setPromptUpdateError(null); setPromptUpdateAttempt((current) => current + 1); }} className="rounded-[6px] border border-[#e5e6eb] bg-white px-3 py-1.5 text-[13px] text-[#165dff] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20">重新更新</button>
+          {isSectionUpdatePending && <button type="button" onClick={returnToPromptEditing} className="rounded-[6px] px-3 py-1.5 text-[13px] text-[#165dff] underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/30">返回修改提示词</button>}
+        </>
+      ) : (
+        <>
+          <LoaderCircle aria-hidden="true" className="h-6 w-6 animate-spin text-[#165dff] motion-reduce:animate-none" />
+          <p role="status" className="rounded-[6px] bg-white/85 px-2 py-1 text-[13px] font-medium leading-5 text-[#4e5969]">{structureUpdateMessage}</p>
+        </>
+      )}
+    </div>
+  );
 
   return (
     <div className="h-full min-h-0 flex-1 overflow-hidden bg-white px-4 pb-0 pt-4 font-['PingFang_SC','Microsoft_YaHei',sans-serif] md:px-[22px] md:pt-[22px]">
@@ -1412,8 +1487,10 @@ export default function TemplatesPage() {
                       <button
                         type="button"
                         aria-current={isActive ? 'step' : undefined}
+                        disabled={sectionCountBlocked && index > currentEditorStepIndex}
+                        aria-describedby={sectionCountBlocked && index > currentEditorStepIndex ? 'section-count-notice' : undefined}
                         onClick={() => handleEditorStepChange(step.value)}
-                        className="flex min-h-9 w-full min-w-0 flex-col items-center gap-1 rounded-[4px] text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 sm:w-auto sm:flex-row sm:gap-2"
+                        className="flex min-h-9 w-full min-w-0 flex-col items-center gap-1 rounded-[4px] text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:flex-row sm:gap-2"
                       >
                         <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[12px] font-medium leading-5 transition-colors ${
                           isActive
@@ -1780,23 +1857,12 @@ export default function TemplatesPage() {
                           <TabsTrigger value="basic" disabled={form.generationStatus === 'generating' || isPromptUpdatePending} className="h-9 flex-none rounded-none border-0 border-b-2 border-transparent px-0 pb-3 text-[14px] text-[#4e5969] data-[state=active]:border-[#1d2129] data-[state=active]:bg-transparent data-[state=active]:text-[#1d2129] data-[state=active]:shadow-none">基础模式</TabsTrigger>
                           <TabsTrigger value="advanced" disabled={form.generationStatus === 'generating' || isPromptUpdatePending} className="h-9 flex-none rounded-none border-0 border-b-2 border-transparent px-0 pb-3 text-[14px] text-[#4e5969] data-[state=active]:border-[#1d2129] data-[state=active]:bg-transparent data-[state=active]:text-[#1d2129] data-[state=active]:shadow-none">高级模式</TabsTrigger>
                         </TabsList>
+                        {sectionCountNotice}
                         <TabsContent value="basic" className="m-0 space-y-3">
-                          {isPromptUpdatePending && (
-                            <div aria-busy={!promptUpdateError} className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[#bedaff] bg-[#e8f3ff] px-3 py-2 text-[13px] leading-5 text-[#165dff]">
-                              {promptUpdateError ? (
-                                <>
-                                  <p role="alert" className="text-[#f53f3f]">{promptUpdateError}</p>
-                                  <button type="button" onClick={() => { setPromptUpdateError(null); setPromptUpdateAttempt((current) => current + 1); }} className="rounded px-2 py-1 underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/30">重新更新</button>
-                                </>
-                              ) : (
-                                <><LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin motion-reduce:animate-none" /><p role="status">正在更新完整提示词，完成后进入下一步…</p></>
-                              )}
-                            </div>
-                          )}
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[14px] leading-[22px]">
                               <span className="inline-flex items-center gap-2 font-medium text-[#165dff]"><Sparkles aria-hidden="true" className="h-4 w-4" />章节内容</span>
-                              <span className="text-[#86909c]">可以调整章节顺序和写作要求。</span>
+                              <span className="text-[#86909c]">可以调整章节顺序和写作要求，报告最多支持 {sectionCountMax} 个章节。</span>
                             </div>
                             <button type="button" onClick={() => void handleGenerateStructure({ useSavedRequirement: true })} disabled={form.generationStatus === 'generating' || isPromptUpdatePending} className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-[6px] bg-[#165dff] px-3 text-[14px] text-white transition-colors hover:bg-[#0e42d2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/30 disabled:cursor-wait disabled:bg-[#94bfff]">
                               <RefreshCw aria-hidden="true" className={`h-4 w-4 ${form.generationStatus === 'generating' ? 'animate-spin motion-reduce:animate-none' : ''}`} />
@@ -1804,7 +1870,8 @@ export default function TemplatesPage() {
                             </button>
                           </div>
                           <p id="section-content-hint" className="sr-only">首行为章节标题，最多20字；其余内容为写作要求，最多2000字。可拖动左侧手柄，或使用 Alt 加上下方向键调整章节顺序。</p>
-                          <fieldset disabled={form.generationStatus === 'generating' || isPromptUpdatePending} className="min-w-0 space-y-3">
+                          <div className={`relative rounded-[8px] ${isPromptUpdatePending ? 'max-h-[280px] min-h-[180px] overflow-hidden' : ''}`}>
+                          <fieldset aria-hidden={isPromptUpdatePending || undefined} disabled={form.generationStatus === 'generating' || isPromptUpdatePending} className="min-w-0 space-y-3">
                             <div className="space-y-3">
                               {form.sections.map((section, index) => (
                                 <div key={index}
@@ -1851,7 +1918,7 @@ export default function TemplatesPage() {
                                 </div>
                               ))}
                             </div>
-                            <button type="button" disabled={form.sections.length >= 8}
+                            <button type="button" disabled={form.sections.length >= sectionCountMax} title={form.sections.length >= sectionCountMax ? `最多支持 ${sectionCountMax} 个章节` : undefined}
                               onClick={() => {
                                 updateGeneratedSections([...form.sections, { title: '', description: '', required: true, metricIds: [] }]);
                                 requestAnimationFrame(() => sectionContentRefs.current[form.sections.length]?.focus());
@@ -1859,6 +1926,8 @@ export default function TemplatesPage() {
                               className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-[8px] bg-[#e8f3ff] text-[14px] text-[#165dff] transition-colors hover:bg-[#d4e7ff] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/30 disabled:cursor-not-allowed disabled:text-[#a9b9cf]"
                             ><Plus aria-hidden="true" className="h-4 w-4" />新增章节</button>
                           </fieldset>
+                          {structureUpdateOverlay}
+                          </div>
                         </TabsContent>
                         <TabsContent value="advanced" className="m-0 flex flex-1 flex-col gap-3">
                             <div className="flex shrink-0 flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
@@ -1886,32 +1955,18 @@ export default function TemplatesPage() {
                                 ref={advancedNarrativePromptRef}
                                 maxLength={4000}
                                 disabled={form.generationStatus === 'generating' || isPromptUpdatePending}
-                                aria-invalid={Boolean(structureErrors.sections)}
-                                aria-describedby={`advanced-narrative-prompt-hint advanced-narrative-prompt-count${structureErrors.sections ? ' generated-structure-error' : ''}`}
+                                aria-invalid={Boolean(advancedStructureError)}
+                                aria-describedby={`advanced-narrative-prompt-hint advanced-narrative-prompt-count${advancedStructureError ? ' generated-structure-error' : ''}${sectionCountNotice ? ' section-count-notice' : ''}`}
                                 value={form.advancedNarrativePrompt}
                                 onChange={(event) => { setForm((current) => ({ ...current, advancedNarrativePrompt: event.target.value, advancedNarrativePromptDirty: event.target.value !== generatedPrompt })); setStructureErrors({}); }}
-                                className={`min-h-[180px] w-full flex-1 resize-none rounded-[8px] border bg-white p-4 pb-8 text-[14px] leading-7 text-[#1d2129] outline-none focus:ring-2 focus:ring-[#165dff]/10 disabled:cursor-wait ${structureErrors.sections ? 'border-[#f53f3f] focus:border-[#f53f3f]' : 'border-[#e5e6eb] focus:border-[#165dff]'}`}
+                                className={`min-h-[180px] w-full flex-1 resize-none rounded-[8px] border bg-white p-4 pb-8 text-[14px] leading-7 text-[#1d2129] outline-none focus:ring-2 focus:ring-[#165dff]/10 disabled:cursor-wait ${advancedStructureError ? 'border-[#f53f3f] focus:border-[#f53f3f]' : 'border-[#e5e6eb] focus:border-[#165dff]'}`}
                               />
                               <span id="advanced-narrative-prompt-count" className="pointer-events-none absolute bottom-px left-px right-3 rounded-b-[8px] bg-white px-3 py-1 text-right text-[12px] leading-5 text-[#86909c]">{form.advancedNarrativePrompt.length}/4000</span>
-                              {isPromptUpdatePending && (
-                                <div aria-busy={!promptUpdateError} className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-[8px] bg-white/95 px-4 text-center">
-                                  {promptUpdateError ? (
-                                    <>
-                                      <p role="alert" className="text-[13px] font-medium leading-5 text-[#f53f3f]">{promptUpdateError}</p>
-                                      <button type="button" onClick={() => { setPromptUpdateError(null); setPromptUpdateAttempt((current) => current + 1); }} className="rounded-[6px] border border-[#e5e6eb] bg-white px-3 py-1.5 text-[13px] text-[#165dff] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20">重新更新</button>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <LoaderCircle aria-hidden="true" className="h-6 w-6 animate-spin text-[#165dff] motion-reduce:animate-none" />
-                                      <p role="status" className="rounded-[6px] bg-white/85 px-2 py-1 text-[13px] font-medium leading-5 text-[#4e5969]">正在更新完整提示词…</p>
-                                    </>
-                                  )}
-                                </div>
-                              )}
+                              {structureUpdateOverlay}
                             </div>
                         </TabsContent>
                       </Tabs>
-                      {form.structureEditMode === 'advanced' && structureErrors.sections && <p id="generated-structure-error" role="alert" className="text-[12px] leading-5 text-[#f53f3f]">{structureErrors.sections}</p>}
+                      {form.structureEditMode === 'advanced' && advancedStructureError && <p id="generated-structure-error" role="alert" className="text-[12px] leading-5 text-[#f53f3f]">{advancedStructureError}</p>}
 
                     </TabsContent>
                   )}
@@ -2168,9 +2223,9 @@ export default function TemplatesPage() {
                     const nextStep = templateEditorSteps[currentEditorStepIndex + 1]?.value;
                     if (nextStep) handleEditorStepChange(nextStep);
                   }}
-                  disabled={isCustomStructureStep && (form.generationStatus === 'generating' || isPromptUpdatePending || (structureTab === 'result' && Boolean(structureRequestDraft.trim()) && Boolean(structureGenerationBlock)))}
+                  disabled={sectionCountBlocked || (isCustomStructureStep && (form.generationStatus === 'generating' || isPromptUpdatePending || (structureTab === 'result' && Boolean(structureRequestDraft.trim()) && Boolean(structureGenerationBlock))))}
                   aria-busy={isCustomStructureStep && form.generationStatus === 'generating'}
-                  aria-describedby={isCustomStructureStep && structureStepHint ? 'structure-step-hint' : undefined}
+                  aria-describedby={sectionCountBlocked ? 'section-count-notice' : isCustomStructureStep && structureStepHint ? 'structure-step-hint' : undefined}
                   className="inline-flex h-9 shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-[#1d2129] bg-[#1d2129] px-5 text-[14px] leading-[22px] text-white transition-colors hover:bg-[#2f3339] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 disabled:cursor-not-allowed disabled:opacity-40 sm:px-6"
                 >
                   {isCustomStructureStep && form.generationStatus === 'generating' && <LoaderCircle aria-hidden="true" className="mr-1.5 h-4 w-4 animate-spin motion-reduce:animate-none" />}
@@ -2180,7 +2235,7 @@ export default function TemplatesPage() {
                 <button
                   type="button"
                   onClick={handleSaveTemplate}
-                  disabled={form.narrativeMode === 'generated' && isPromptUpdatePending}
+                  disabled={form.narrativeMode === 'generated' && (isPromptUpdatePending || Boolean(sectionCountError))}
                   className="inline-flex h-9 shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-[#1d2129] bg-[#1d2129] px-5 text-[14px] leading-[22px] text-white transition-colors hover:bg-[#2f3339] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 disabled:cursor-not-allowed disabled:opacity-40 sm:px-6"
                 >
                   {editingTemplate ? '保存' : '创建'}
