@@ -383,6 +383,12 @@ export interface ReportTemplateChartBlock {
 export interface ReportTemplate {
   id: string;
   name: string;
+  uploadedFile?: {
+    name: string;
+    type: string;
+    size: number;
+    dataUrl: string;
+  };
   description: string;
   industry: string;
   category: string;
@@ -589,6 +595,7 @@ export interface Message {
   kind: MessageKind;
   content: string;
   timestamp: Date;
+  selectedKnowledgeDocumentIds?: string[];
   parentUserMessageId?: string;
   manualSkillIds?: string[];
   resultScope?: ResultScope;
@@ -625,6 +632,9 @@ export interface Message {
 export interface Conversation {
   id: string;
   title: string;
+  workspaceName?: string;
+  isPinned?: boolean;
+  isArchived?: boolean;
   agentId?: string;
   agentType?: AgentType;
   workspaceType: AgentType;

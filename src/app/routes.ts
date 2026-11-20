@@ -6,10 +6,12 @@ import HomePage from './pages/HomePage';
 import ChatPage from './pages/ChatPage';
 import ReportPage from './pages/ReportPage';
 import ReportPreviewPage from './pages/ReportPreviewPage';
-import ReportSubscriptionsPage from './pages/ReportSubscriptionsPage';
 import SystemSettings from './pages/SystemSettings';
 import AssistantEditor from './pages/AssistantEditor';
 import TemplatesPage from './pages/TemplatesPage';
+import KnowledgePage from './pages/KnowledgePage';
+import KnowledgeOverviewPage from './pages/KnowledgeOverviewPage';
+import AutomationsPage from './pages/AutomationsPage';
 
 function requireLogin() {
   if (hasDemoAuthSession()) {
@@ -48,12 +50,15 @@ export const router = createBrowserRouter([
     children: [
       { index: true, Component: LoginPage },
       { path: 'home', Component: HomePage, loader: requireLogin },
+      { path: 'automations', Component: AutomationsPage, loader: requireLogin },
+      { path: 'knowledge', Component: KnowledgeOverviewPage, loader: requireLogin },
+      { path: 'knowledge/:libraryId', Component: KnowledgePage, loader: requireLogin },
       { path: 'ask', Component: ChatPage, loader: requireLogin },
       { path: 'report', Component: ReportPage, loader: requireLogin },
       { path: 'report/case/:id', Component: ReportPreviewPage },
       { path: 'report/preview/:id', Component: ReportPreviewPage, loader: requireLogin },
-      { path: 'reports', Component: ReportSubscriptionsPage, loader: requireLogin },
-      { path: 'report-subscriptions', loader: () => requireLogin() ?? redirect('/reports') },
+      { path: 'reports', loader: () => requireLogin() ?? redirect('/home') },
+      { path: 'report-subscriptions', loader: () => requireLogin() ?? redirect('/home') },
       { path: 'templates', Component: TemplatesPage, loader: requireLogin },
       { path: 'root-cause', loader: () => requireLogin() ?? redirect('/home') },
       { path: 'indicator', loader: () => requireLogin() ?? redirect('/settings?section=indicators') },

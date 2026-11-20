@@ -3,7 +3,6 @@ import { Link, useLocation } from 'react-router';
 const tabs = [
   { name: '首页', path: '/' },
   { name: '模板库', path: '/templates' },
-  { name: '订阅管理', path: '/report-subscriptions' },
   { name: '配置中心', path: '/settings' },
 ];
 

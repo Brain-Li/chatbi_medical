@@ -4994,6 +4994,130 @@ function buildHistoryConversation(
   };
 }
 
+function buildSaveAsTemplateDemoConversation(): Conversation {
+  const question = "上月门诊总收入和药占比情况";
+  const conversation = buildHistoryConversation(
+    "agent-ask-outpatient",
+    question,
+    "2026-07-12T10:20:00",
+  );
+  const reportAgent = agents.find((agent) => agent.id === "agent-report-daily");
+  const baseTemplate = reportTemplates.find((template) => template.id === "template-operation-daily");
+  const reportMessage = reportAgent
+    ? buildHistoryMessages(reportAgent, question, conversation.updatedAt)
+      .find((message) => message.kind === "report-result")
+    : undefined;
+  const reportResult = reportMessage?.reportResult;
+
+  if (!reportAgent || !baseTemplate || !reportMessage || !reportResult?.templateUsage) {
+    throw new Error("Missing report data for the save-as-template demo conversation");
+  }
+
+  const templateSnapshot: ReportTemplate = {
+    ...baseTemplate,
+    id: "template-demo-outpatient-operations",
+    name: "门诊收入与药占比分析模板",
+    description: "",
+    category: "专题",
+    version: "v1.0",
+    createdAt: "2026-07-12 10:20",
+    status: "draft",
+    triggerPhrases: ["门诊收入", "药占比"],
+    templatePrompt: "按经营摘要、门诊收入、药占比趋势、科室拆解和异常提示生成分析报告。",
+    sections: baseTemplate.sections.map((section) => ({ ...section })),
+    metricBlocks: baseTemplate.metricBlocks.map((block) => ({ ...block })),
+    chartBlocks: baseTemplate.chartBlocks.map((block) => ({ ...block })),
+  };
+
+  const userMessageId = conversation.messages.find((message) => message.role === "user")?.id;
+  conversation.messages = conversation.messages.filter((message) => message.kind !== "analysis-result");
+  conversation.messages.push({
+    ...reportMessage,
+    id: "msg-demo-save-report-template",
+    timestamp: new Date(conversation.updatedAt.getTime() + 60_000),
+    parentUserMessageId: userMessageId,
+    markdownArtifact: {
+      fileName: "医院2026年6月门诊收入与药占比分析报告.docx",
+      content: [
+        "# 医院2026年6月门诊收入与药占比分析报告",
+        "",
+        "## 报告摘要",
+        "演示数据：上月门诊收入为482.6万元，环比增长8.2%；药占比为31.4%，较上月下降1.2个百分点。收入增长快于门诊量，主要增量来自检查项目。",
+        "",
+        "## 一、核心指标概览",
+        "- 门诊总收入：482.6万元，环比增长8.2%。",
+        "- 门诊量：12,483人次，环比增长5.6%。",
+        "- 药占比：31.4%，较上月下降1.2个百分点。",
+        "- 检查收入：109.8万元，环比增长12.4%。",
+        "",
+        "## 二、收入变化分析",
+        "门诊收入增幅高于门诊量增幅，除服务量增加外，检查和治疗项目收入提升也是重要贡献因素。建议结合科室和项目明细继续拆解收入结构。",
+        "",
+        "## 三、药占比变化分析",
+        "药占比较上月下降1.2个百分点，整体结构有所改善。建议重点关注高值耗材门诊组及药品费用变化较大的科室，确认变化是否具有持续性。",
+        "",
+        "## 四、重点科室观察",
+        "眼科、骨科贡献了主要收入增量；眼科检查收入提升较明显，可进一步结合门诊量、项目构成和排班情况分析。",
+        "",
+        "## 五、异常提示与建议",
+        "- 部分科室检查收入增速高于门诊量增速，建议复核项目结构变化。",
+        "- 高值耗材门诊组超过演示阈值，建议持续跟踪后续周期。",
+        "- 建议按科室跟踪收入、门诊量和药占比，识别结构变化的主要来源。",
+        "",
+        "## 数据说明",
+        "本报告为界面演示用模拟数据，不代表真实医院经营结果。",
+      ].join("\n"),
+    },
+    reportResult: {
+      ...reportResult,
+      title: "上月门诊收入与药占比分析",
+      period: "2026年6月（演示数据）",
+      summary: "演示数据：上月门诊收入为482.6万元，环比增长8.2%；药占比为31.4%，较上月下降1.2个百分点。收入增长快于门诊量，主要增量来自检查项目。",
+      keyMetrics: [
+        { label: "门诊收入", value: "¥482.6万", trend: "up" },
+        { label: "药占比", value: "31.4%", trend: "down" },
+        { label: "门诊量", value: "12,483", trend: "up" },
+        { label: "检查收入", value: "¥109.8万", trend: "up" },
+      ],
+      chartTitle: "近五周门诊量趋势",
+      chartData: [
+        { name: "第1周", value: 2180 },
+        { name: "第2周", value: 2340 },
+        { name: "第3周", value: 2490 },
+        { name: "第4周", value: 2610 },
+        { name: "第5周", value: 2863 },
+      ],
+      findings: [
+        "门诊收入环比增长8.2%，高于门诊量5.6%的增幅。",
+        "药占比下降1.2个百分点，结构改善主要来自检查和治疗收入占比提升。",
+        "眼科、骨科贡献了主要收入增量，建议持续跟踪重点科室变化。",
+      ],
+      alerts: [
+        "部分科室检查收入增速高于门诊量增速，建议复核项目结构变化。",
+        "高值耗材门诊组超过演示阈值，建议关注后续周期。",
+      ],
+      templateUsage: {
+        ...reportResult.templateUsage,
+        templateId: templateSnapshot.id,
+        name: templateSnapshot.name,
+        category: templateSnapshot.category,
+        version: templateSnapshot.version,
+        source: "agent-generated",
+        isTemporary: true,
+        templateSnapshot,
+        sections: templateSnapshot.sections.map((section) => section.title),
+        metricLabels: templateSnapshot.metricBlocks.map((block) => block.label),
+        matchReason: "根据本次会话的示例报告生成可复用结构，点击即可另存为模板。",
+      },
+    },
+  });
+
+  conversation.title = question;
+  conversation.isDemo = true;
+  conversation.demoOrder = -1;
+  return conversation;
+}
+
 function getRelativeHistoryTimestamp(daysAgo: number, hours: number, minutes: number) {
   const timestamp = new Date();
   timestamp.setDate(timestamp.getDate() - daysAgo);
@@ -5374,6 +5498,7 @@ function buildExceptionDemoConversation(
 export const YESTERDAY_HISTORY_EXAMPLE_ID = 'conv-history-example-yesterday';
 
 export const initialConversations: Conversation[] = [
+  buildSaveAsTemplateDemoConversation(),
   ...exceptionDemoDefinitions.map(buildExceptionDemoConversation),
   buildHistoryConversation(
     'agent-ask-outpatient',
@@ -5382,7 +5507,6 @@ export const initialConversations: Conversation[] = [
     YESTERDAY_HISTORY_EXAMPLE_ID,
   ),
   buildHistoryConversation('agent-ask-outpatient', '眼科近三个月诊量是否异常', '2026-07-12T10:30:00'),
-  buildHistoryConversation('agent-ask-outpatient', '上月门诊总收入和药占比情况', '2026-07-12T10:20:00'),
   buildHistoryConversation('agent-ask-inpatient', '本季度平均住院日变化', '2026-07-12T09:24:00'),
   buildHistoryConversation('agent-ask-inpatient', '住院收入增长最快的科室', '2026-07-12T09:20:00'),
   buildHistoryConversation('agent-ask-outpatient', '门诊治疗收入贡献最大的三个科室', '2026-06-18T15:17:00'),

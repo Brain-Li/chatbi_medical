@@ -19,6 +19,12 @@
 
 当前项目是 Vite/React 静态前端：Nginx 直接托管 `dist` 文件，**没有独立的 Node 后端服务，也不需要 systemd 服务**。
 
+The workspace knowledge library adds a local-only development API. Start both processes in separate terminals with `npm run dev` and `npm run dev:knowledge-api`. The API binds to `127.0.0.1:4174`, and Vite proxies `/api/knowledge` to it. Local files and metadata are stored under `data/knowledge/` and are ignored by Git.
+
+Knowledge bases are independent of analysis workspaces. Existing files remain in the default team library. The local API checks each library's visibility and assigned usernames for listing, searching, and accessing its files.
+
+**Do not deploy this demo API as the production knowledge service.** Its `X-Demo-User` and `X-Demo-User-Encoded` headers are not authentication, and the account form does not provide a real member directory. Uploaded files are not parsed/indexed, and the static Nginx deployment does not proxy the API. Production requires trusted identity and team membership, private object storage, document parsing/indexing, and a retrieval endpoint before knowledge-backed answers or citations can be enabled.
+
 ## 2. 日常发布：本机推送代码
 
 在 Windows PowerShell 打开项目目录：

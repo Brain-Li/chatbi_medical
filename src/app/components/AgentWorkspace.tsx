@@ -6,7 +6,9 @@ import {
   Activity,
   ArrowUp,
   Check,
+  Copy,
   ChevronsLeft,
+  FileText,
   Square,
   X,
 } from 'lucide-react';
@@ -27,8 +29,12 @@ import { inferPromptMode } from '../utils/promptMode';
 import { buildAnalysisReportFileName } from '../utils/reportFileName';
 import { Agent, AgentClarificationOption, AgentRuntimeConfig, AgentType, AnalysisCandidateOption, AnalysisMcpMatch, AnalysisProcessData, AnalysisProcessStep, AnalysisResultData, AskQuestionIntentClassification, Conversation, DeepAnalysisActivityId, McpCapability, Message, ReportResultData, ReportTemplateUsage, ResultScope, Skill, WorkspaceAutoSubmitPayload } from '../types';
 import { HistorySidebarToggle } from './HistorySidebarToggle';
+import { ConversationDetailHeader } from './ConversationDetailHeader';
+import { toast } from 'sonner';
 import { PromptModeBar, type PromptModeBarSelection } from './PromptModeBar';
 import { PromptComposerFrame } from './PromptComposerFrame';
+import { ComposerActionsMenu, type ComposerAction } from './ComposerActionsMenu';
+import { HomeModelSelector } from './HomeModelSelector';
 import { ReportTemplateSelector } from './ReportTemplateSelector';
 import {
   DeepAnalysisWorkbench,
@@ -48,9 +54,19 @@ import {
   CommandList,
 } from './ui/command';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from './ui/dialog';
 import globalLine from '../../assets/figma-home/global-line.svg';
 import globalLineSelected from '../../assets/figma-home/global-line-selected.svg';
 import micLine from '../../assets/figma-home/mic-line.svg';
+import { searchKnowledgeFiles } from '../knowledge/api';
+import type { KnowledgeItem } from '../knowledge/types';
 
 const workspaceNames: Record<AgentType, string> = {
   ask: '智能问数',
@@ -217,6 +233,7 @@ type ExecuteQuestionOptions = {
   reportTemplateId?: string;
   reportTemplateUsage?: ReportTemplateUsage;
   inheritedTimeRange?: string;
+  selectedKnowledgeDocumentIds?: string[];
 };
 
 type SlashMatch = {
@@ -564,6 +581,7 @@ export default function AgentWorkspace({
     reportTemplates,
     defaultTemplateBindings,
     createConversation,
+    forkConversation,
     appendMessages,
     updateMessage,
     replaceConversationMessages,
@@ -576,6 +594,10 @@ export default function AgentWorkspace({
   } = useWorkspace();
 
   const [inputValue, setInputValue] = useSessionDraft('workspace.' + mode + '.question', '');
+  const [taskGoal, setTaskGoal] = useSessionDraft('workspace.' + mode + '.taskGoal', '');
+  const [planEnabled, setPlanEnabled] = useSessionDraft('workspace.' + mode + '.planEnabled', false);
+  const [commandDialogOpen, setCommandDialogOpen] = useState(false);
+  const [goalDraft, setGoalDraft] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [pendingMessageId, setPendingMessageId] = useState<string | null>(null);
@@ -584,6 +606,9 @@ export default function AgentWorkspace({
   const [slashQuery, setSlashQuery] = useState('');
   const [isSlashMenuOpen, setIsSlashMenuOpen] = useState(false);
   const [highlightedSlashIndex, setHighlightedSlashIndex] = useState(0);
+  const [knowledgeQuery, setKnowledgeQuery] = useState<string | null>(null);
+  const [knowledgeMatches, setKnowledgeMatches] = useState<KnowledgeItem[]>([]);
+  const [selectedKnowledgeDocuments, setSelectedKnowledgeDocuments] = useState<KnowledgeItem[]>([]);
   const [isDeepAnalysisEnabled, setIsDeepAnalysisEnabled] = useState(false);
   const [selectedComposerMode, setSelectedComposerMode] =
     useState<WorkspaceSwitchMode>(
@@ -623,6 +648,8 @@ export default function AgentWorkspace({
   const handledCandidateMessageIdsRef = useRef<Set<string>>(new Set());
   const consumedAutoSubmitNonceRef = useRef<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const conversationScrollRegionRef = useRef<HTMLDivElement>(null);
   const shouldFollowConversationRef = useRef(true);
   const lastScrolledConversationIdRef = useRef<string | null>(null);
@@ -631,9 +658,20 @@ export default function AgentWorkspace({
   const cleanedInputValue = removeActiveSlashToken(inputValue).trim();
 
   useEffect(() => {
+    if (knowledgeQuery === null || mode !== 'ask') return;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void searchKnowledgeFiles(knowledgeQuery)
+        .then((result) => { if (active) setKnowledgeMatches(result.items); })
+        .catch(() => { if (active) setKnowledgeMatches([]); });
+    }, 120);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [knowledgeQuery, mode]);
+
+  useEffect(() => {
     if (!textareaRef.current) return;
-    textareaRef.current.style.height = '72px';
-    textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 104)}px`;
+    textareaRef.current.style.height = '56px';
+    textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 176)}px`;
   }, [inputValue]);
 
   const enabledModeAgents = useMemo(
@@ -790,14 +828,9 @@ export default function AgentWorkspace({
     Boolean(activeReportProcessMessage);
 
   const newConversationLabel = newConversationLabels[mode];
-  const inputPlaceholder =
-    selectedComposerMode === 'smart'
-      ? '输入问题或需求，智能分析、解答或生成报告...'
-      : selectedComposerMode === 'qa'
-        ? '咨询专业知识、业务相关问题...'
-        : selectedComposerMode === 'ask'
-          ? '查询指标、走势、异常等各类数据问题...'
-          : '描述报告主题、统计周期、分析重点...';
+  const inputPlaceholder = currentConversation?.messages.length
+    ? '发消息或创建任务，/ 调用指令，@ 文件或对话'
+    : '描述你的问题，/ 调用指令，@ 文件或对话';
   const resolveExecutionMode = (forceDeepAnalysis?: boolean): AgentType => {
     if (mode !== 'ask') return mode;
 
@@ -1013,6 +1046,8 @@ export default function AgentWorkspace({
     const processTarget = pendingAnalysisProcessTargetRef.current;
 
     if (process && processTarget) {
+      const startedAt = conversations.find((conversation) => conversation.id === processTarget.conversationId)
+        ?.messages.find((message) => message.id === processTarget.messageId)?.timestamp.getTime();
       updateMessage(processTarget.conversationId, processTarget.messageId, {
         isGenerating: false,
         isInterrupted: true,
@@ -1020,6 +1055,7 @@ export default function AgentWorkspace({
         analysisProcess: {
           ...process,
           status: 'interrupted',
+          elapsedSeconds: startedAt !== undefined ? Math.max(0, Math.round((Date.now() - startedAt) / 1000)) : process.elapsedSeconds,
           steps: (process.steps ?? buildVisibleAskSteps(process.visibleStepCount ?? 1, 'running')).map(
             (step, index, steps) => ({
               ...step,
@@ -1267,9 +1303,14 @@ export default function AgentWorkspace({
           indicatorPool: indicatorAssets,
         })
       : null;
+    const contextualQuestion = [
+      taskGoal && `任务目标：${taskGoal}`,
+      planEnabled && '请先制定执行计划，明确分析步骤和预期产出，再开展分析。',
+      trimmedQuestion,
+    ].filter(Boolean).join('\n\n');
     const executionQuestion = options?.inheritedTimeRange
-      ? `${trimmedQuestion.replace(/[。！？!?，,]+$/, '')}，时间范围沿用上一轮：${options.inheritedTimeRange}`
-      : trimmedQuestion;
+      ? `${contextualQuestion.replace(/[。！？!?，,]+$/, '')}，时间范围沿用上一轮：${options.inheritedTimeRange}`
+      : contextualQuestion;
     const routing = !askIntentClassification || askIntentClassification.status === 'routable'
       ? resolveAgentForQuestion({
           mode: executionMode,
@@ -1294,7 +1335,7 @@ export default function AgentWorkspace({
     if (!conversation) return;
 
     if (
-      conversation.title === newConversationLabel &&
+      (conversation.title === newConversationLabel || conversation.title === '新会话') &&
       conversation.messages.length === 0
     ) {
       updateConversation(conversation.id, {
@@ -1315,6 +1356,7 @@ export default function AgentWorkspace({
       kind: options?.kind ?? 'text',
       content: options?.userMessageContent ?? trimmedQuestion,
       timestamp: new Date(),
+      selectedKnowledgeDocumentIds: options?.selectedKnowledgeDocumentIds,
     };
     shouldFollowConversationRef.current = true;
     setSelectedQuestionId(userMessage.id);
@@ -1579,7 +1621,7 @@ export default function AgentWorkspace({
                 ? buildVisibleReportSteps(visibleStepCount, isComplete ? 'completed' : 'running')
                 : buildVisibleDeepAnalysisSteps(visibleStepCount, isComplete ? 'completed' : 'running')
               : buildVisibleAskSteps(visibleStepCount, isComplete ? 'completed' : 'running'),
-            elapsedSeconds: isComplete ? Math.max(1, Math.round((streamStepCount * streamStepIntervalMs) / 1000)) : undefined,
+            elapsedSeconds: isComplete ? Math.max(0, Math.round((Date.now() - analysisMessage.timestamp.getTime()) / 1000)) : undefined,
             sqlExecutionStatus: isComplete ? 'success' : 'pending',
           };
           pendingAnalysisProcessRef.current = updates.analysisProcess;
@@ -1707,7 +1749,7 @@ export default function AgentWorkspace({
     if (mode === 'ask' && selectedComposerMode === 'ask' && targetMode === 'report') {
       const conversation = currentConversation ?? createConversation(mode, newConversationLabel);
 
-      if (conversation.title === newConversationLabel && conversation.messages.length === 0) {
+      if ((conversation.title === newConversationLabel || conversation.title === '新会话') && conversation.messages.length === 0) {
         updateConversation(conversation.id, {
           title: generateConversationTitle(cleanedQuestion),
         });
@@ -1781,7 +1823,10 @@ export default function AgentWorkspace({
       manualSkillIds,
       reportTemplateId,
       reportTemplateUsage,
+      selectedKnowledgeDocumentIds: selectedKnowledgeDocuments.map((item) => item.id),
     });
+    setSelectedKnowledgeDocuments([]);
+    setKnowledgeQuery(null);
     if (targetMode === 'report') setSelectedReportTemplateId(null);
   };
 
@@ -2211,7 +2256,7 @@ export default function AgentWorkspace({
                 ? buildVisibleReportSteps(visibleStepCount, isComplete ? 'completed' : 'running')
                 : buildVisibleDeepAnalysisSteps(visibleStepCount, isComplete ? 'completed' : 'running')
               : buildVisibleAskSteps(visibleStepCount, isComplete ? 'completed' : 'running'),
-            elapsedSeconds: isComplete ? Math.max(1, Math.round((streamStepCount * streamStepIntervalMs) / 1000)) : undefined,
+            elapsedSeconds: isComplete ? Math.max(0, Math.round((Date.now() - analysisMessage.timestamp.getTime()) / 1000)) : undefined,
             sqlExecutionStatus: isComplete ? 'success' : 'pending',
           };
           pendingAnalysisProcessRef.current = updates.analysisProcess;
@@ -2311,8 +2356,52 @@ export default function AgentWorkspace({
     setInputValue('');
   };
 
+  const handleComposerAction = (action: ComposerAction) => {
+    if (action === 'file') {
+      fileInputRef.current?.click();
+      return;
+    }
+
+    if (action === 'model') {
+      navigate('/settings?section=llm');
+      return;
+    }
+
+    if (action === 'goal') {
+      setGoalDraft(taskGoal);
+      setCommandDialogOpen(true);
+      return;
+    }
+
+    if (action === 'plan') {
+      setPlanEnabled((current) => !current);
+      toast(planEnabled ? '已退出计划模式' : '已进入计划模式，将先制定分析计划');
+    }
+  };
+
+  const handleComposerFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    if (!files.length) return;
+
+    try {
+      const contents = await Promise.all(files.map(async (file) => {
+        if (file.size > 2 * 1024 * 1024) {
+          throw new Error(`“${file.name}”超过 2 MB，请选择较小的文本文件。`);
+        }
+        return `【文件：${file.name}】\n${await file.text()}`;
+      }));
+      setInputValue((current) => [current, ...contents].filter(Boolean).join('\n\n'));
+      window.setTimeout(() => textareaRef.current?.focus(), 0);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '文件读取失败，请重试');
+    }
+  };
+
   const handleInputChange = (value: string) => {
     setInputValue(value);
+    const mention = value.match(/(?:^|\s)@([^\s]*)$/);
+    setKnowledgeQuery(mode === 'ask' && mention ? mention[1] : null);
 
     const slashMatch = getActiveSlashMatch(value);
 
@@ -2324,6 +2413,14 @@ export default function AgentWorkspace({
     setSlashQuery(slashMatch.query);
     setIsSlashMenuOpen(true);
     setHighlightedSlashIndex(0);
+  };
+
+  const selectKnowledgeDocument = (item: KnowledgeItem) => {
+    setSelectedKnowledgeDocuments((current) => current.some((selected) => selected.id === item.id) ? current : [...current, item]);
+    setInputValue((current) => current.replace(/(?:^|\s)@[^\s]*$/, ' ').replace(/\s{2,}/g, ' '));
+    setKnowledgeQuery(null);
+    setKnowledgeMatches([]);
+    window.setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
   const focusTextarea = () => {
@@ -2431,10 +2528,20 @@ export default function AgentWorkspace({
   };
 
   const renderComposer = () => (
-    <div>
+    <div ref={composerRef}>
       <PromptComposerFrame
-        bodyClassName="!gap-3 !py-2.5 !pl-4 !pr-3"
+        className="w-full"
+        bodyClassName="items-end justify-end !py-3 !pl-4 !pr-3"
+        overflowVisible={selectedComposerMode === 'report'}
       >
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        accept=".txt,.md,.markdown,.csv,.json,.sql,.log"
+        multiple
+        onChange={(event) => { void handleComposerFileChange(event); }}
+      />
       {selectedManualSkills.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 px-5 pb-3 pt-4">
           {selectedManualSkills.map((skill) => (
@@ -2465,7 +2572,19 @@ export default function AgentWorkspace({
         </div>
       )}
 
-      <div className="relative flex min-h-[72px] w-full items-start gap-2">
+      <div className="flex min-h-[96px] w-full flex-col justify-between gap-3">
+      {selectedKnowledgeDocuments.length > 0 && <div className="flex flex-wrap gap-2" aria-label="已选择的知识库资料">
+        {selectedKnowledgeDocuments.map((item) => <span key={item.id} className="inline-flex max-w-full items-center gap-1.5 rounded border border-[#d6e4ff] bg-[#f2f7ff] px-2 py-1 text-xs text-[#165dff]">
+          <FileText className="h-3.5 w-3.5 shrink-0" /><span className="max-w-52 truncate">{item.name}</span>
+          <button type="button" className="ml-1" aria-label={`移除 ${item.name}`} onClick={() => setSelectedKnowledgeDocuments((current) => current.filter((entry) => entry.id !== item.id))}><X className="h-3.5 w-3.5" /></button>
+        </span>)}
+      </div>}
+      <div className="relative flex min-h-[56px] w-full items-start gap-2">
+        {knowledgeQuery !== null && <div className="absolute bottom-full left-5 z-30 mb-2 max-h-64 w-[min(28rem,calc(100%-2.5rem))] overflow-y-auto rounded-md border border-[#e5e6eb] bg-white py-1 shadow-lg">
+          {knowledgeMatches.length ? knowledgeMatches.map((item) => <button key={item.id} type="button" onClick={() => selectKnowledgeDocument(item)} className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[#f2f3f5]">
+            <FileText className="h-4 w-4 shrink-0 text-[#4e5969]" /><span className="min-w-0 flex-1 truncate">{item.name}</span>
+          </button>) : <div className="px-3 py-3 text-xs text-[#86909c]">没有找到可用文档</div>}
+        </div>}
         {isSlashMenuOpen && (
           <div className="absolute bottom-full left-5 right-5 z-20 mb-3 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-lg">
             <Command className="bg-white">
@@ -2547,49 +2666,13 @@ export default function AgentWorkspace({
           onChange={(event) => handleInputChange(event.target.value)}
           onKeyDown={handleTextareaKeyDown}
           placeholder={inputPlaceholder}
-          className="h-[72px] max-h-[104px] min-h-[72px] min-w-0 flex-1 resize-none overflow-y-auto bg-white pt-[3px] text-[14px] leading-[22px] text-[#1a1c26] placeholder:text-[#9ca3b0] focus:outline-none"
-          rows={3}
+          className="h-[56px] max-h-[176px] min-h-[56px] min-w-0 flex-1 resize-none overflow-y-auto bg-white pt-[3px] text-[14px] leading-[22px] text-[#1d2129] placeholder:text-[#86909c] focus:outline-none"
+          rows={2}
         />
       </div>
 
       <div className="flex min-h-10 flex-wrap items-center gap-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <PromptModeBar
-            onSelect={selectComposerMode}
-            onQaSelect={() => selectComposerMode('qa')}
-            selectedMode={selectedComposerMode}
-            disabled={isGenerating}
-            showQa
-          />
-          {(selectedComposerMode === 'ask' || selectedComposerMode === 'qa') && (
-            <button
-              type="button"
-              onClick={handleToggleDeepAnalysis}
-              disabled={isGenerating}
-              className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-[20px] border px-[13px] text-[14px] font-normal leading-[22px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25 disabled:cursor-not-allowed disabled:opacity-50 ${
-                isDeepAnalysisEnabled
-                  ? 'border-[#94bfff] bg-[#e8f3ff] text-[#165dff]'
-                  : 'border-[#e5e6eb] bg-[#f2f3f5] text-[#1d2129] hover:bg-[#e8eaed]'
-              }`}
-              aria-pressed={isDeepAnalysisEnabled}
-            >
-              <img
-                alt=""
-                src={isDeepAnalysisEnabled ? globalLineSelected : globalLine}
-                className="h-4 w-4"
-              />
-              深度分析
-            </button>
-          )}
-          {selectedComposerMode === 'report' && (
-            <ReportTemplateSelector
-              templates={reportTemplates}
-              selectedId={selectedReportTemplateId}
-              onSelect={(template) => setSelectedReportTemplateId(template.id)}
-              onClear={() => setSelectedReportTemplateId(null)}
-            />
-          )}
-        </div>
+        <ComposerActionsMenu anchorRef={composerRef} onAction={handleComposerAction} />
         <div className="ml-auto min-w-0 text-xs text-gray-400">
           {selectedManualSkills.length > 0 ? (
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -2602,7 +2685,8 @@ export default function AgentWorkspace({
             <span aria-hidden="true" />
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-3">
+        <div className="ml-auto flex min-w-0 items-center justify-end gap-2 sm:gap-4">
+          <HomeModelSelector />
           <button
             type="button"
             onClick={isRecording ? stopRecording : startRecording}
@@ -2621,9 +2705,9 @@ export default function AgentWorkspace({
             className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
               isGenerating
                 ? 'bg-red-600 hover:bg-red-700'
-                : cleanedInputValue
-                  ? 'bg-[#1677ff] hover:bg-[#0f6fe8]'
-                  : 'cursor-not-allowed bg-[#e9e9ea]'
+                   : cleanedInputValue
+                   ? 'bg-[#1677ff] hover:bg-[#0f6fe8]'
+                   : 'cursor-not-allowed bg-[#94bfff]'
             }`}
             aria-label={
               isGenerating
@@ -2647,10 +2731,11 @@ export default function AgentWorkspace({
             {isGenerating ? (
               <Square className="h-4 w-4 fill-white text-white" />
             ) : (
-              <ArrowUp className={`h-4 w-4 ${cleanedInputValue ? 'text-white' : 'text-[#7f8896]'}`} />
+              <ArrowUp className="h-4 w-4 text-white" />
             )}
           </button>
         </div>
+      </div>
       </div>
       </PromptComposerFrame>
     </div>
@@ -2703,22 +2788,50 @@ export default function AgentWorkspace({
         </div>
       ) : (
         <>
+          {currentConversation && (
+            <ConversationDetailHeader
+              key={currentConversation.id}
+              conversation={currentConversation}
+              sidebarOpen={sidebarOpen}
+            />
+          )}
           <div
             ref={conversationScrollRegionRef}
             data-testid="conversation-scroll-region"
             onScroll={handleConversationScroll}
-            className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-6 sm:px-6 lg:px-10 lg:pt-10"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-8 pt-6 sm:px-6 lg:px-10 lg:pt-8"
           >
-            <div className="mx-auto w-full max-w-[1200px] space-y-6">
+            <div className="mx-auto w-full max-w-[960px] space-y-12">
               {questionThreads.map((thread) => (
-                <div key={thread.userMessage.id} className="space-y-6">
-                  <div className="mx-auto flex w-full max-w-[1024px] justify-end">
-                    <div className="inline-flex max-w-[720px] items-center justify-center gap-1 rounded-[24px] bg-[#f2f4f7] px-4 py-2 text-base leading-6 text-[#1d2129]">
-                      <span className="whitespace-pre-wrap">{thread.userMessage.content.replace(/如何？$/, '')}</span>
+                <div key={thread.userMessage.id} className="space-y-7 sm:space-y-9">
+                  <div className="flex w-full flex-col items-end gap-2">
+                    <div className="max-w-[90%] rounded-[20px] bg-[#edf3ff] px-5 py-3 text-[15px] leading-7 text-[#1d2129] sm:max-w-[80%] sm:px-6">
+                      <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{thread.userMessage.content}</p>
+                    </div>
+                    <div className="flex items-center gap-3 pr-1 text-xs text-[#86909c]">
+                      <time dateTime={thread.userMessage.timestamp.toISOString()}>
+                        {thread.userMessage.timestamp.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                      </time>
+                      <button
+                        type="button"
+                        aria-label="复制问题"
+                        title="复制问题"
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(thread.userMessage.content);
+                            toast.success('问题已复制');
+                          } catch {
+                            toast.error('复制失败，请允许浏览器访问剪贴板后重试');
+                          }
+                        }}
+                        className="flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-[#f2f3f5] hover:text-[#1d2129] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25"
+                      >
+                        <Copy aria-hidden="true" className="h-4 w-4" strokeWidth={1.6} />
+                      </button>
                     </div>
                   </div>
                   {thread.assistantMessages.length > 0 ? (
-                    <div className="space-y-4">
+                    <div className="space-y-6 text-[15px] leading-7 text-[#1d2129]">
                     {thread.assistantMessages.map((message) => (
                       <div
                         key={message.id}
@@ -2730,6 +2843,11 @@ export default function AgentWorkspace({
                       >
                         <AssistantMessageCard
                           message={message}
+                          onBranch={() => {
+                            const fork = currentConversation ? forkConversation(currentConversation.id) : null;
+                            if (fork) toast.success("已在新对话中分支");
+                          }}
+                          conversationLayout
                           onRegenerate={handleRegenerate}
                           onRerunSkill={handleSkillRerun}
                           onClarificationSelect={handleClarificationSelect}
@@ -3050,6 +3168,9 @@ export default function AgentWorkspace({
                                   reportTitle={message.id === threadProcessMessage?.id
                                     ? threadResultMessage?.reportResult?.title
                                     : undefined}
+                                  reportTemplateUsage={message.id === threadProcessMessage?.id
+                                    ? threadResultMessage?.reportResult?.templateUsage ?? threadResultMessage?.reportTemplateUsage
+                                    : undefined}
                                   reportFeedback={isActiveThread && threadResultMessage
                                     ? reportFeedbackByMessageId[threadResultMessage.id]
                                     : undefined}
@@ -3141,7 +3262,7 @@ export default function AgentWorkspace({
           <HistorySidebarToggle
             expanded={false}
             onClick={onSidebarOpen}
-            className="absolute left-4 top-6 z-20"
+            className={'absolute left-4 z-20 ' + (currentConversation?.messages.length && !isDeepAnalysisWorkspace && !isReportWorkspace ? 'top-2.5' : 'top-6')}
           />
         )}
         {isDeepAnalysisWorkspace
@@ -3150,6 +3271,42 @@ export default function AgentWorkspace({
             ? renderReportWorkspace()
             : renderStandardWorkspace()}
       </div>
+      <Dialog open={commandDialogOpen} onOpenChange={setCommandDialogOpen}>
+        <DialogContent className="rounded-[16px] border-[#e5e6eb] bg-white text-[#1d2129]">
+          <DialogHeader>
+            <DialogTitle>任务目标</DialogTitle>
+            <DialogDescription>
+              设置本工作区的长期目标，后续提问将结合此目标进行分析。
+            </DialogDescription>
+          </DialogHeader>
+          <textarea
+            aria-label="任务目标"
+            value={goalDraft}
+            onChange={(event) => setGoalDraft(event.target.value)}
+            placeholder="例如：持续分析门诊运营表现，定位收入与就诊量变化的原因"
+            className="min-h-28 resize-y rounded-[10px] border border-[#e5e6eb] p-3 text-sm leading-6 outline-none focus:border-[#86909c]"
+          />
+          <DialogFooter>
+            <button
+              type="button"
+              onClick={() => setCommandDialogOpen(false)}
+              className="h-9 rounded-[8px] border border-[#e5e6eb] px-4 text-sm hover:bg-[#f7f8fa]"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTaskGoal(goalDraft.trim());
+                setCommandDialogOpen(false);
+              }}
+              className="h-9 rounded-[8px] bg-[#1d2129] px-4 text-sm text-white hover:bg-[#4e5969]"
+            >
+              保存目标
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

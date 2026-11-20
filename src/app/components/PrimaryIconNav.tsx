@@ -6,8 +6,7 @@ import homeSmile2FillActive from '../../assets/figma-home/home-smile-2-fill-acti
 import homeSmile2Line from '../../assets/figma-home/home-smile-2-line.svg';
 import settingsFill from '../../assets/figma-home/settings-fill.svg';
 import settingsLine from '../../assets/figma-home/settings-line.svg';
-import subscriptionFill from '../../assets/figma-home/subscription-fill.svg';
-import subscriptionLine from '../../assets/figma-home/subscription-line.svg';
+import { BookOpen } from 'lucide-react';
 
 type NavItem = {
   label: string;
@@ -32,22 +31,17 @@ const navItems: NavItem[] = [
       pathname.startsWith('/report/case/'),
   },
   {
+    label: '知识库',
+    path: '/knowledge',
+    icon: '',
+    isActive: (pathname) => pathname === '/knowledge' || pathname.startsWith('/knowledge/'),
+  },
+  {
     label: '模板库',
     path: '/templates',
     icon: functionLine,
     activeIcon: functionFill,
     isActive: (pathname) => pathname === '/templates' || pathname.startsWith('/templates/'),
-  },
-  {
-    label: '订阅与推送',
-    path: '/reports',
-    icon: subscriptionLine,
-    activeIcon: subscriptionFill,
-    isActive: (pathname) =>
-      pathname === '/reports' ||
-      pathname.startsWith('/reports/') ||
-      pathname.startsWith('/report/preview/') ||
-      pathname === '/report-subscriptions',
   },
   {
     label: '配置中心',
@@ -76,7 +70,7 @@ export function PrimaryIconNav() {
               active ? 'bg-white' : ''
             }`}
           >
-            <img aria-hidden="true" className="h-6 w-6" src={active ? item.activeIcon ?? item.icon : item.icon} alt="" />
+            {item.label === '知识库' ? <BookOpen aria-hidden="true" className={`h-5 w-5 ${active ? 'text-[#165dff]' : 'text-[#4e5969]'}`} /> : <img aria-hidden="true" className="h-6 w-6" src={active ? item.activeIcon ?? item.icon : item.icon} alt="" />}
             <span
               aria-hidden="true"
               className="pointer-events-none absolute left-full top-1/2 z-30 ml-2 flex -translate-y-1/2 items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"

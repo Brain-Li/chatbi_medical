@@ -1,5 +1,4 @@
-import sidebarFoldIcon from '../../assets/figma-home/sidebar-fold-line.svg';
-import sidebarUnfoldIcon from '../../assets/figma-home/sidebar-unfold-line.svg';
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 type HistorySidebarToggleProps = {
   expanded: boolean;
@@ -13,19 +12,20 @@ export function HistorySidebarToggle({
   className = '',
 }: HistorySidebarToggleProps) {
   const label = expanded ? '收起侧边栏' : '展开侧边栏';
+  const Icon = expanded ? PanelLeftClose : PanelLeftOpen;
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`group relative flex h-6 w-6 shrink-0 items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25 ${className}`}
+      className={`group relative flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] bg-transparent text-[#86909c] transition-colors hover:text-[#4e5969] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25 ${className}`}
       aria-label={label}
+      aria-expanded={expanded}
     >
-      <img
+      <Icon
         aria-hidden="true"
-        alt=""
         className="h-[18px] w-[18px]"
-        src={expanded ? sidebarFoldIcon : sidebarUnfoldIcon}
+        strokeWidth={1.8}
       />
       <span
         aria-hidden="true"

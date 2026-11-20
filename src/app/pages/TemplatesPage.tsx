@@ -1,9 +1,10 @@
 import { useSessionDraft } from '../license/hooks';
 import { guardLicense } from '../license/service';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, ArrowRight, Check, ChevronDown, Feather, FileText, GripVertical, LoaderCircle, PencilLine, Plus, RefreshCw, RotateCcw, Settings2, Sparkles, SquarePen, UserRoundPen, X } from 'lucide-react';
+import { AlertCircle, ArrowRight, Check, ChevronDown, Download, Feather, FileText, GripVertical, LoaderCircle, PencilLine, Plus, RefreshCw, RotateCcw, Sparkles, SquarePen, Upload, UserRoundPen, X } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { GeneratedReportStructure, ReportTemplate, ReportTemplateSection, ReportTemplateStatus } from '../types';
+import { fileSizeLimitErrorMessage, knowledgeFileLimits, unsupportedFileFormatMessage } from '../knowledge/api';
 import {
   compileStructurePrompt,
   generateReportStructure,
@@ -23,10 +24,8 @@ import templateDeleteIcon from '../../assets/figma-report-template/template-dele
 import templateEditIcon from '../../assets/figma-report-template/template-edit.svg';
 import templatePageLeftIcon from '../../assets/figma-report-template/template-page-left.svg';
 import templatePageRightIcon from '../../assets/figma-report-template/template-page-right.svg';
-import templatePlusIcon from '../../assets/figma-report-template/template-plus.svg';
 import templatePageSizeChevronIcon from '../../assets/figma-report-template/report-template-chevron-down.svg';
 import templateSearchIcon from '../../assets/figma-report-template/report-template-search.svg';
-import templateSubscriptionIcon from '../../assets/figma-report-template/template-subscription.svg';
 import templateViewIcon from '../../assets/figma-report-template/template-subscribe.svg';
 import {
   Dialog,
@@ -45,7 +44,7 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
-import { ReportSubscriptionDialog } from '../components/ReportSubscriptionDialog';
+import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../components/ui/sheet';
 import { ReportStructureSectionInput } from '../components/ReportStructureSectionInput';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import {
@@ -248,30 +247,8 @@ function getTemplateCreatedAtLabel(template: ReportTemplate) {
   return template.createdAt?.trim() || '-';
 }
 
-function TemplateDescription({ description }: { description: string }) {
-  return (
-    <Tooltip delayDuration={240}>
-      <TooltipTrigger asChild>
-        <span
-          tabIndex={0}
-          aria-label={`${description}，查看完整模板描述`}
-          className="block max-w-full truncate text-[14px] leading-5 text-[#86909c] outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
-        >
-          {description}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent
-        side="top"
-        align="start"
-        sideOffset={8}
-        collisionPadding={12}
-        arrowClassName="bg-[#1d2129] fill-[#1d2129]"
-        className="z-[120] w-fit min-w-[220px] max-w-[min(320px,calc(100vw-32px))] whitespace-normal rounded-[6px] border-0 bg-[#1d2129] px-3 py-2.5 text-left font-['PingFang_SC'] text-[13px] font-normal leading-5 tracking-normal text-white text-wrap shadow-[0_6px_16px_rgba(29,33,41,0.16)]"
-      >
-        <p className="m-0 break-words">{description}</p>
-      </TooltipContent>
-    </Tooltip>
-  );
+function formatTemplateFileSize(bytes: number) {
+  return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function toTemplateForm(template: ReportTemplate): TemplateFormState {
@@ -400,27 +377,25 @@ function createTemplateFromForm(form: TemplateFormState, existing?: ReportTempla
 export default function TemplatesPage() {
   const {
     reportTemplates,
-    defaultTemplateBindings,
     skills,
     addReportTemplate,
     updateReportTemplate,
     deleteReportTemplate,
-    updateDefaultTemplateBinding,
   } = useWorkspace();
   const [query, setQuery] = useState('');
-  const [selectedIndustry, setSelectedIndustry] = useState('all');
-  const [selectedCategory, setSelectedCategory] = useState('all');
   const [templatePage, setTemplatePage] = useState(1);
   const [templatePageSize, setTemplatePageSize] = useState<number>(templatePageSizeOptions[0]);
   const [editingTemplate, setEditingTemplate] = useSessionDraft<ReportTemplate | null>('templates.editing', null);
-  const [subscribingTemplate, setSubscribingTemplate] = useSessionDraft<ReportTemplate | null>('templates.subscribing', null);
   const [viewingTemplate, setViewingTemplate] = useState<ReportTemplate | null>(null);
+  const [previewingTemplate, setPreviewingTemplate] = useState<ReportTemplate | null>(null);
   const [pendingDeleteTemplate, setPendingDeleteTemplate] = useState<ReportTemplate | null>(null);
-  const [isEditorOpen, setIsEditorOpen] = useSessionDraft('templates.open', false);
+  const [renamingTemplate, setRenamingTemplate] = useState<ReportTemplate | null>(null);
+  const [renamedTemplateName, setRenamedTemplateName] = useState('');
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editorStep, setEditorStep] = useSessionDraft<TemplateEditorStep>('templates.step', 'basic');
-  const [showDefaultTemplateManager, setShowDefaultTemplateManager] = useState(false);
-  const [defaultTemplateIndustry, setDefaultTemplateIndustry] = useState(templateIndustries[0]);
-  const [defaultTemplateDraft, setDefaultTemplateDraft] = useState<Record<string, string>>({});
   const [form, setForm] = useSessionDraft<TemplateFormState>('templates.form', emptyTemplateForm);
   const [pendingStructureAction, setPendingStructureAction] = useState<'regenerate' | null>(null);
   const [structureRequestDraft, setStructureRequestDraft] = useSessionDraft('templates.structureDraft', '');
@@ -565,15 +540,11 @@ export default function TemplatesPage() {
 
     return reportTemplates
       .filter((template) => {
-        const templateIndustry = template.industry || defaultTemplateIndustry;
-        const matchesIndustry = selectedIndustry === 'all' || templateIndustry === selectedIndustry;
-        const matchesCategory = selectedCategory === 'all' || normalizeTemplateCategory(template.category) === selectedCategory;
         const matchesQuery =
           !normalizedQuery ||
           [
             template.name,
             template.description,
-            templateIndustry,
             template.templatePrompt,
             ...template.triggerPhrases,
             ...template.sections.map((section) => section.title),
@@ -582,14 +553,14 @@ export default function TemplatesPage() {
             .toLowerCase()
             .includes(normalizedQuery);
 
-        return matchesIndustry && matchesCategory && matchesQuery;
+        return matchesQuery;
       })
       .sort((current, next) => getTemplateCreatedAtTime(next) - getTemplateCreatedAtTime(current));
-  }, [query, reportTemplates, selectedCategory, selectedIndustry]);
+  }, [query, reportTemplates]);
 
   useEffect(() => {
     setTemplatePage(1);
-  }, [query, selectedCategory, selectedIndustry]);
+  }, [query]);
 
   const industryOptions = useMemo(() => {
     const industries = new Set(templateIndustries);
@@ -635,41 +606,89 @@ export default function TemplatesPage() {
     setTemplatePage((current) => Math.min(current, templateTotalPages));
   }, [templateTotalPages]);
 
-  const openNewTemplateEditor = () => {
-    if (!guardLicense('configure')) return;
-    setPromptUpdateNextStep(null);
-    setPromptUpdateError(null);
-    setEditingTemplate(null);
-    setForm(emptyTemplateForm);
-    setBasicErrors({});
-    setStructureErrors({});
-    setStyleErrors({});
-    setSectionTitleErrors({});
-    setSectionDescriptionErrors({});
-    setShowSectionValidation(false);
-    setPendingStructureAction(null);
-    setStructureRequestDraft('');
-    setStructureTab('request');
-    setEditorStep('basic');
-    setIsEditorOpen(true);
+  const handleTemplateUpload = async (file?: File) => {
+    if (!file || !guardLicense('configure')) return;
+
+    const supportedExtensions = new Set(knowledgeFileLimits.extensions);
+    const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
+    if (!supportedExtensions.has(extension)) {
+      setUploadError(`「${file.name}」${unsupportedFileFormatMessage}`);
+      return;
+    }
+    if (file.size > knowledgeFileLimits.maxSize) {
+      setUploadError(`「${file.name}」${fileSizeLimitErrorMessage}`);
+      return;
+    }
+
+    const name = file.name.slice(0, -(extension.length + 1)).trim() || '未命名模板';
+    if (reportTemplates.some((template) => template.name.trim().toLowerCase() === name.toLowerCase())) {
+      setUploadError('已存在同名模板，请先重命名现有模板后再上传');
+      return;
+    }
+
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('文件读取失败'));
+        reader.onerror = () => reject(new Error('文件读取失败'));
+        reader.readAsDataURL(file);
+      });
+
+      addReportTemplate({
+        id: `template-upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name,
+        uploadedFile: { name: file.name, type: file.type, size: file.size, dataUrl },
+        description: `上传文件：${file.name}`,
+        industry: defaultTemplateIndustry,
+        category: '专题',
+        version: '1.0.0',
+        createdAt: formatTemplateCreatedAt(new Date()),
+        status: 'published',
+        triggerPhrases: [],
+        templatePrompt: `使用已上传的报告文件《${file.name}》作为模板。`,
+        applicableAgentIds: [],
+        datasetIds: [],
+        skillIds: [],
+        parameters: [],
+        analysisSteps: [],
+        comparisonMethods: [],
+        anomalyRules: [],
+        attributionPath: [],
+        sections: [],
+        metricBlocks: [],
+        chartBlocks: [],
+        outputFormats: [extension.slice(1).toUpperCase()],
+        pushChannels: [],
+        complianceNotes: [],
+      });
+      setUploadError(null);
+      setQuery('');
+      setTemplatePage(1);
+    } catch {
+      setUploadError('文件读取失败，请重新选择文件');
+    }
   };
 
-  const openEditTemplateEditor = (template: ReportTemplate) => {
-    setPromptUpdateNextStep(null);
-    setPromptUpdateError(null);
-    setEditingTemplate(template);
-    setForm(toTemplateForm(template));
-    setBasicErrors({});
-    setStructureErrors({});
-    setStyleErrors({});
-    setSectionTitleErrors({});
-    setSectionDescriptionErrors({});
-    setShowSectionValidation(false);
-    setPendingStructureAction(null);
-    setStructureRequestDraft(template.structureRequest ?? '');
-    setStructureTab('request');
-    setEditorStep('basic');
-    setIsEditorOpen(true);
+  const openRenameDialog = (template: ReportTemplate) => {
+    setRenamingTemplate(template);
+    setRenamedTemplateName(template.name);
+    setRenameError(null);
+  };
+
+  const saveTemplateName = () => {
+    if (!renamingTemplate || !guardLicense('configure')) return;
+    const name = Array.from(renamedTemplateName.trim()).slice(0, 20).join('');
+    if (!name) {
+      setRenameError('请输入模板名称');
+      return;
+    }
+    if (reportTemplates.some((template) => template.id !== renamingTemplate.id && template.name.trim().toLowerCase() === name.toLowerCase())) {
+      setRenameError('已存在同名模板，请更换名称');
+      return;
+    }
+    updateReportTemplate(renamingTemplate.id, { name });
+    setRenamingTemplate(null);
+    setRenameError(null);
   };
 
   const validateBasicStep = () => {
@@ -937,37 +956,6 @@ export default function TemplatesPage() {
     setEditorStep('basic');
   };
 
-  const getDefaultTemplate = (industry: string) => {
-    const binding = defaultTemplateBindings.find((item) => item.industry === industry);
-    return reportTemplates.find((template) => template.id === binding?.templateId && template.status === 'published');
-  };
-
-  const openDefaultTemplateManager = () => {
-    setDefaultTemplateIndustry(templateIndustries[0]);
-    setDefaultTemplateDraft(Object.fromEntries(
-      defaultTemplateBindings.map((binding) => [binding.industry, binding.templateId]),
-    ));
-    setShowDefaultTemplateManager(true);
-  };
-  const saveDefaultTemplateManager = () => {
-    if (!guardLicense('configure')) return;
-    templateIndustries.forEach((industry) => {
-      updateDefaultTemplateBinding(industry, defaultTemplateDraft[industry] ?? '');
-    });
-    setShowDefaultTemplateManager(false);
-  };
-
-  const defaultTemplateCandidates = reportTemplates
-    .filter((template) => template.status === 'published' && (template.industry || defaultTemplateIndustry) === defaultTemplateIndustry)
-    .sort((left, right) => left.name.localeCompare(right.name, 'zh-CN'));
-  const currentDefaultTemplateId = defaultTemplateDraft[defaultTemplateIndustry]
-    ?? getDefaultTemplate(defaultTemplateIndustry)?.id
-    ?? 'none';
-  const isDefaultTemplateDraftDirty = templateIndustries.some((industry) => (
-    (defaultTemplateDraft[industry] ?? '')
-    !== (defaultTemplateBindings.find((binding) => binding.industry === industry)?.templateId ?? '')
-  ));
-
   const sectionCountNotice = sectionCountError && (
       <div ref={sectionCountNoticeRef} id="section-count-notice" role="alert" tabIndex={-1}
         className="sticky top-0 z-10 flex shrink-0 items-start gap-2 rounded-[6px] border border-[#f7c1bd] bg-[#fff2f0] px-3 py-2 text-[#b42318] outline-none focus:ring-2 focus:ring-[#f53f3f]/15">
@@ -1004,276 +992,99 @@ export default function TemplatesPage() {
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜索模板名称或模板描述"
+                placeholder="搜索报告模板"
                 className="min-w-0 flex-1 bg-transparent text-[14px] font-normal leading-[22px] text-[#1d2129] placeholder:text-[#c9cdd4] focus:outline-none"
               />
             </label>
             <button
               type="button"
-              onClick={openNewTemplateEditor}
+              onClick={() => uploadInputRef.current?.click()}
               className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-[#e5e6eb] bg-white px-3.5 text-[14px] font-normal leading-[22px] text-[#1d2129] transition-colors hover:bg-[#f7f8fa] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
             >
-              <img aria-hidden="true" className="h-4 w-4" src={templatePlusIcon} alt="" />
-              新建模板
+              <Upload aria-hidden="true" className="h-4 w-4" />
+              上传模板
             </button>
-            <button
-              type="button"
-              onClick={openDefaultTemplateManager}
-              className={`inline-flex h-10 items-center rounded-[10px] border px-3.5 text-[14px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
-                showDefaultTemplateManager ? 'border-[#165dff] bg-[#e8f3ff] text-[#165dff]' : 'border-[#e5e6eb] bg-white text-[#1d2129] hover:bg-[#f7f8fa]'
-              }`}
-            >
-              <Settings2 aria-hidden="true" className="h-4 w-4" />
-              默认模板管理
-            </button>
-          </div>
-        </div>
-
-        <div
-          className="mt-4 flex min-h-8 shrink-0 flex-wrap items-center gap-x-5 gap-y-3"
-          aria-label="模板筛选"
-        >
-          <div className="flex items-center gap-2">
-            <span className="shrink-0 text-[14px] leading-[22px] text-[#4e5969]">行业</span>
-            <Select
-              value={selectedIndustry}
-              onValueChange={(value) => {
-                setSelectedIndustry(value);
-                setSelectedCategory('all');
+            <input
+              ref={uploadInputRef}
+              type="file"
+              accept=".pdf,.docx,.xlsx,.pptx,.txt,.md"
+              className="sr-only"
+              onChange={(event) => {
+                void handleTemplateUpload(event.currentTarget.files?.[0]);
+                event.currentTarget.value = '';
               }}
-            >
-              <SelectTrigger
-                aria-label="选择模板业务线"
-                size="sm"
-                className="group h-8 w-[112px] rounded-[8px] border-[#e5e6eb] bg-white px-3 text-[14px] leading-[22px] text-[#1d2129] shadow-none focus-visible:border-[#165dff] focus-visible:ring-2 focus-visible:ring-[#165dff]/10"
-                icon={
-                  <span className="relative h-4 w-4 shrink-0 overflow-hidden transition-transform duration-150 group-data-[state=open]:rotate-180">
-                    <img aria-hidden="true" className="absolute left-[3.76px] top-[5.48px] h-[5.19px] w-[8.49px]" src={templatePageSizeChevronIcon} alt="" />
-                  </span>
-                }
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent
-                position="popper"
-                sideOffset={4}
-                viewportClassName="h-auto min-h-0 w-full !min-w-0 p-0"
-                className="w-[var(--radix-select-trigger-width)] !min-w-0 rounded-[8px] border-[#e5e6eb] bg-white p-1 text-[#1d2129] shadow-[0_4px_12px_rgba(29,33,41,0.08)] data-[side=bottom]:!translate-y-0 data-[side=top]:!translate-y-0"
-              >
-                <SelectItem value="all" className="h-8 rounded-[6px] py-0 pl-2 pr-8 text-[14px] focus:bg-[#f7f8fa] focus:text-[#1d2129]">
-                  全部
-                </SelectItem>
-                {industryOptions.map((industry) => (
-                  <SelectItem key={industry} value={industry} className="h-8 rounded-[6px] py-0 pl-2 pr-8 text-[14px] focus:bg-[#f7f8fa] focus:text-[#1d2129]">
-                    {industry}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <span aria-hidden="true" className="hidden h-4 w-px bg-[#e5e6eb] sm:block" />
-
-          <div className="flex min-w-0 items-center gap-3 overflow-x-auto" aria-label="模板分类">
-            <span className="shrink-0 text-[14px] leading-[22px] text-[#4e5969]">分类</span>
-            <button
-              type="button"
-              aria-pressed={selectedCategory === 'all'}
-              onClick={() => setSelectedCategory('all')}
-              className={`h-7 shrink-0 rounded-[14px] px-3 text-[14px] font-normal leading-7 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
-                selectedCategory === 'all'
-                  ? 'bg-[#1d2129] text-white'
-                  : 'bg-[#f2f3f5] text-[#4e5969] hover:bg-[#e5e6eb]'
-              }`}
-            >
-              全部
-            </button>
-            {templateCategories.map((category) => (
-              <button
-                key={category}
-                type="button"
-                aria-pressed={selectedCategory === category}
-                onClick={() => setSelectedCategory(category)}
-                className={`h-7 shrink-0 rounded-[14px] px-3 text-[14px] font-normal leading-7 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
-                  selectedCategory === category
-                    ? 'bg-[#1d2129] text-white'
-                    : 'bg-[#f2f3f5] text-[#4e5969] hover:bg-[#e5e6eb]'
-                }`}
-              >
-                {category}
-              </button>
-            ))}
+              aria-label="选择报告文件作为模板"
+            />
           </div>
         </div>
 
-        <Dialog open={showDefaultTemplateManager} onOpenChange={setShowDefaultTemplateManager}>
-          <DialogContent
-            aria-describedby={undefined}
-            showCloseButton={false}
-            className="!flex h-[494px] max-h-[calc(100vh-32px)] w-[680px] !max-w-[calc(100vw-32px)] flex-col gap-0 overflow-hidden rounded-[12px] border-0 bg-white p-0 font-['PingFang_SC','Microsoft_YaHei',sans-serif] shadow-[0_12px_32px_rgba(29,33,41,0.16)] sm:!max-w-[680px]"
-          >
-            <DialogHeader className="h-[60px] shrink-0 flex-row items-center justify-between border-b border-[#e5e6eb] px-6 text-left">
-              <DialogTitle className="text-[18px] font-semibold leading-7 text-[#1d2129]">默认模板管理</DialogTitle>
-              <DialogClose asChild>
-                <button type="button" aria-label="关闭默认模板管理" className="flex h-8 w-8 items-center justify-center rounded-[8px] text-[#86909c] hover:bg-[#f2f3f5] hover:text-[#1d2129]"><X aria-hidden="true" className="h-4 w-4" /></button>
-              </DialogClose>
-            </DialogHeader>
-            <section className="min-h-0 flex-1 overflow-y-auto px-6 py-6" aria-label="默认模板管理">
-              <div className="space-y-5">
-                <div className="grid gap-2">
-                  <span className="text-[14px] font-medium leading-[22px] text-[#1d2129]">行业</span>
-                  <div className="flex flex-wrap items-center gap-2" role="group" aria-label="选择配置行业">
-                    {templateIndustries.map((industry) => {
-                      const isSelected = defaultTemplateIndustry === industry;
-                      return (
-                        <button
-                          key={industry}
-                          type="button"
-                          aria-pressed={isSelected}
-                          onClick={() => setDefaultTemplateIndustry(industry)}
-                          className={`h-9 min-w-[72px] rounded-[18px] px-4 text-[14px] font-normal leading-9 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
-                            isSelected
-                              ? 'bg-[#1d2129] text-white'
-                              : 'bg-[#f2f3f5] text-[#4e5969] hover:bg-[#e5e6eb]'
-                          }`}
-                        >
-                          {industry}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+        {uploadError && <p role="alert" className="mt-2 shrink-0 text-[13px] leading-5 text-[#f53f3f]">{uploadError}</p>}
 
-                <label className="grid gap-2">
-                  <span className="text-[14px] font-medium leading-[22px] text-[#1d2129]">默认模板</span>
-                  <Select
-                    value={currentDefaultTemplateId}
-                    onValueChange={(value) => setDefaultTemplateDraft((current) => ({ ...current, [defaultTemplateIndustry]: value === 'none' ? '' : value }))}
-                  >
-                    <SelectTrigger aria-label={`选择${defaultTemplateIndustry}行业默认模板`} className="h-10 w-full rounded-[8px] border-[#e5e6eb] bg-white px-3 text-[14px] shadow-none focus-visible:border-[#165dff] focus-visible:ring-2 focus-visible:ring-[#165dff]/10">
-                      <SelectValue placeholder="未配置" />
-                    </SelectTrigger>
-                    <SelectContent
-                      sideOffset={4}
-                      collisionPadding={24}
-                      className="max-h-[240px] w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-80px)] rounded-[8px] border-[#e5e6eb] shadow-[0_8px_24px_rgba(29,33,41,0.12)] [&_[data-slot=select-scroll-down-button]]:hidden [&_[data-slot=select-scroll-up-button]]:hidden"
-                      viewportClassName="!h-auto max-h-[238px] !overflow-y-auto ![scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                    >
-                      <SelectItem value="none">未配置</SelectItem>
-                      {defaultTemplateCandidates.map((template) => (
-                        <SelectItem key={template.id} value={template.id}>
-                          <span className="min-w-0 truncate">{template.name}</span>
-                          <span className="shrink-0 rounded-[4px] bg-[#f2f3f5] px-1.5 py-0.5 text-[12px] text-[#86909c]">
-                            {normalizeTemplateCategory(template.category)}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </label>
-
-              </div>
-            </section>
-            <div className="flex h-14 shrink-0 items-center justify-end gap-3 border-t border-[#e5e6eb] bg-[#f7f8fa] px-6">
-              <DialogClose asChild><button type="button" className="h-9 rounded-[8px] border border-[#e5e6eb] px-4 text-[14px] text-[#4e5969] hover:bg-[#f7f8fa]">取消</button></DialogClose>
-              <button type="button" disabled={!isDefaultTemplateDraftDirty} onClick={saveDefaultTemplateManager} className="h-9 rounded-[8px] bg-[#1d2129] px-4 text-[14px] text-white hover:bg-[#000000] disabled:cursor-not-allowed disabled:bg-[#c9cdd4]">保存设置</button>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        <section className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden" aria-label="报告模板列表">
+        <section className="mt-6 flex min-h-0 flex-1 flex-col overflow-hidden" aria-label="报告模板列表">
           <div className="min-h-0 flex-1 overflow-auto">
-            <table className="-mt-2 w-full min-w-[1160px] table-fixed border-separate border-spacing-x-0 border-spacing-y-2">
+            <table className="w-full min-w-[820px] table-fixed border-separate border-spacing-x-0 border-spacing-y-2">
               <colgroup>
                 <col />
-                <col className="w-[116px]" />
+                <col className="w-[88px]" />
                 <col className="w-[100px]" />
                 <col className="w-[184px]" />
-                <col className="w-[104px]" />
-                <col className="w-[216px]" />
+                <col className="w-[144px]" />
               </colgroup>
               <thead className="sticky top-0 z-10 bg-[#f7f8fa]">
                 <tr className="h-12 text-left text-[14px] font-medium leading-6 text-[#4e5969]">
-                  <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">模板名称</th>
-                  <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">行业</th>
-                  <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">分类</th>
+                  <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">报告模板</th>
+                  <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">类型</th>
+                  <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">大小</th>
                   <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">创建时间</th>
-                  <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">状态</th>
                   <th className="border-b border-[#e5e6eb] px-4 py-3 font-medium">操作</th>
                 </tr>
               </thead>
               <tbody>
                 {paginatedTemplates.length ? (
                   paginatedTemplates.map((template) => {
-                    const enabled = template.status !== 'disabled';
-                    const templateSummary = template.description.trim();
                     return (
                       <tr
                         key={template.id}
                         className="h-[72px] bg-white text-[14px] font-normal leading-[22px] text-[#1d2129] transition-colors hover:bg-[#f7f8fa] [&>td]:align-middle"
                       >
                         <td className="min-w-0 border-b border-[#e5e6eb] px-4 py-3">
-                          <div className="flex h-12 min-w-0 flex-col items-start gap-1 overflow-hidden">
-                            <span className="block max-w-full truncate text-[16px] font-medium leading-6 text-[#1d2129]">
-                              {template.name}
-                            </span>
-                            <TemplateDescription description={templateSummary || '-'} />
+                          <div className="flex h-12 min-w-0 items-center overflow-hidden">
+                            <Tooltip delayDuration={240}>
+                              <TooltipTrigger asChild>
+                                <span
+                                  tabIndex={0}
+                                  aria-label={template.name}
+                                  className="block min-w-0 flex-1 truncate whitespace-nowrap text-[16px] font-medium leading-6 text-[#1d2129] outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20"
+                                >
+                                  {template.name}
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent
+                                side="top"
+                                align="start"
+                                sideOffset={8}
+                                showArrow={false}
+                                className="max-w-[min(420px,calc(100vw-32px))] whitespace-normal break-all rounded-[6px] bg-[#1d2129] px-3 py-2 text-[13px] leading-5 text-white shadow-[0_6px_16px_rgba(29,33,41,0.16)]"
+                              >
+                                {template.name}
+                              </TooltipContent>
+                            </Tooltip>
                           </div>
                         </td>
-                        <td className="whitespace-nowrap border-b border-[#e5e6eb] p-4 text-[#4e5969]">
-                          {template.industry || defaultTemplateIndustry}
+                        <td className="whitespace-nowrap border-b border-[#e5e6eb] px-4 py-3 text-[#4e5969]">
+                          {template.uploadedFile?.name.match(/\.([^.]+)$/)?.[1]?.toUpperCase() || '—'}
                         </td>
-                        <td className="border-b border-[#e5e6eb] p-4">
-                          <span className="inline-flex items-center justify-center rounded-[8px] bg-[#e8f3ff] px-2 py-1 text-[14px] leading-[22px] text-[#165dff]">
-                            {normalizeTemplateCategory(template.category)}
-                          </span>
+                        <td className="whitespace-nowrap border-b border-[#e5e6eb] px-4 py-3 text-[#4e5969] tabular-nums">
+                          {template.uploadedFile ? formatTemplateFileSize(template.uploadedFile.size) : '—'}
                         </td>
                         <td className="whitespace-nowrap border-b border-[#e5e6eb] p-4 text-[#1d2129]">
                           {getTemplateCreatedAtLabel(template)}
                         </td>
                         <td className="border-b border-[#e5e6eb] p-4">
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={enabled}
-                            onClick={() =>
-                              updateReportTemplate(template.id, {
-                                status: enabled ? 'disabled' : 'published',
-                              })
-                            }
-                            className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/20 ${
-                              enabled ? 'bg-[#1d2129]' : 'bg-[#c9cdd4]'
-                            }`}
-                            title={enabled ? '点击停用' : '点击启用'}
-                            aria-label={`${template.name}当前${enabled ? '已启用' : '已停用'}，点击${
-                              enabled ? '停用' : '启用'
-                            }`}
-                          >
-                            <span
-                              className={`absolute rounded-full bg-white shadow-[0_1px_2px_rgba(29,33,41,0.12)] transition-all ${
-                                enabled
-                                  ? 'right-[2.5px] top-[2.5px] h-[15px] w-[15px]'
-                                  : 'left-1 top-1 h-3 w-3'
-                              }`}
-                            />
-                          </button>
-                        </td>
-                        <td className="border-b border-[#e5e6eb] p-4">
                           <div className="flex items-center justify-start gap-2 whitespace-nowrap">
                             {[
-                              {
-                                tooltipLabel: enabled
-                                  ? '订阅'
-                                  : '启用模板后可订阅',
-                                ariaLabel: enabled
-                                  ? `订阅${template.name}`
-                                  : `${template.name}已停用，无法订阅`,
-                                icon: templateSubscriptionIcon,
-                                onClick: () => { if (guardLicense('manageSubscription')) setSubscribingTemplate(template); },
-                                unavailable: !enabled,
-                              },
-                              { tooltipLabel: '编辑', ariaLabel: `编辑${template.name}`, icon: templateEditIcon, onClick: () => openEditTemplateEditor(template), unavailable: false },
-                              { tooltipLabel: '查看', ariaLabel: `查看${template.name}`, icon: templateViewIcon, onClick: () => setViewingTemplate(template), unavailable: false },
+                              { tooltipLabel: '重命名', ariaLabel: `重命名${template.name}`, icon: templateEditIcon, onClick: () => openRenameDialog(template), unavailable: false },
+                              { tooltipLabel: '查看', ariaLabel: `查看${template.uploadedFile ? '报告文件' : '模板信息'}：${template.name}`, icon: templateViewIcon, onClick: () => template.uploadedFile ? setPreviewingTemplate(template) : setViewingTemplate(template), unavailable: false },
                               { tooltipLabel: '删除', ariaLabel: `删除${template.name}`, icon: templateDeleteIcon, onClick: () => setPendingDeleteTemplate(template), unavailable: false },
                             ].map((action) => (
                               <Tooltip key={action.ariaLabel} delayDuration={240}>
@@ -1314,7 +1125,7 @@ export default function TemplatesPage() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={6} className="h-40 px-4 text-center text-[14px] text-[#86909c]">
+                    <td colSpan={5} className="h-40 px-4 text-center text-[14px] text-[#86909c]">
                       未找到匹配的报告模板
                     </td>
                   </tr>
@@ -1434,15 +1245,42 @@ export default function TemplatesPage() {
         </section>
       </div>
 
-      <ReportSubscriptionDialog
-        open={Boolean(subscribingTemplate)}
+      <Dialog
+        open={Boolean(renamingTemplate)}
         onOpenChange={(open) => {
-          if (!open) setSubscribingTemplate(null);
+          if (!open) setRenamingTemplate(null);
         }}
-        template={subscribingTemplate}
-        recipientMode={subscribingTemplate?.id === 'template-operation-daily' ? 'self' : 'admin'}
-        currentUserName="李敏"
-      />
+      >
+        <DialogContent className="max-w-[420px] gap-4 rounded-[8px] border-[#e5e6eb] p-5">
+          <DialogHeader>
+            <DialogTitle className="text-[18px] leading-6">重命名</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-1.5">
+            <div className="relative">
+              <input
+                autoFocus
+                aria-label="名称"
+                value={renamedTemplateName}
+                onChange={(event) => {
+                  setRenamedTemplateName(Array.from(event.target.value).slice(0, 20).join(''));
+                  setRenameError(null);
+                }}
+                onKeyDown={(event) => { if (event.key === 'Enter') saveTemplateName(); }}
+                placeholder="请输入名称"
+                className="h-10 w-full rounded-[6px] border border-[#d9dce3] py-2 pl-3 pr-14 text-[14px] text-[#1d2129] outline-none focus:border-[#165dff] focus:ring-2 focus:ring-[#165dff]/10"
+              />
+              <span aria-live="polite" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[12px] leading-5 text-[#86909c]">
+                {Array.from(renamedTemplateName).length}/20
+              </span>
+            </div>
+            {renameError && <p role="alert" className="text-[12px] leading-5 text-[#f53f3f]">{renameError}</p>}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <button type="button" onClick={() => setRenamingTemplate(null)} className="h-9 rounded-[6px] border border-[#d9dce3] px-4 text-[#4e5969] hover:bg-[#f7f8fa]">取消</button>
+            <button type="button" disabled={!renamedTemplateName.trim()} onClick={saveTemplateName} className="h-9 rounded-[6px] bg-[#1d2129] px-4 text-white hover:bg-[#2f3339] disabled:cursor-not-allowed disabled:opacity-50">保存</button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={isEditorOpen}
@@ -2270,6 +2108,60 @@ export default function TemplatesPage() {
         </DialogContent>
       </Dialog>
 
+      <Sheet open={Boolean(previewingTemplate)} onOpenChange={(open) => { if (!open) setPreviewingTemplate(null); }}>
+        <SheetContent
+          showCloseButton={false}
+          className="w-full gap-0 overflow-hidden sm:w-[86vw] sm:max-w-[1440px]"
+        >
+          {previewingTemplate && (() => {
+            const file = previewingTemplate.uploadedFile;
+            const isPdf = file?.type === 'application/pdf' || file?.name.toLowerCase().endsWith('.pdf');
+            return (
+              <>
+                <SheetHeader className="min-w-0 shrink-0 flex-row items-center gap-3 border-b border-[#e5e6eb] bg-white px-4 py-4 text-left sm:px-6">
+                  <div className="min-w-0 flex-1">
+                    <SheetTitle className="truncate text-base leading-6" title={file?.name ?? previewingTemplate.name}>
+                      {file?.name ?? previewingTemplate.name}
+                    </SheetTitle>
+                    <SheetDescription className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                      {file ? <>
+                        <span>{file.name.split('.').pop()?.toUpperCase()} ·</span>
+                        <span>{file.size < 1024 * 1024 ? `${Math.max(1, Math.round(file.size / 1024))} KB` : `${(file.size / (1024 * 1024)).toFixed(1)} MB`}</span>
+                      </> : '尚未关联报告文件'}
+                    </SheetDescription>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {file && (
+                      <a
+                        href={file.dataUrl}
+                        download={file.name}
+                        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-[#e5e6eb] px-2.5 text-sm text-[#4e5969] hover:bg-[#f7f8fa]"
+                      >
+                        <Download aria-hidden="true" className="size-4" />
+                        <span className="hidden sm:inline">下载</span>
+                      </a>
+                    )}
+                    <SheetClose aria-label="关闭预览" title="关闭预览" className="inline-flex size-9 items-center justify-center rounded-md text-[#4e5969] hover:bg-[#f2f3f5] focus-visible:outline-2 focus-visible:outline-[#165dff]">
+                      <X aria-hidden="true" className="size-4" />
+                    </SheetClose>
+                  </div>
+                </SheetHeader>
+                <div className="min-h-0 flex-1 overflow-auto bg-[#f7f8fa] p-3 sm:p-6">
+                  {file && isPdf ? (
+                    <iframe title={file.name} src={file.dataUrl} className="block h-full min-h-[50vh] w-full rounded-lg border border-[#e5e6eb] bg-white" />
+                  ) : (
+                    <div className="flex min-h-full flex-col items-center justify-center gap-3 px-4 text-center text-sm text-[#646a73]">
+                      <FileText aria-hidden="true" className="size-8 text-[#86909c]" />
+                      <p>{file ? '此格式不支持在线预览，可下载后查看。' : '此模板没有关联报告文件。'}</p>
+                    </div>
+                  )}
+                </div>
+              </>
+            );
+          })()}
+        </SheetContent>
+      </Sheet>
+
       <Dialog
         open={Boolean(viewingTemplate)}
         onOpenChange={(open) => {
@@ -2300,6 +2192,22 @@ export default function TemplatesPage() {
                     {viewingTemplate.name}
                   </dd>
                 </div>
+
+                {viewingTemplate.uploadedFile && (
+                  <div className="flex items-start border-b border-[#e5e6eb] pb-4">
+                    <dt className="w-20 shrink-0 text-[14px] leading-[22px] text-[#4e5969]">源文件</dt>
+                    <dd className="min-w-0 flex-1 text-[14px] leading-[22px] text-[#1d2129]">
+                      <a
+                        href={viewingTemplate.uploadedFile.dataUrl}
+                        download={viewingTemplate.uploadedFile.name}
+                        className="break-all text-[#165dff] underline underline-offset-2"
+                      >
+                        {viewingTemplate.uploadedFile.name}
+                      </a>
+                      <span className="ml-2 text-[12px] text-[#86909c]">{(viewingTemplate.uploadedFile.size / 1024 / 1024).toFixed(2)} MB</span>
+                    </dd>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-4 border-b border-[#e5e6eb] pb-4">
                   <div className="flex items-center gap-3">

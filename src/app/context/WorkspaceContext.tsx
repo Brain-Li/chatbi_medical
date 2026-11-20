@@ -1,5 +1,9 @@
 import { guardLicense } from '../license/service';
+import { forkConversation as createConversationFork } from '../utils/forkConversation';
 import { useLicense } from '../license/hooks';
+import { DEFAULT_WORKSPACE_NAME, readWorkspaceNames, saveWorkspaceNames } from '../utils/workspaceStorage';
+import { removeWorkspaceFolder, renameWorkspaceFolder } from '../utils/workspaceFolderStorage';
+import { getWorkspaceDeletionTarget, getWorkspaceNames, moveWorkspaceConversations, validateWorkspaceRename } from '../utils/workspaceManagement';
 import {
   createContext,
   ReactNode,
@@ -48,6 +52,10 @@ import {
 } from '../types';
 
 interface WorkspaceContextValue {
+  activeWorkspaceName: string;
+  setActiveWorkspaceName: (name: string) => void;
+  renameWorkspace: (name: string, nextName: string) => string | null;
+  deleteWorkspace: (name: string) => string | null;
   agents: Agent[];
   skills: Skill[];
   semanticDatasets: SemanticDataset[];
@@ -67,11 +75,14 @@ interface WorkspaceContextValue {
   addAgent: (agent: Agent) => void;
   copyAgent: (agentId: string) => Agent | null;
   deleteAgent: (agentId: string) => void;
-  createConversation: (workspaceType: AgentType, title: string, agent?: Agent) => Conversation;
+  createConversation: (workspaceType: AgentType, title: string, agent?: Agent, workspaceName?: string) => Conversation;
+  forkConversation: (conversationId: string) => Conversation | null;
   appendMessages: (conversationId: string, messages: Message[]) => void;
   updateMessage: (conversationId: string, messageId: string, updates: Partial<Message>) => void;
   replaceConversationMessages: (conversationId: string, messages: Message[]) => void;
   updateConversation: (conversationId: string, updates: Partial<Conversation>) => void;
+  setConversationPinned: (conversationId: string, isPinned: boolean) => void;
+  setConversationArchived: (conversationId: string, isArchived: boolean) => void;
   deleteConversation: (conversationId: string) => void;
   renameConversation: (conversationId: string, title: string) => void;
   getConversationsForWorkspace: (type: AgentType) => Conversation[];
@@ -87,7 +98,6 @@ interface WorkspaceContextValue {
   addReportTemplate: (template: ReportTemplate) => void;
   updateReportTemplate: (templateId: string, updates: Partial<ReportTemplate>) => void;
   deleteReportTemplate: (templateId: string) => void;
-  updateDefaultTemplateBinding: (industry: string, templateId: string) => void;
   addReportSubscription: (subscription: ReportSubscription) => void;
   updateReportSubscription: (subscriptionId: string, updates: Partial<ReportSubscription>) => void;
   deleteReportSubscription: (subscriptionId: string) => void;
@@ -166,7 +176,9 @@ const fromStoredConversation = (conversation: StoredConversation): Conversation 
 
 const getRetainedConversations = (conversations: Conversation[], now = Date.now()) => {
   const cutoff = now - CONVERSATION_RETENTION_MS;
-  return conversations.filter((conversation) => conversation.updatedAt.getTime() >= cutoff);
+  return conversations.filter((conversation) =>
+    conversation.isPinned || conversation.isArchived || conversation.updatedAt.getTime() >= cutoff,
+  );
 };
 
 const mergeSeededConversations = (conversations: Conversation[]) => {
@@ -174,7 +186,26 @@ const mergeSeededConversations = (conversations: Conversation[]) => {
   const yesterdayExample = initialConversations.find(
     (conversation) => conversation.id === YESTERDAY_HISTORY_EXAMPLE_ID,
   );
-  const seededConversations = yesterdayExample ? [...demos, yesterdayExample] : demos;
+  const storedById = new Map(conversations.map((conversation) => [conversation.id, conversation]));
+  const storedByTitle = new Map(
+    conversations
+      .filter((conversation) => !conversation.isDemo)
+      .map((conversation) => [conversation.workspaceType + ":" + conversation.title, conversation]),
+  );
+  const seededConversations = (yesterdayExample ? [...demos, yesterdayExample] : demos).map((conversation) => {
+    const stored = storedById.get(conversation.id)
+      ?? storedByTitle.get(conversation.workspaceType + ":" + conversation.title);
+
+    return {
+      ...conversation,
+      id: stored?.id ?? conversation.id,
+      createdAt: stored?.createdAt ?? conversation.createdAt,
+      updatedAt: stored?.updatedAt ?? conversation.updatedAt,
+      workspaceName: stored?.workspaceName ?? conversation.workspaceName,
+      isPinned: stored?.isPinned,
+      isArchived: stored?.isArchived,
+    };
+  });
   const seededConversationIds = new Set(
     seededConversations.map((conversation) => conversation.id),
   );
@@ -219,12 +250,12 @@ const readStoredActiveConversationIds = (
     if (!rawValue) return fallback;
 
     const parsedValue = JSON.parse(rawValue) as Partial<Record<AgentType, string | null>>;
-    const conversationIds = new Set(conversations.map((conversation) => conversation.id));
+    const conversationIds = new Set(conversations.filter((conversation) => !conversation.isArchived).map((conversation) => conversation.id));
 
     return (['ask', 'report', 'rca'] as AgentType[]).reduce<Record<AgentType, string | null>>(
       (current, type) => {
         const nextId = parsedValue[type];
-        current[type] = typeof nextId === 'string' && conversationIds.has(nextId) ? nextId : fallback[type];
+        current[type] = nextId === null ? null : typeof nextId === 'string' && conversationIds.has(nextId) ? nextId : fallback[type];
         return current;
       },
       { ask: null, report: null, rca: null },
@@ -237,6 +268,7 @@ const readStoredActiveConversationIds = (
 const getDefaultActiveConversationIds = (conversations: Conversation[]) => {
   const defaults = conversations.reduce<Record<AgentType, string | null>>(
     (current, conversation) => {
+      if (conversation.isArchived) return current;
       const workspaceType = isAgentType(conversation.workspaceType)
         ? conversation.workspaceType
         : conversation.agentType ?? 'ask';
@@ -254,6 +286,7 @@ const getDefaultActiveConversationIds = (conversations: Conversation[]) => {
   const featuredAskConversation = conversations.find(
     (conversation) =>
       (conversation.workspaceType ?? conversation.agentType) === 'ask' &&
+      !conversation.isArchived &&
       conversation.title === '上月门诊总收入和药占比情况',
   );
 
@@ -307,6 +340,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [dimensionSemantics, setDimensionSemantics] = useState<DimensionSemantic[]>(initialDimensionSemantics);
   const [dimensionMembers, setDimensionMembers] = useState<DimensionMember[]>(initialDimensionMembers);
   const [conversations, setConversations] = useState<Conversation[]>(workspaceInitialConversations);
+  const [activeWorkspaceName, setActiveWorkspaceName] = useState(() => {
+    const names = readWorkspaceNames();
+    return names.includes(DEFAULT_WORKSPACE_NAME) ? DEFAULT_WORKSPACE_NAME : names[0] ?? DEFAULT_WORKSPACE_NAME;
+  });
   const [databaseConnections, setDatabaseConnections] =
     useState<DatabaseConnection[]>(initialDatabaseConnections);
   const [mcpServers, setMcpServers] = useState<McpServer[]>(initialMcpServers);
@@ -339,6 +376,33 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({
+      activeWorkspaceName,
+      setActiveWorkspaceName,
+      renameWorkspace: (name, draft) => {
+        if (!guardLicense('configure')) return '当前授权不支持修改工作区';
+        const names = getWorkspaceNames(readWorkspaceNames(), conversations);
+        const error = validateWorkspaceRename(name, draft, names);
+        if (error) return error;
+        const nextName = draft.trim();
+        if (name === nextName) return null;
+        saveWorkspaceNames(names.map((existing) => existing === name ? nextName : existing), { from: name, to: nextName });
+        void renameWorkspaceFolder(name, nextName).catch(() => {});
+        setConversations((current) => moveWorkspaceConversations(current, name, nextName));
+        setActiveWorkspaceName((current) => current === name ? nextName : current);
+        return null;
+      },
+      deleteWorkspace: (name) => {
+        if (!guardLicense('configure')) return '当前授权不支持修改工作区';
+        const names = getWorkspaceNames(readWorkspaceNames(), conversations);
+        if (!names.includes(name)) return '该工作区已不存在';
+        const target = getWorkspaceDeletionTarget(names, name);
+        if (!target) return '至少保留一个工作区';
+        saveWorkspaceNames(names.filter((existing) => existing !== name));
+        void removeWorkspaceFolder(name).catch(() => {});
+        setConversations((current) => moveWorkspaceConversations(current, name, target));
+        setActiveWorkspaceName((current) => current === name ? target : current);
+        return null;
+      },
       agents,
       skills,
       semanticDatasets,
@@ -417,10 +481,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ),
         );
       },
-      createConversation: (workspaceType, title, agent) => {
+      createConversation: (workspaceType, title, agent, workspaceName = activeWorkspaceName) => {
         const conversation: Conversation = {
           id: `conv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           title,
+          workspaceName,
           agentId: agent?.id,
           agentType: agent?.type,
           workspaceType,
@@ -435,6 +500,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           [workspaceType]: conversation.id,
         }));
         return conversation;
+      },
+      forkConversation: (conversationId) => {
+        if (!guardLicense('configure')) return null;
+        const source = conversations.find((conversation) => conversation.id === conversationId);
+        if (!source) return null;
+        const fork = createConversationFork(source);
+        setConversations((current) => [fork, ...current]);
+        setActiveConversationIds((current) => ({ ...current, [fork.workspaceType]: fork.id }));
+        return fork;
       },
       appendMessages: (conversationId, messages) => {
         setConversations((current) =>
@@ -495,6 +569,25 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ),
         );
       },
+      setConversationPinned: (conversationId, isPinned) => {
+        if (!guardLicense('configure')) return;
+        setConversations((current) => current.map((conversation) =>
+          conversation.id === conversationId ? { ...conversation, isPinned } : conversation,
+        ));
+      },
+      setConversationArchived: (conversationId, isArchived) => {
+        if (!guardLicense('configure')) return;
+        setConversations((current) => current.map((conversation) =>
+          conversation.id === conversationId ? { ...conversation, isArchived } : conversation,
+        ));
+        if (isArchived) {
+          setActiveConversationIds((current) => ({
+            ask: current.ask === conversationId ? null : current.ask,
+            report: current.report === conversationId ? null : current.report,
+            rca: current.rca === conversationId ? null : current.rca,
+          }));
+        }
+      },
       deleteConversation: (conversationId) => {
         if (!guardLicense('configure')) return ;
         setConversations((current) =>
@@ -510,7 +603,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               .filter(
                 (conversation) =>
                   (conversation.workspaceType ?? conversation.agentType) === affectedWorkspaceType &&
-                  conversation.id !== conversationId,
+                  conversation.id !== conversationId && !conversation.isArchived,
               )
               .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0];
 
@@ -837,20 +930,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         if (!guardLicense('configure')) return ;
         setMcpServers((current) => [server, ...current]);
       },
-      updateDefaultTemplateBinding: (industry, templateId) => {
-        if (!guardLicense('configure')) return ;
-        setDefaultTemplateBindings((current) => {
-          const updatedAt = new Date().toLocaleString('zh-CN', { hour12: false });
-          const existing = current.find((binding) => binding.industry === industry);
-          if (!templateId) {
-            return existing ? current.filter((binding) => binding.id !== existing.id) : current;
-          }
-          if (existing) {
-            return current.map((binding) => binding.id === existing.id ? { ...binding, templateId, updatedAt } : binding);
-          }
-          return [...current, { id: `default-binding-${industry}`, industry, templateId, updatedAt }];
-        });
-      },
       deleteMcpServer: (serverId) => {
         if (!guardLicense('configure')) return ;
         setMcpServers((current) => current.filter((server) => server.id !== serverId));
@@ -953,6 +1032,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }),
     [
       activeConversationIds,
+      activeWorkspaceName,
       agents,
       conversations,
       databaseConnections,

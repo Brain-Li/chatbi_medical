@@ -24,6 +24,8 @@ import {
   ChartNoAxesCombined,
   Check,
   CheckCircle2,
+  Copy,
+  GitBranch,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -44,10 +46,11 @@ import {
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { AgentRoutingTrace, AgentRuntimeConfig, AnalysisCandidateOption, AnalysisProcessData, AnalysisProcessStep, DatasetAnalysisResult, DeepAnalysisActivityId, Message, RootCauseResultData, SkillTrace } from '../types';
+import { AgentRoutingTrace, AgentRuntimeConfig, AnalysisCandidateOption, AnalysisProcessData, AnalysisProcessStep, DatasetAnalysisResult, DeepAnalysisActivityId, Message, ReportTemplateUsage, RootCauseResultData, SkillTrace } from '../types';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { summarizeReportTopic } from '../utils/reportTopic';
 import { ReportSubscriptionDialog } from './ReportSubscriptionDialog';
+import { CompactAnalysisProcess } from './CompactAnalysisProcess';
 import {
   Tooltip as AppTooltip,
   TooltipContent,
@@ -154,16 +157,18 @@ function ClarificationCard({
 function AssistantTextReply({
   message,
   onCandidateSelect,
+  conversationLayout = false,
 }: {
   message: Message;
   onCandidateSelect?: (option: AnalysisCandidateOption) => void;
+  conversationLayout?: boolean;
 }) {
   const options = message.analysisClarification?.options ?? [];
   const selectedId = message.selectedAnalysisCandidateId;
 
   return (
-    <div className="space-y-3 px-4 py-1" data-testid={`assistant-text-reply-${message.id}`}>
-      <p className="whitespace-pre-wrap break-words text-base leading-6 text-[#1d2129]">
+    <div className={conversationLayout ? 'space-y-5 py-1' : 'space-y-3 px-4 py-1'} data-testid={`assistant-text-reply-${message.id}`}>
+      <p className={conversationLayout ? 'whitespace-pre-wrap break-words text-[15px] leading-8 text-[#1d2129]' : 'whitespace-pre-wrap break-words text-base leading-6 text-[#1d2129]'}>
         {message.content}
       </p>
       {options.length > 0 ? (
@@ -1266,6 +1271,7 @@ function InlineDeepAnalysisResult({
 
 function WorkspaceReportFileCard({
   reportTitle,
+  templateUsage,
   state,
   feedback,
   isSelected,
@@ -1274,6 +1280,7 @@ function WorkspaceReportFileCard({
   onRegenerate,
 }: {
   reportTitle: string;
+  templateUsage?: ReportTemplateUsage;
   state: Extract<WorkspaceActivityState, 'running' | 'completed' | 'interrupted'>;
   feedback?: 'like' | 'dislike';
   isSelected: boolean;
@@ -1281,11 +1288,22 @@ function WorkspaceReportFileCard({
   onFeedbackChange?: (feedback: 'like' | 'dislike') => void;
   onRegenerate?: () => void;
 }) {
+  const { addReportTemplate, reportTemplates } = useWorkspace();
   const cardRef = useRef<HTMLDivElement>(null);
   const actionRef = useRef<HTMLDivElement>(null);
   const stateLabel = state === 'completed' ? '已生成' : state === 'running' ? '生成中' : '生成已中断';
+  const isTemplateSaved = Boolean(templateUsage && reportTemplates.some((template) => template.id === templateUsage.templateId));
   const actionButtonClassName =
     'inline-flex h-8 w-8 items-center justify-center rounded bg-white p-2 text-gray-500 hover:bg-[#f7f8fa]';
+
+  const handleSaveTemplate = () => {
+    if (!guardLicense('configure') || !templateUsage || isTemplateSaved) return;
+    addReportTemplate({
+      ...templateUsage.templateSnapshot,
+      status: 'published',
+    });
+    toast.success(`已保存模板“${templateUsage.name}”`);
+  };
 
   useEffect(() => {
     let settleTimer = 0;
@@ -1359,13 +1377,28 @@ function WorkspaceReportFileCard({
           <span className="sr-only">{stateLabel}</span>
         </button>
       </div>
-      {state === 'completed' && (onFeedbackChange || onRegenerate) ? (
+      {state === 'completed' && (onFeedbackChange || onRegenerate || templateUsage) ? (
         <div
           ref={actionRef}
           data-testid="workspace-report-actions"
           className="mt-2 flex scroll-mb-28 flex-wrap items-center justify-start py-[5px]"
           aria-label="报告操作"
         >
+          {templateUsage ? (
+            isTemplateSaved ? (
+              <span className="inline-flex h-8 items-center gap-1.5 px-2 text-sm text-[#4e5969]">
+                <Check className="size-4 text-[#00a870]" />已存入模板库
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSaveTemplate}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-2.5 text-sm text-blue-700 hover:bg-blue-100"
+              >
+                <FileText className="size-4" />存入模板库
+              </button>
+            )
+          ) : null}
           {onFeedbackChange ? (
             <>
               <FeedbackTooltip label="点赞">
@@ -1427,6 +1460,7 @@ export function WorkspaceAnalysisProcessContent({
   analysisFeedback,
   reportState,
   reportTitle,
+  reportTemplateUsage,
   reportFeedback,
   selectedActivityId,
   onActivitySelect,
@@ -1446,6 +1480,7 @@ export function WorkspaceAnalysisProcessContent({
   analysisFeedback?: 'like' | 'dislike';
   reportState?: Extract<WorkspaceActivityState, 'running' | 'completed' | 'interrupted'>;
   reportTitle?: string;
+  reportTemplateUsage?: ReportTemplateUsage;
   reportFeedback?: 'like' | 'dislike';
   selectedActivityId?: DeepAnalysisActivityId;
   onActivitySelect?: (id: DeepAnalysisActivityId) => void;
@@ -1567,6 +1602,7 @@ export function WorkspaceAnalysisProcessContent({
         ) : reportState && reportTitle ? (
           <WorkspaceReportFileCard
             reportTitle={reportTitle}
+            templateUsage={reportTemplateUsage}
             state={reportState}
             feedback={reportFeedback}
             isSelected={selectedActivityId === 'draft-report'}
@@ -1585,11 +1621,13 @@ function AnalysisCard({
   onRerunSkill,
   forceExpanded = false,
   processVariant = 'timeline',
+  conversationLayout = false,
 }: {
   message: Message;
   onRerunSkill?: (skillId: string) => void;
   forceExpanded?: boolean;
   processVariant?: AnalysisProcessVariant;
+  conversationLayout?: boolean;
 }) {
   const [expanded, setExpanded] = useState(() =>
     forceExpanded || (message.analysisProcess ? message.analysisProcess.status === 'running' : true),
@@ -1631,6 +1669,10 @@ function AnalysisCard({
 
     setExpanded(false);
   }, [forceExpanded, message.analysisProcess, message.isGenerating, message.isInterrupted]);
+
+  if (conversationLayout) {
+    return <CompactAnalysisProcess key={message.id} message={message} />;
+  }
 
   if (message.analysisProcess) {
     if (processVariant === 'workspace') {
@@ -2269,11 +2311,15 @@ function DatasetResultSection({
 function AskResultCard({
   message,
   onRegenerate,
+  onBranch,
   onRerunSkill,
+  conversationLayout = false,
 }: {
   message: Message;
   onRegenerate?: (messageId: string) => void;
+  onBranch?: () => void;
   onRerunSkill?: (skillId: string) => void;
+  conversationLayout?: boolean;
 }) {
   const [feedback, setFeedback] = useState<'like' | 'dislike' | null>(null);
 
@@ -2282,6 +2328,24 @@ function AskResultCard({
   const actionButtonClassName =
     'inline-flex h-8 w-8 items-center justify-center rounded bg-white p-2 text-gray-500 hover:bg-[#f7f8fa]';
   const datasetResults = message.analysisResult.datasetResults ?? [];
+  const handleCopyAnswer = async () => {
+    const result = message.analysisResult;
+    if (!result) return;
+
+    const content = [
+      result.title,
+      result.summary,
+      ...result.metrics.map((metric) => `${metric.label}: ${metric.value}`),
+      ...result.recommendations,
+    ].filter(Boolean).join('\n');
+
+    try {
+      await navigator.clipboard.writeText(content);
+      toast.success('回答已复制');
+    } catch {
+      toast.error('复制失败，请允许浏览器访问剪贴板后重试');
+    }
+  };
 
   if (datasetResults.length > 1) {
     return (
@@ -2359,12 +2423,18 @@ function AskResultCard({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-[12px] border border-[#e5e6eb] bg-white p-4">
-        <div className="grid grid-cols-4 gap-4 max-md:grid-cols-2 max-sm:grid-cols-1">
+      <div className={conversationLayout ? 'space-y-7 bg-white' : 'rounded-[12px] border border-[#e5e6eb] bg-white p-4'}>
+        {conversationLayout && (
+          <div className="space-y-4">
+            <h2 className="break-words text-[22px] font-semibold leading-8 text-[#1d2129] sm:text-[24px] sm:leading-9">{message.analysisResult.title}</h2>
+            {message.analysisResult.summary && <p className="whitespace-pre-wrap break-words text-[15px] leading-8 text-[#1d2129]">{message.analysisResult.summary}</p>}
+          </div>
+        )}
+        <div className={conversationLayout ? 'grid grid-cols-2 gap-x-6 gap-y-5 border-y border-[#e5e6eb] py-5 lg:grid-cols-4' : 'grid grid-cols-4 gap-4 max-md:grid-cols-2 max-sm:grid-cols-1'}>
           {message.analysisResult.metrics.map((metric) => (
             <div
               key={metric.label}
-              className="min-h-[72px] rounded-[8px] border border-[#e5e6eb] bg-white p-4"
+              className={conversationLayout ? 'min-w-0 py-1' : 'min-h-[72px] rounded-[8px] border border-[#e5e6eb] bg-white p-4'}
             >
               <div className="text-sm leading-[14px] tracking-[0.175px] text-[#4e5969]">{metric.label}</div>
               <div className="mt-2 text-xl font-medium leading-7 text-[#1d2129]">{metric.value}</div>
@@ -2376,48 +2446,44 @@ function AskResultCard({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-start py-[5px]">
-        <FeedbackTooltip label="点赞">
+      <div className="flex flex-wrap items-center justify-start gap-1 py-[5px] text-[#86909c]">
+        <FeedbackTooltip label="复制">
+          <button type="button" onClick={() => void handleCopyAnswer()} className={actionButtonClassName} aria-label="复制">
+            <Copy aria-hidden="true" className="h-4 w-4" />
+          </button>
+        </FeedbackTooltip>
+        <FeedbackTooltip label="好的回答">
           <button
             type="button"
             onClick={() => setFeedback(feedback === 'like' ? null : 'like')}
-            className={`${actionButtonClassName} ${
-              feedback === 'like' ? 'bg-blue-50 text-blue-600 hover:bg-blue-50 hover:text-blue-600' : ''
-            }`}
-            aria-label="点赞"
+            className={`${actionButtonClassName} ${feedback === 'like' ? 'bg-blue-50 text-blue-600 hover:bg-blue-50 hover:text-blue-600' : ''}`}
+            aria-label="好的回答"
             aria-pressed={feedback === 'like'}
           >
             <ThumbsUp className={`h-4 w-4 ${feedback === 'like' ? 'fill-blue-600' : ''}`} />
           </button>
         </FeedbackTooltip>
-        <FeedbackTooltip label="点踩">
+        <FeedbackTooltip label="有问题的回答">
           <button
             type="button"
             onClick={() => setFeedback(feedback === 'dislike' ? null : 'dislike')}
-            className={`${actionButtonClassName} ${
-              feedback === 'dislike' ? 'bg-red-50 text-red-600 hover:bg-red-50 hover:text-red-600' : ''
-            }`}
-            aria-label="点踩"
+            className={`${actionButtonClassName} ${feedback === 'dislike' ? 'bg-red-50 text-red-600 hover:bg-red-50 hover:text-red-600' : ''}`}
+            aria-label="有问题的回答"
             aria-pressed={feedback === 'dislike'}
           >
             <ThumbsDown className={`h-4 w-4 ${feedback === 'dislike' ? 'fill-red-600' : ''}`} />
           </button>
         </FeedbackTooltip>
-        {onRegenerate && (
-          <>
-            <span className="h-4 w-px bg-[#e5e6eb]" />
-            <FeedbackTooltip label="重新分析">
-              <button
-                type="button"
-                onClick={() => onRegenerate(message.id)}
-                className={actionButtonClassName}
-                aria-label="重新分析"
-              >
-                <img alt="" src={refreshLineIcon} className="h-4 w-4" />
-              </button>
-            </FeedbackTooltip>
-          </>
-        )}
+        {onBranch ? (
+          <FeedbackTooltip label="在新对话中分支">
+            <button type="button" onClick={onBranch} className={actionButtonClassName} aria-label="在新对话中分支">
+              <GitBranch aria-hidden="true" className="h-4 w-4" />
+            </button>
+          </FeedbackTooltip>
+        ) : null}
+        <time dateTime={message.timestamp.toISOString()} className="ml-2 px-1 text-xs leading-8 text-[#86909c]">
+          {message.timestamp.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}
+        </time>
       </div>
     </div>
   );
@@ -2558,6 +2624,35 @@ function ReportResultCard({
     setIsSubscriptionDialogOpen(true);
   };
 
+  const isDocumentReport = message.markdownArtifact?.fileName.toLowerCase().endsWith(".docx");
+
+  if (isDocumentReport && message.markdownArtifact) {
+    return (
+      <div className="max-w-[960px] space-y-5">
+        <MarkdownPreview content={message.markdownArtifact.content} />
+        <div role="group" aria-label="报告文件" className="flex min-h-[76px] items-center gap-3 rounded-[14px] border border-[#f0f0f0] bg-[#fafafa] px-4 py-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-[9px] border border-[#f0f0f0] bg-white text-[#4b83f5]">
+            <FileText aria-hidden="true" className="size-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium leading-5 text-[#1d2129]" title={message.markdownArtifact.fileName}>{message.markdownArtifact.fileName}</span>
+            <span className="mt-1 block truncate text-xs leading-[18px] text-[#86909c]">上月门诊经营分析报告 · 7个章节 · 演示文件</span>
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {unsavedGeneratedTemplate ? (
+            <button type="button" onClick={handleSaveGeneratedTemplate} className="inline-flex h-9 items-center gap-2 rounded-md bg-[#165dff] px-3 text-sm font-medium text-white hover:bg-[#0e63e5]">
+              <FileText className="size-4" />存入模板库
+            </button>
+          ) : matchedTemplate ? (
+            <span className="inline-flex h-9 items-center gap-2 text-sm text-[#4e5969]"><Check className="size-4 text-[#00a870]" />已存入模板库</span>
+          ) : null}
+          {runtimeConfig.allowExport && <button type="button" onClick={handleExportReport} className="inline-flex h-9 items-center gap-2 rounded-md border border-[#e5e6eb] px-3 text-sm text-[#4e5969] hover:bg-[#f7f8fa]"><Download className="size-4" />导出报告</button>}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-[#e5e6eb] bg-white p-4">
@@ -2669,7 +2764,7 @@ function ReportResultCard({
             className="inline-flex h-8 items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-2.5 text-sm text-blue-700 hover:bg-blue-100"
           >
             <FileText className="h-4 w-4" />
-            保存为模板
+            存入模板库
           </button>
         )}
         <button
@@ -2869,19 +2964,23 @@ function RootCauseResultCard({
 export function AssistantMessageCard({
   message,
   onRegenerate,
+  onBranch,
   onRerunSkill,
   onClarificationSelect,
   onAnalysisCandidateSelect,
   forceAnalysisExpanded,
   analysisProcessVariant,
+  conversationLayout = false,
 }: {
   message: Message;
   onRegenerate?: (messageId: string) => void;
+  onBranch?: () => void;
   onRerunSkill?: (skillId: string) => void;
   onClarificationSelect?: (question: string, agentId: string) => void;
   onAnalysisCandidateSelect?: (messageId: string, option: AnalysisCandidateOption) => void;
   forceAnalysisExpanded?: boolean;
   analysisProcessVariant?: AnalysisProcessVariant;
+  conversationLayout?: boolean;
 }) {
   if (message.kind === 'clarification') {
     return (
@@ -2896,6 +2995,7 @@ export function AssistantMessageCard({
     return (
       <AssistantTextReply
         message={message}
+        conversationLayout={conversationLayout}
         onCandidateSelect={(option) => onAnalysisCandidateSelect?.(message.id, option)}
       />
     );
@@ -2905,6 +3005,7 @@ export function AssistantMessageCard({
     return (
       <AnalysisCard
         message={message}
+        conversationLayout={conversationLayout}
         onRerunSkill={onRerunSkill}
         forceExpanded={forceAnalysisExpanded}
         processVariant={analysisProcessVariant}
@@ -2934,6 +3035,8 @@ export function AssistantMessageCard({
   return (
     <AskResultCard
       message={message}
+      onBranch={onBranch}
+      conversationLayout={conversationLayout}
       onRegenerate={onRegenerate}
       onRerunSkill={onRerunSkill}
     />

@@ -1,8 +1,9 @@
 import { useSessionDraft } from '../license/hooks';
 import { guardLicense } from '../license/service';
-import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useOutletContext } from 'react-router';
-import { ArrowUp, Eye, EyeOff } from 'lucide-react';
+import { ArrowUp, ChevronDown, Eye, EyeOff, Folder } from 'lucide-react';
+import { toast } from 'sonner';
 import { HomePrefillPayload, WorkspaceAutoSubmitPayload } from '../types';
 
 import checkboxChecked from '../../assets/figma-login/checkbox-checked.svg';
@@ -14,23 +15,29 @@ import caseArrowRightUp from '../../assets/figma-home/case-arrow-right-up.svg';
 import caseMonthlyImage from '../../assets/figma-home/case-monthly.png';
 import caseBydImage from '../../assets/figma-home/case-byd.png';
 import caseGridImage from '../../assets/figma-home/case-grid.png';
-import globalLine from '../../assets/figma-home/global-line.svg';
-import globalLineSelected from '../../assets/figma-home/global-line-selected.svg';
 import micLine from '../../assets/figma-home/mic-line.svg';
 import { HistorySidebarToggle } from '../components/HistorySidebarToggle';
-import { PromptModeBar, type PromptModeBarSelection } from '../components/PromptModeBar';
+import { type PromptModeBarSelection } from '../components/PromptModeBar';
 import { PromptComposerFrame } from '../components/PromptComposerFrame';
+import { ComposerActionsMenu, type ComposerAction } from '../components/ComposerActionsMenu';
+import { HomeModelSelector } from '../components/HomeModelSelector';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { inferPromptMode, type PromptMode } from '../utils/promptMode';
-import { ReportTemplateSelector } from '../components/ReportTemplateSelector';
+import { WorkspaceCreateDialog } from '../components/WorkspaceCreateDialog';
+import { readWorkspaceNames, saveWorkspaceNames, subscribeWorkspaceNames } from '../utils/workspaceStorage';
+import { getConversationWorkspaceName } from '../utils/conversationHistoryStorage';
 
 type HomeMode = PromptMode;
 type HomeInputMode = PromptModeBarSelection;
 type AppShellOutletContext = {
   sidebarOpen?: boolean;
   openSidebar?: () => void;
+  onNewConversation: (workspaceName: string) => void;
 };
 type HomeLocationState = {
+  conversationId?: string;
+  resetHomeComposer?: boolean;
   prefill?: HomePrefillPayload;
   deleteConversationId?: string;
   deleteConversationWorkspace?: 'ask' | 'report';
@@ -61,7 +68,7 @@ const askSuggestions: HomeSuggestion[] = [
 const smartSuggestions: HomeSuggestion[] = [
   { mode: 'ask', title: '上月门诊总收入和药占比情况' },
   { mode: 'ask', title: '眼科近三个月门诊量是否异常？', deepAnalysisEnabled: true },
-  { mode: 'ask', title: '上月门诊总收入和药占比情况' },
+  { mode: 'report', title: '生成本周门急诊运营周报' },
 ];
 const qaSuggestions: HomeSuggestion[] = [
   { mode: 'ask', title: '什么是药占比，如何合理控制？' },
@@ -133,30 +140,35 @@ function FeaturedCases({ className = '' }: { className?: string }) {
   );
 }
 
-const homeVerticalOffsetStyle = {
-  '--home-vertical-offset': '12px',
-} as CSSProperties;
-const homeHistoryOpenVerticalOffsetStyle = {
-  ...homeVerticalOffsetStyle,
-  '--home-vertical-offset': '36px',
-} as CSSProperties;
-
 export default function HomePage() {
   const location = useLocation();
   const navigate = useNavigate();
   const {
     sidebarOpen = false,
     openSidebar,
+    onNewConversation,
   } = useOutletContext<AppShellOutletContext>();
   const {
+    activeWorkspaceName: selectedWorkspace,
+    setActiveWorkspaceName: setSelectedWorkspace,
+    conversations,
+    activeConversationIds,
     createConversation,
     deleteConversation,
-    reportTemplates,
     setActiveConversationForWorkspace,
     updateConversation,
   } = useWorkspace();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [taskGoal, setTaskGoal] = useSessionDraft('home.taskGoal', '');
+  const [planEnabled, setPlanEnabled] = useSessionDraft('home.planEnabled', false);
+  const [commandDialogOpen, setCommandDialogOpen] = useState(false);
+  const [goalDraft, setGoalDraft] = useState('');
   const [selectedMode, setSelectedMode] = useState<HomeInputMode>('smart');
+  const [workspaceNames, setWorkspaceNames] = useState(readWorkspaceNames);
+  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
+  const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
   const [selectedReportTemplateId, setSelectedReportTemplateId] = useState<string | null>(null);
   const [draft, setDraft] = useSessionDraft('home.question', '');
   const [deepAnalysisEnabled, setDeepAnalysisEnabled] = useState(false);
@@ -170,6 +182,26 @@ export default function HomePage() {
   const hasAccountError = Boolean(loginErrors.account || loginErrors.general);
   const hasPasswordError = Boolean(loginErrors.password || loginErrors.general);
   const canSubmit = Boolean(draft.trim());
+  const homeState = location.state as HomeLocationState | null;
+  const initialConversation = conversations.find((conversation) =>
+    conversation.id === homeState?.conversationId
+    && !conversation.isArchived
+    && !conversation.agentId
+    && !conversation.messages.some((message) => message.role === 'user'),
+  );
+  const initialWorkspace = initialConversation ? getConversationWorkspaceName(initialConversation) : null;
+
+  useLayoutEffect(() => {
+    if (initialWorkspace) setSelectedWorkspace(initialWorkspace);
+  }, [initialConversation?.id, initialWorkspace, setSelectedWorkspace]);
+
+  useEffect(() => subscribeWorkspaceNames(setWorkspaceNames), []);
+
+  useEffect(() => {
+    if (!workspaceNames.includes(selectedWorkspace)) {
+      setSelectedWorkspace(workspaceNames[workspaceNames.length - 1] ?? '默认工作区');
+    }
+  }, [selectedWorkspace, workspaceNames]);
   const visibleSuggestions =
     selectedMode === 'smart'
       ? smartSuggestions
@@ -178,19 +210,12 @@ export default function HomePage() {
         : selectedMode === 'report'
           ? reportSuggestions
           : askSuggestions;
-  const inputPlaceholder =
-    selectedMode === 'smart'
-      ? '输入问题或需求，智能分析、解答或生成报告...'
-      : selectedMode === 'qa'
-      ? '咨询专业知识、业务相关问题...'
-      : selectedMode === 'ask'
-      ? '查询指标、走势、异常等各类数据问题...'
-      : '描述报告主题、统计周期、分析重点...';
+  const inputPlaceholder = '描述你的问题，/ 调用指令，@ 文件或对话';
 
   useEffect(() => {
     if (!textareaRef.current) return;
-    textareaRef.current.style.height = '104px';
-    textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 132)}px`;
+    textareaRef.current.style.height = '76px';
+    textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 176)}px`;
   }, [draft]);
 
   useEffect(() => {
@@ -219,15 +244,17 @@ export default function HomePage() {
 
   useLayoutEffect(() => {
     const state = location.state as HomeLocationState | null;
-    if (!state?.resetConversationWorkspace) return;
+    if (!state?.resetConversationWorkspace && !state?.resetHomeComposer) return;
 
-    setActiveConversationForWorkspace(state.resetConversationWorkspace, null);
+    if (state.resetConversationWorkspace) {
+      setActiveConversationForWorkspace(state.resetConversationWorkspace, null);
+    }
     setDraft('');
     setSelectedMode('smart');
     setSelectedReportTemplateId(null);
     setDeepAnalysisEnabled(false);
 
-    const { resetConversationWorkspace: _consumedResetWorkspace, ...remainingState } = state;
+    const { resetConversationWorkspace: _consumedResetWorkspace, resetHomeComposer: _consumedResetComposer, ...remainingState } = state;
     navigate('.', {
       replace: true,
       state: Object.keys(remainingState).length ? remainingState : null,
@@ -253,15 +280,14 @@ export default function HomePage() {
     });
   }, [location.state, navigate]);
 
-  const selectMode = (nextMode: HomeInputMode) => {
-    if (selectedMode === nextMode) {
-      window.setTimeout(() => textareaRef.current?.focus(), 0);
-      return;
+  const handleComposerAction = (action: ComposerAction) => {
+    if (action === 'file') fileInputRef.current?.click();
+    if (action === 'goal') { setGoalDraft(taskGoal); setCommandDialogOpen(true); }
+    if (action === 'model') navigate('/settings?section=llm');
+    if (action === 'plan') {
+      setPlanEnabled(!planEnabled);
+      toast(planEnabled ? '已退出计划模式' : '已进入计划模式，将先制定分析计划');
     }
-
-    setSelectedMode(nextMode);
-    if (nextMode !== 'ask') setDeepAnalysisEnabled(false);
-    window.setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
   const submit = (
@@ -283,7 +309,16 @@ export default function HomePage() {
         ? options?.deepAnalysisEnabled ?? deepAnalysisEnabled
         : undefined;
     const conversationTitle = question.length > 18 ? `${question.slice(0, 18)}...` : question;
-    const conversation = createConversation(resolvedMode, conversationTitle);
+    const emptyConversation = initialWorkspace === selectedWorkspace ? initialConversation : undefined;
+    const conversation = emptyConversation ?? createConversation(resolvedMode, conversationTitle);
+
+    if (emptyConversation) {
+      updateConversation(conversation.id, { title: conversationTitle, workspaceType: resolvedMode });
+      if (conversation.workspaceType !== resolvedMode && activeConversationIds[conversation.workspaceType] === conversation.id) {
+        setActiveConversationForWorkspace(conversation.workspaceType, null);
+      }
+      setActiveConversationForWorkspace(resolvedMode, conversation.id);
+    }
 
     if (resolvedMode === 'ask') {
       updateConversation(conversation.id, {
@@ -293,7 +328,8 @@ export default function HomePage() {
 
     const autoSubmit: WorkspaceAutoSubmitPayload = {
       mode: resolvedMode,
-      question,
+      question: [taskGoal && `任务目标：${taskGoal}`, planEnabled && '请先制定执行计划，明确分析步骤和预期产出，再开展分析。', question].filter(Boolean).join('\n\n'),
+      userMessageContent: question,
       conversationId: conversation.id,
       nonce: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       deepAnalysisEnabled: shouldUseDeepAnalysis,
@@ -323,6 +359,14 @@ export default function HomePage() {
     }
   };
 
+  const createWorkspace = (name: string) => {
+    const nextWorkspaceNames = saveWorkspaceNames([name, ...workspaceNames]);
+    setWorkspaceNames(nextWorkspaceNames);
+    setSelectedWorkspace(name);
+    setWorkspaceMenuOpen(false);
+    onNewConversation(name);
+  };
+
   const handleLoginSubmit = () => {
     if (loginSubmitting) return;
 
@@ -348,8 +392,7 @@ export default function HomePage() {
   return (
     <div className="relative h-[calc(100%+34px)] min-h-0 overflow-hidden rounded-[inherit] bg-gradient-to-b from-[rgba(229,230,235,0.2)] via-[rgba(229,235,245,0.1)] to-white font-['Login_Figma_Sans','PingFang_SC','Microsoft_YaHei',sans-serif] text-[#1d2129]">
       <div
-        className="relative h-full overflow-hidden rounded-[inherit]"
-        style={sidebarOpen ? homeHistoryOpenVerticalOffsetStyle : homeVerticalOffsetStyle}
+        className="relative h-full overflow-x-hidden overflow-y-auto rounded-[inherit]"
       >
               {!sidebarOpen && openSidebar && (
                 <HistorySidebarToggle
@@ -359,14 +402,13 @@ export default function HomePage() {
                 />
               )}
               <section
-                className="relative mx-auto flex w-full max-w-[1208px] flex-col px-4 lg:px-6"
-                style={{ paddingTop: 'calc(60px + var(--home-vertical-offset))' }}
+                className="relative mx-auto flex w-full max-w-[1208px] flex-col px-4 pb-8 pt-12 lg:px-6 [@media(max-height:700px)]:pt-8 max-sm:pt-12"
               >
-                <div className="mx-auto flex w-full max-w-[960px] flex-col gap-5">
+                <div className="mx-auto flex w-full max-w-[960px] flex-col gap-6">
                   <div className="flex w-full items-center gap-3">
-                    <div className="relative h-[104px] w-[104px] shrink-0">
+                    <div className="flex h-[88px] w-[88px] shrink-0 items-center max-sm:h-[64px] max-sm:w-[64px]">
                       <img
-                        className="absolute left-0 top-[7px] h-[90px] w-[104px] object-cover"
+                        className="h-auto w-full object-contain"
                         src={assistantImage}
                         alt=""
                       />
@@ -380,7 +422,7 @@ export default function HomePage() {
                         <span className="font-medium">数据分析</span>
                         <span className="text-[#4e5969]">与</span>
                         <span className="font-medium">报告生成，</span>
-                        <span>助你高效洞察数据价值</span>
+                        <span className="sm:whitespace-nowrap">助你高效洞察数据价值</span>
                       </h1>
                     </div>
                   </div>
@@ -390,60 +432,90 @@ export default function HomePage() {
                       selectedMode === 'report' ? 'z-30' : 'z-0'
                     }`}
                   >
+                    <div className="relative z-30 mb-2 flex w-full items-center px-1">
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setWorkspaceMenuOpen((current) => !current);
+                            }}
+                            className={`inline-flex h-9 max-w-[220px] items-center gap-2 rounded-[9px] px-2.5 text-[14px] leading-[22px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25 ${workspaceMenuOpen ? 'bg-[#f2f3f5] text-[#1d2129]' : 'text-[#1d2129] hover:bg-[#f7f8fa]'}`}
+                            aria-haspopup="menu"
+                            aria-expanded={workspaceMenuOpen}
+                            aria-label="选择工作区"
+                          >
+                            <Folder aria-hidden="true" className="h-[18px] w-[18px] shrink-0" strokeWidth={1.8} />
+                            <span className="max-w-[160px] truncate">{selectedWorkspace}</span>
+                            <ChevronDown aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-[#86909c]" strokeWidth={1.8} />
+                          </button>
+                          {workspaceMenuOpen && (
+                            <div className="absolute left-0 top-10 z-30 flex max-h-[352px] w-[260px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-[10px] border border-[#e5e6eb] bg-white p-1 shadow-[0_10px_24px_rgba(29,33,41,0.12)]" role="menu">
+                              <div className="min-h-0 flex-1 overflow-y-auto">
+                                {workspaceNames.map((workspace) => (
+                                  <button
+                                    key={workspace}
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() => {
+                                      setSelectedWorkspace(workspace);
+                                      setWorkspaceMenuOpen(false);
+                                      if (workspace !== selectedWorkspace && homeState?.conversationId) {
+                                        const { conversationId: _previousConversation, ...remainingState } = homeState;
+                                        navigate('.', { replace: true, state: Object.keys(remainingState).length ? remainingState : null });
+                                      }
+                                    }}
+                                    className={`flex h-9 w-full min-w-0 items-center gap-2 rounded-[7px] px-2.5 text-left text-sm transition-colors ${selectedWorkspace === workspace ? 'bg-[#edf3ff] text-[#165dff]' : 'text-[#4e5969] hover:bg-[#f7f8fa]'}`}
+                                  >
+                                    <Folder aria-hidden="true" className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+                                    <span className="min-w-0 flex-1 truncate">{workspace}</span>
+                                    {selectedWorkspace === workspace && <span aria-hidden="true" className="shrink-0 text-xs">✓</span>}
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="my-1 shrink-0 border-t border-[#f0f1f3]" />
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => {
+                                  setWorkspaceDialogOpen(true);
+                                  setWorkspaceMenuOpen(false);
+                                }}
+                                className="flex h-9 w-full shrink-0 items-center gap-2 rounded-[7px] px-2.5 text-left text-sm text-[#4e5969] transition-colors hover:bg-[#f7f8fa]"
+                              >
+                                <span aria-hidden="true" className="text-base leading-none">+</span>
+                                添加工作区...
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                    </div>
+                    <div ref={composerRef}>
                     <PromptComposerFrame
                       className="w-full"
                       bodyClassName="items-end justify-end !py-3 !pl-4 !pr-3"
                       overflowVisible={selectedMode === 'report'}
                     >
-                    <div className="flex min-h-[160px] w-full flex-col justify-between gap-4">
-                      <div className="flex min-h-[104px] w-full items-start gap-2">
+                    <div className="flex min-h-[128px] w-full flex-col justify-between gap-3">
+                      <div className="flex min-h-[76px] w-full items-start gap-2">
                         <textarea
                           ref={textareaRef}
                           value={draft}
                           onChange={(event) => setDraft(event.target.value)}
                           onKeyDown={handleKeyDown}
                           placeholder={inputPlaceholder}
-                          rows={4}
-                          className="h-[104px] max-h-[132px] min-h-[104px] min-w-0 flex-1 resize-none bg-white pt-[3px] text-[14px] leading-[22px] text-[#1d2129] placeholder:text-[#86909c] focus:outline-none"
+                          rows={3}
+                          className="h-[76px] max-h-[176px] min-h-[76px] min-w-0 flex-1 resize-none bg-white pt-[3px] text-[14px] leading-[22px] text-[#1d2129] placeholder:text-[#86909c] focus:outline-none"
                         />
                       </div>
                       <div className="flex min-h-10 flex-wrap items-center gap-3">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <PromptModeBar
-                            onSelect={selectMode}
-                            onQaSelect={() => selectMode('qa')}
-                            selectedMode={selectedMode}
-                            showQa
+                        <div className="flex items-center gap-2">
+                          <ComposerActionsMenu
+                            anchorRef={composerRef}
+                            onAction={handleComposerAction}
                           />
-                          {(selectedMode === 'ask' || selectedMode === 'qa') && (
-                            <button
-                              type="button"
-                              onClick={() => setDeepAnalysisEnabled((current) => !current)}
-                              className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-[20px] border px-[13px] text-[14px] font-normal leading-[22px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25 ${
-                                deepAnalysisEnabled
-                                  ? 'border-[#94bfff] bg-[#e8f3ff] text-[#165dff]'
-                                  : 'border-[#e5e6eb] bg-[#f2f3f5] text-[#1d2129] hover:bg-[#e8eaed]'
-                              }`}
-                              aria-pressed={deepAnalysisEnabled}
-                            >
-                              <img
-                                className="h-4 w-4"
-                                src={deepAnalysisEnabled ? globalLineSelected : globalLine}
-                                alt=""
-                              />
-                              深度分析
-                            </button>
-                          )}
-                          {selectedMode === 'report' && (
-                            <ReportTemplateSelector
-                              templates={reportTemplates}
-                              selectedId={selectedReportTemplateId}
-                              onSelect={(template) => setSelectedReportTemplateId(template.id)}
-                              onClear={() => setSelectedReportTemplateId(null)}
-                            />
-                          )}
                         </div>
-                        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-4">
+                        <div className="ml-auto flex min-w-0 items-center justify-end gap-2 sm:gap-4">
+                          <HomeModelSelector />
                           <button
                             type="button"
                             className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-[#f2f3f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165dff]/25"
@@ -473,23 +545,24 @@ export default function HomePage() {
                       </div>
                     </div>
                     </PromptComposerFrame>
+                    </div>
                   </div>
 
                 </div>
 
                 <div
-                  className="mx-auto mt-[50px] w-full max-w-[960px]"
+                  className="mx-auto mt-4 w-full max-w-[960px]"
                 >
                   <div className="flex flex-col gap-12">
-                    <div className="-mt-8 flex w-full flex-wrap items-start gap-4">
+                    <div className="flex w-full flex-wrap items-start gap-3">
                       {visibleSuggestions.map((suggestion, index) => (
                         <button
                           key={`${suggestion.title}-${index}`}
                           type="button"
                           onClick={() => handleSuggestionClick(suggestion)}
-                          className="group inline-flex h-[38px] min-w-0 items-center justify-between gap-2 rounded-[20px] border border-[#e5e6eb] bg-[#f7f8fa] px-4 py-[7px] text-left text-[14px] font-normal leading-[22px] text-[#1d2129] transition-colors hover:border-[#bcd4ff] hover:bg-white"
+                          className="group inline-flex min-h-[38px] min-w-0 max-w-full items-center justify-between gap-2 rounded-[20px] border border-[#e5e6eb] bg-[#f7f8fa] px-4 py-[7px] text-left text-[14px] font-normal leading-[22px] text-[#1d2129] transition-colors hover:border-[#bcd4ff] hover:bg-white"
                         >
-                          <span className="whitespace-nowrap">{suggestion.title}</span>
+                          <span className="min-w-0">{suggestion.title}</span>
                           <img
                             aria-hidden="true"
                             className="h-4 w-4 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 group-active:opacity-100"
@@ -504,6 +577,58 @@ export default function HomePage() {
                 </div>
               </section>
       </div>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".txt,.md,.csv,.json,text/plain,text/csv,application/json"
+        multiple
+        hidden
+        onChange={async (event) => {
+          const files = Array.from(event.currentTarget.files ?? []);
+          event.currentTarget.value = '';
+          try {
+            const contents = await Promise.all(files.map(async (file) => {
+              if (file.size > 2 * 1024 * 1024) throw new Error(`“${file.name}”超过 2 MB，请选择较小的文本文件。`);
+              return `【文件：${file.name}】\n${await file.text()}`;
+            }));
+            if (contents.length) setDraft((current) => [current, ...contents].filter(Boolean).join('\n\n'));
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message : '文件读取失败，请重试');
+          }
+        }}
+      />
+      <Dialog open={commandDialogOpen} onOpenChange={setCommandDialogOpen}>
+        <DialogContent className="rounded-[16px] border-[#e5e6eb] bg-white text-[#1d2129]">
+          <DialogHeader>
+            <DialogTitle>任务目标</DialogTitle>
+            <DialogDescription>
+              设置本次任务的长期目标，后续提问将结合此目标进行分析。
+            </DialogDescription>
+          </DialogHeader>
+            <textarea
+              aria-label="任务目标"
+              value={goalDraft}
+              onChange={(event) => setGoalDraft(event.target.value)}
+              placeholder="例如：持续分析门诊运营表现，定位收入与就诊量变化的原因"
+              className="min-h-28 resize-y rounded-[10px] border border-[#e5e6eb] p-3 text-sm leading-6 outline-none focus:border-[#86909c]"
+            />
+          <DialogFooter>
+            <button type="button" onClick={() => setCommandDialogOpen(false)} className="h-9 rounded-[8px] border border-[#e5e6eb] px-4 text-sm hover:bg-[#f7f8fa]">取消</button>
+            <button
+              type="button"
+              onClick={() => { setTaskGoal(goalDraft.trim()); setCommandDialogOpen(false); }}
+              className="h-9 rounded-[8px] bg-[#1d2129] px-4 text-sm text-white hover:bg-[#4e5969]"
+            >保存目标</button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <WorkspaceCreateDialog
+        open={workspaceDialogOpen}
+        workspaceNames={workspaceNames}
+        onOpenChange={setWorkspaceDialogOpen}
+        onCreated={createWorkspace}
+      />
 
         {loginOpen && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#1e1f27]/45">

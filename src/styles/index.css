@@ -109,12 +109,40 @@ button:disabled,
   }
 }
 
+.analysis-action-text {
+  animation: analysis-action-shimmer 2.8s ease-in-out infinite;
+  background-image: linear-gradient(105deg, #3564c8 0%, #3564c8 40%, #8bb9ff 50%, #3564c8 60%, #3564c8 100%);
+  background-position: 100% 0;
+  background-size: 250% 100%;
+  background-clip: text;
+  color: transparent;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+@keyframes analysis-action-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: -100% 0;
+  }
+}
+
 .report-progress-indeterminate {
   animation: report-progress-slide 1.35s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   will-change: transform;
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .analysis-action-text {
+    animation: none;
+    background: none;
+    color: #3564c8;
+    -webkit-text-fill-color: currentColor;
+  }
+
   .report-progress-indeterminate {
     animation: none;
     opacity: 0.72;

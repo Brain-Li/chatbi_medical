@@ -6,7 +6,8 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "test": "vitest run"
+    "dev:knowledge-api": "node server/knowledge-api.mjs",
+    "test": "vitest run src && node --test server/knowledge-api.spec.mjs"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

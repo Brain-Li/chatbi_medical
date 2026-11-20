@@ -6,31 +6,14 @@ import { toast } from 'sonner';
 import { ConfigActionIconButton } from './ConfigActionIconButton';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { demoUserStorageKey, readDemoUsers, type UserRow } from '../utils/demoUserDirectory';
 
-type UserRow = { id: string; username: string; name: string; email: string; role: '超级管理员' | '管理员' | '普通用户'; enabled: boolean };
 type UserForm = Omit<UserRow, 'id' | 'enabled'> & { password: string };
-const storageKey = 'chatbi-medical-users-v1';
-const initialUsers: UserRow[] = [
-  { id: '1', username: 'liusy', name: 'liusy', email: '320616101@qq.com', role: '普通用户', enabled: true },
-  { id: '2', username: 'libin', name: '李斌', email: '862258792@qq.com', role: '普通用户', enabled: true },
-  { id: '3', username: 'test2', name: 'test2', email: 'chenbai@futongdf.com.cn', role: '超级管理员', enabled: true },
-  { id: '4', username: 'zhaoyy', name: 'zhaoyy', email: '', role: '普通用户', enabled: true },
-  { id: '5', username: 'test', name: '测试', email: 'chenbai@futongdf.com.cn', role: '超级管理员', enabled: true },
-  { id: '6', username: 'admin', name: '管理员', email: 'admin@example.com', role: '超级管理员', enabled: true },
-];
 const emptyForm: UserForm = { username: '', name: '', email: '', role: '普通用户', password: '' };
 const fieldClass = 'h-10 w-full rounded-lg border border-[#e5e6eb] bg-white px-3 text-sm outline-none placeholder:text-[#86909c] focus:border-[#86909c] focus:ring-2 focus:ring-[#1d2129]/10';
 const buttonClass = 'h-9 rounded-lg border border-[#e5e6eb] px-5 text-sm text-[#4e5969] hover:bg-[#f7f8fa]';
-function readUsers(): UserRow[] {
-  try {
-    const value = JSON.parse(localStorage.getItem(storageKey) ?? 'null');
-    if (Array.isArray(value) && value.every((row) => row && ['id', 'username', 'name', 'email'].every((key) => typeof row[key] === 'string') && ['超级管理员', '管理员', '普通用户'].includes(row.role) && typeof row.enabled === 'boolean')) return value;
-  } catch { /* Use sample users when browser storage is unavailable. */ }
-  return initialUsers;
-}
-
 export default function UserManagementSection() {
-  const [users, setUsers] = useState(readUsers);
+  const [users, setUsers] = useState(readDemoUsers);
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -96,7 +79,7 @@ export default function UserManagementSection() {
   };
   const persist = (next: UserRow[]) => {
     if (!guardLicense('configure')) return false;
-    try { localStorage.setItem(storageKey, JSON.stringify(next)); setUsers(next); return true; }
+    try { localStorage.setItem(demoUserStorageKey, JSON.stringify(next)); setUsers(next); return true; }
     catch { toast.error('保存失败，请检查浏览器存储空间或权限'); return false; }
   };
   const openEditor = (user?: UserRow, copy = false) => {
