@@ -8,7 +8,7 @@
 
 | 项目 | 当前值 |
 | --- | --- |
-| 本机项目目录 | `C:\Users\Li\Desktop\chatbi_medical` |
+| 本机项目目录 | `D:\chatbi_medical-git` |
 | GitHub 仓库 | `git@github.com:Brain-Li/chatbi_medical.git` |
 | 服务器登录账户 | `ops` |
 | 服务器 ChatBI 运行账户 | `chatbi`（不能 SSH 登录） |
@@ -19,18 +19,16 @@
 
 当前项目是 Vite/React 静态前端：Nginx 直接托管 `dist` 文件，**没有独立的 Node 后端服务，也不需要 systemd 服务**。
 
-The workspace knowledge library adds a local-only development API. Start both processes in separate terminals with `npm run dev` and `npm run dev:knowledge-api`. The API binds to `127.0.0.1:4174`, and Vite proxies `/api/knowledge` to it. Local files and metadata are stored under `data/knowledge/` and are ignored by Git.
+The knowledge library is a front-end demo and does not require an API process. Example libraries and edits are stored in the current browser's `localStorage`; they are not shared between browsers or devices. Uploaded file contents remain in browser memory, while demo metadata is local to that browser. Production deployment continues to serve the built static files through Nginx.
 
-Knowledge bases are independent of analysis workspaces. Existing files remain in the default team library. The local API checks each library's visibility and assigned usernames for listing, searching, and accessing its files.
-
-**Do not deploy this demo API as the production knowledge service.** Its `X-Demo-User` and `X-Demo-User-Encoded` headers are not authentication, and the account form does not provide a real member directory. Uploaded files are not parsed/indexed, and the static Nginx deployment does not proxy the API. Production requires trusted identity and team membership, private object storage, document parsing/indexing, and a retrieval endpoint before knowledge-backed answers or citations can be enabled.
+The optional Node API and its tests are not part of this front-end-only demo. Do not add a production API proxy unless a separately authenticated production service is implemented.
 
 ## 2. 日常发布：本机推送代码
 
 在 Windows PowerShell 打开项目目录：
 
 ```powershell
-cd C:\Users\Li\Desktop\chatbi_medical
+cd D:\chatbi_medical-git
 ```
 
 先查看本次修改：

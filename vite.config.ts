@@ -24,11 +24,6 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
-  server: {
-    proxy: {
-      '/api/knowledge': 'http://127.0.0.1:4174',
-    },
-  },
   resolve: {
     alias: {
       // Alias @ to the src directory
